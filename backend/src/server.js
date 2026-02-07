@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const multer = require('multer');
 const authRoutes = require('./routes/auth.routes');
 const researchRoutes = require('./routes/research.routes');
 const aiRoutes = require('./routes/ai.routes'); // Add this line

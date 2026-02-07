@@ -79,7 +79,7 @@ export const analyticsAPI = {
 
 export const aiAPI = {
   chatWithPaper: async (paperId, fileUrl, message) => {
-    const response = await fetch('http://localhost:5000/api/ai/chat', {
+    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -94,6 +94,24 @@ export const aiAPI = {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || 'Failed to chat with paper');
+    }
+
+    return response.json();
+  },
+  
+  // Extract title and abstract from PDF
+  extractPdfMetadata: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await fetch(`${API_BASE_URL}/ai/extract-pdf`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to extract PDF metadata');
     }
 
     return response.json();

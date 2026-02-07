@@ -22,7 +22,7 @@ import {
   Plus,
   UserPlus
 } from 'lucide-react';
-import { researchAPI, authAPI } from '../../utils/api';
+import { researchAPI, authAPI, aiAPI } from '../../utils/api';
 
 const SubmitResearch = () => {
   const navigate = useNavigate();
@@ -31,6 +31,7 @@ const SubmitResearch = () => {
   const resubmitData = location.state?.resubmit; 
 
   const [loading, setLoading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [categories, setCategories] = useState([]);
@@ -80,12 +81,47 @@ const SubmitResearch = () => {
     }
   };
 
-  const onDrop = (acceptedFiles) => {
+  const onDrop = async (acceptedFiles) => {
     if (acceptedFiles.length > 0) {
-      setFile(acceptedFiles[0]);
+      const uploadedFile = acceptedFiles[0];
+      setFile(uploadedFile);
       setError('');
       // Simulate upload progress for better UX
       simulateUploadProgress();
+      
+      // Extract title and abstract from PDF
+      await extractPdfMetadata(uploadedFile);
+    }
+  };
+
+  const extractPdfMetadata = async (pdfFile) => {
+    setExtracting(true);
+    toast.loading('Extracting title and abstract from PDF...', { id: 'extract' });
+    
+    try {
+      const result = await aiAPI.extractPdfMetadata(pdfFile);
+      
+      if (result.success) {
+        setFormData(prev => ({
+          ...prev,
+          title: result.title || prev.title,
+          abstract: result.abstract || prev.abstract
+        }));
+        
+        toast.success('Title and abstract extracted successfully!', { 
+          id: 'extract',
+          icon: '✨',
+          duration: 3000 
+        });
+      }
+    } catch (err) {
+      console.error('PDF extraction error:', err);
+      toast.error('Could not extract metadata. Please fill in manually.', { 
+        id: 'extract',
+        duration: 3000 
+      });
+    } finally {
+      setExtracting(false);
     }
   };
 
@@ -419,6 +455,28 @@ const SubmitResearch = () => {
                     </div>
                   </div>
                 )}
+                
+                {/* Extraction Status */}
+                {extracting && (
+                  <div className="mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200">
+                    <Loader2 size={18} className="text-indigo-600 animate-spin" />
+                    <div>
+                      <p className="text-sm font-bold text-indigo-700">Extracting title and abstract...</p>
+                      <p className="text-xs text-indigo-600">AI is analyzing your PDF to auto-fill the form</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Extraction Success Indicator */}
+                {!extracting && uploadProgress === 100 && formData.title && (
+                  <div className="mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200">
+                    <Sparkles size={18} className="text-green-600" />
+                    <div>
+                      <p className="text-sm font-bold text-green-700">Title and abstract extracted!</p>
+                      <p className="text-xs text-green-600">Review and edit the extracted content below</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {resubmitData && !file && (
@@ -435,6 +493,12 @@ const SubmitResearch = () => {
           <div className="space-y-3">
             <label htmlFor="title" className="block text-lg font-bold text-slate-900">
               Research Title <span className="text-red-500">*</span>
+              {extracting && (
+                <span className="ml-2 inline-flex items-center gap-1 text-sm font-medium text-indigo-600">
+                  <Loader2 size={14} className="animate-spin" />
+                  Extracting...
+                </span>
+              )}
             </label>
             <div className="relative">
               <input
@@ -443,12 +507,17 @@ const SubmitResearch = () => {
                 name="title"
                 value={formData.title}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
+                disabled={extracting}
+                className={`w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 ${extracting ? 'opacity-60 cursor-not-allowed' : ''}`}
                 placeholder="Enter your research title"
                 required
               />
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                <BookOpen size={20} className="text-slate-400" />
+                {extracting ? (
+                  <Loader2 size={20} className="text-indigo-500 animate-spin" />
+                ) : (
+                  <BookOpen size={20} className="text-slate-400" />
+                )}
               </div>
             </div>
             <p className="text-sm text-slate-500">Make it descriptive and specific to your research</p>
@@ -458,14 +527,21 @@ const SubmitResearch = () => {
           <div className="space-y-3">
             <label htmlFor="abstract" className="block text-lg font-bold text-slate-900">
               Abstract <span className="text-red-500">*</span>
+              {extracting && (
+                <span className="ml-2 inline-flex items-center gap-1 text-sm font-medium text-indigo-600">
+                  <Loader2 size={14} className="animate-spin" />
+                  Extracting...
+                </span>
+              )}
             </label>
             <textarea
               id="abstract"
               name="abstract"
               value={formData.abstract}
               onChange={handleChange}
+              disabled={extracting}
               rows={6}
-              className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 resize-none"
+              className={`w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 resize-none ${extracting ? 'opacity-60 cursor-not-allowed' : ''}`}
               placeholder="Provide a comprehensive summary of your research (150-250 words recommended)"
               required
             />
@@ -473,6 +549,28 @@ const SubmitResearch = () => {
               <p className="text-sm text-slate-500">Word count: {formData.abstract.split(/\s+/).filter(Boolean).length}</p>
               <p className="text-sm text-slate-500">Recommended: 150-250 words</p>
             </div>
+          </div>
+
+          {/* Keywords */}
+          <div className="space-y-3">
+            <label htmlFor="keywords" className="block text-lg font-bold text-slate-900">
+              Keywords
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                id="keywords"
+                name="keywords"
+                value={formData.keywords}
+                onChange={handleChange}
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
+                placeholder="e.g., machine learning, artificial intelligence, data analysis"
+              />
+              <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+                <Tag size={20} className="text-slate-400" />
+              </div>
+            </div>
+            <p className="text-sm text-slate-500">Separate keywords with commas • Improves discoverability</p>
           </div>
 
           {/* Category */}
@@ -561,28 +659,6 @@ const SubmitResearch = () => {
               </div>
             </div>
             <p className="text-sm text-slate-500">Specify your academic department if applicable</p>
-          </div>
-
-          {/* Keywords */}
-          <div className="space-y-3">
-            <label htmlFor="keywords" className="block text-lg font-bold text-slate-900">
-              Keywords
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                id="keywords"
-                name="keywords"
-                value={formData.keywords}
-                onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
-                placeholder="e.g., machine learning, artificial intelligence, data analysis"
-              />
-              <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                <Tag size={20} className="text-slate-400" />
-              </div>
-            </div>
-            <p className="text-sm text-slate-500">Separate keywords with commas • Improves discoverability</p>
           </div>
 
           {/* Co-Authors - NEW: Search and select students */}
