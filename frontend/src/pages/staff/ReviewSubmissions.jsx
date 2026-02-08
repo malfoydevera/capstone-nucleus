@@ -177,11 +177,11 @@ const ReviewSubmissions = () => {
         priority: 'high'
       },
       pending_faculty: {
-        color: 'from-purple-100 to-pink-50 border-purple-200',
-        text: 'text-purple-800',
+        color: 'from-[#1C4D8D]/10 to-[#2563eb]/10 border-[#1C4D8D]/20',
+        text: 'text-[#1C4D8D]',
         icon: Clock,
         label: 'With Faculty',
-        badge: 'bg-gradient-to-r from-purple-500 to-pink-500',
+        badge: 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]',
         priority: 'medium'
       },
       pending_editor: {
@@ -193,11 +193,11 @@ const ReviewSubmissions = () => {
         priority: 'high'
       },
       pending_admin: {
-        color: 'from-indigo-100 to-purple-50 border-indigo-200',
-        text: 'text-indigo-800',
+        color: 'from-[#1C4D8D]/10 to-[#2563eb]/10 border-[#1C4D8D]/20',
+        text: 'text-[#1C4D8D]',
         icon: AlertCircle,
         label: 'With Admin',
-        badge: 'bg-gradient-to-r from-indigo-500 to-purple-500',
+        badge: 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]',
         priority: 'medium'
       },
       under_review: {
@@ -250,8 +250,8 @@ const ReviewSubmissions = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
         </div>
         <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading review submissions...</p>
       </div>
@@ -316,7 +316,7 @@ const ReviewSubmissions = () => {
                   placeholder="Search papers, authors, or keywords..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+                  className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
                 />
               </div>
             </div>
@@ -350,7 +350,7 @@ const ReviewSubmissions = () => {
                     className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center gap-2 ${
                       isActive
                         ? `bg-gradient-to-r ${option.color} text-white shadow-lg`
-                        : 'bg-white text-slate-700 border border-slate-300 hover:border-indigo-300'
+                        : 'bg-white text-slate-700 border border-slate-300 hover:border-[#1C4D8D]/30'
                     }`}
                   >
                     {option.label}
@@ -370,8 +370,8 @@ const ReviewSubmissions = () => {
       {/* Papers List */}
       {filteredPapers.length === 0 ? (
         <div className="bg-gradient-to-br from-white to-slate-50 rounded-3xl shadow-xl border border-slate-200 p-16 text-center">
-          <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center mx-auto mb-8">
-            <FileText size={40} className="text-indigo-500" />
+          <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center mx-auto mb-8">
+            <FileText size={40} className="text-[#1C4D8D]" />
           </div>
           <h3 className="text-2xl font-bold text-slate-900 mb-4">No submissions found</h3>
           <p className="text-lg text-slate-600 mb-8 max-w-md mx-auto">
@@ -388,7 +388,7 @@ const ReviewSubmissions = () => {
                 setSearchTerm('');
                 setStatusFilter('needs_review');
               }}
-              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-500 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              className="px-8 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163d6e] hover:to-[#1d4ed8] transition-all duration-500 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
             >
               Show All Papers
             </button>
@@ -400,7 +400,7 @@ const ReviewSubmissions = () => {
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-bold text-slate-900">Research Papers</h2>
-              <div className="px-3 py-1 rounded-full bg-gradient-to-r from-indigo-100 to-blue-100 text-indigo-700 text-sm font-bold">
+              <div className="px-3 py-1 rounded-full bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] text-sm font-bold">
                 {filteredPapers.length} found
               </div>
             </div>
@@ -418,7 +418,7 @@ const ReviewSubmissions = () => {
               <div
                 key={paper.id}
                 onClick={() => navigate(`/staff/review/${paper.id}`)}
-                className="group bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 hover:shadow-2xl hover:border-indigo-200 transition-all duration-500 cursor-pointer overflow-hidden"
+                className="group bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 hover:shadow-2xl hover:border-[#1C4D8D]/20 transition-all duration-500 cursor-pointer overflow-hidden"
               >
                 {/* Priority Indicator */}
                 {statusConfig.priority === 'high' && (
@@ -438,7 +438,7 @@ const ReviewSubmissions = () => {
                         </div>
                         <div className="flex-1">
                           <div className="flex items-start justify-between mb-2">
-                            <h3 className="text-xl font-bold text-slate-900 group-hover:text-indigo-700 transition-colors duration-300 line-clamp-2">
+                            <h3 className="text-xl font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors duration-300 line-clamp-2">
                               {paper.title}
                             </h3>
                             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold ${statusConfig.color} ${statusConfig.text} border ml-4`}>
@@ -496,7 +496,7 @@ const ReviewSubmissions = () => {
                           e.stopPropagation();
                           navigate(`/staff/review/${paper.id}`);
                         }}
-                        className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-bold text-sm shadow-lg hover:shadow-xl flex items-center justify-center gap-2 group"
+                        className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl hover:from-[#163d6e] hover:to-[#1d4ed8] transition-all duration-300 font-bold text-sm shadow-lg hover:shadow-xl flex items-center justify-center gap-2 group"
                       >
                         <FileCheck size={16} />
                         Review Paper
@@ -507,7 +507,7 @@ const ReviewSubmissions = () => {
                           e.stopPropagation();
                           window.open(paper.file_url, '_blank');
                         }}
-                        className="px-6 py-3 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl hover:border-indigo-300 transition-all duration-300 font-medium text-sm flex items-center justify-center gap-2"
+                        className="px-6 py-3 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl hover:border-[#1C4D8D]/30 transition-all duration-300 font-medium text-sm flex items-center justify-center gap-2"
                       >
                         <ExternalLink size={16} />
                         Preview PDF
@@ -532,27 +532,27 @@ const ReviewSubmissions = () => {
       )}
 
       {/* Footer Stats */}
-      <div className="mt-12 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl border border-indigo-200 p-8">
+      <div className="mt-12 bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border border-[#1C4D8D]/20 p-8">
         <div className="flex items-start gap-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg flex-shrink-0">
             <BarChart3 size={28} className="text-white" />
           </div>
           <div className="flex-1">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Review Statistics</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-indigo-100">
-                <div className="text-2xl font-black text-indigo-700 mb-1">{stats.approved}</div>
+              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/10">
+                <div className="text-2xl font-black text-[#1C4D8D] mb-1">{stats.approved}</div>
                 <div className="text-sm text-slate-700 font-medium">Approved</div>
               </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-indigo-100">
+              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/10">
                 <div className="text-2xl font-black text-orange-700 mb-1">{stats.revisionRequired}</div>
                 <div className="text-sm text-slate-700 font-medium">Revisions</div>
               </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-indigo-100">
+              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/10">
                 <div className="text-2xl font-black text-emerald-700 mb-1">94%</div>
                 <div className="text-sm text-slate-700 font-medium">Completion</div>
               </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-indigo-100">
+              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/10">
                 <div className="text-2xl font-black text-blue-700 mb-1">4.9★</div>
                 <div className="text-sm text-slate-700 font-medium">Quality</div>
               </div>

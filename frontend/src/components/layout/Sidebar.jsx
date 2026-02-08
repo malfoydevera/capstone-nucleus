@@ -120,20 +120,20 @@ const Sidebar = () => {
         name: 'Administrator'
       },
       faculty: {
-        color: 'from-purple-500 to-indigo-500',
-        badgeColor: 'bg-purple-100 text-purple-700 border-purple-200',
+        color: 'from-[#1C4D8D] to-[#2563eb]',
+        badgeColor: 'bg-[#1C4D8D]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
         icon: GraduationCap,
         name: 'Faculty Member'
       },
       staff: {
-        color: 'from-violet-500 to-purple-500',
-        badgeColor: 'bg-violet-100 text-violet-700 border-violet-200',
+        color: 'from-[#2563eb] to-[#1C4D8D]',
+        badgeColor: 'bg-[#2563eb]/10 text-[#2563eb] border-[#2563eb]/20',
         icon: Award,
         name: 'Editor Staff'
       },
       student: {
-        color: 'from-blue-500 to-cyan-500',
-        badgeColor: 'bg-blue-100 text-blue-700 border-blue-200',
+        color: 'from-[#1C4D8D] to-[#2563eb]',
+        badgeColor: 'bg-[#1C4D8D]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
         icon: BookOpen,
         name: 'Student Scholar'
       }
@@ -297,7 +297,7 @@ const Sidebar = () => {
       <div className={`h-20 flex items-center ${isCollapsed ? 'justify-center px-0' : 'justify-between px-6'} border-b border-slate-700/50 relative`}>
         {!isCollapsed && (
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
               <Library size={24} className="text-white" />
             </div>
             <div>
@@ -308,14 +308,14 @@ const Sidebar = () => {
         )}
         
         {isCollapsed && (
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-lg">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
             <Library size={24} className="text-white" />
           </div>
         )}
         
         <button 
           onClick={() => setIsCollapsed(!isCollapsed)} 
-          className="absolute -right-3 top-8 w-6 h-6 bg-gradient-to-br from-indigo-500 to-blue-500 rounded-full flex items-center justify-center text-white shadow-lg hover:from-indigo-600 hover:to-blue-600 transition-all duration-300 z-10 border-2 border-slate-900"
+          className="absolute -right-3 top-8 w-6 h-6 bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] rounded-full flex items-center justify-center text-white shadow-lg hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-300 z-10 border-2 border-slate-900"
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <ChevronLeft size={14} className={isCollapsed ? '' : 'rotate-180'} />
@@ -383,11 +383,11 @@ const Sidebar = () => {
               to={item.path} 
               className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative ${
                 isActive 
-                  ? 'bg-gradient-to-r from-indigo-500/20 to-blue-500/20 border border-indigo-500/30 text-white shadow-lg' 
+                  ? 'bg-gradient-to-r from-[#1C4D8D]/20 to-[#2563eb]/20 border border-[#1C4D8D]/30 text-white shadow-lg' 
                   : 'text-slate-300 hover:bg-slate-800/50 hover:text-white hover:shadow-md'
               }`}
             >
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isActive ? 'bg-gradient-to-br from-indigo-500 to-blue-500' : 'bg-slate-800/50 group-hover:bg-slate-700/50'}`}>
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isActive ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb]' : 'bg-slate-800/50 group-hover:bg-slate-700/50'}`}>
                 <Icon size={20} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'} />
               </div>
               
@@ -443,7 +443,7 @@ const Sidebar = () => {
                 <>
                   <button 
                     onClick={() => navigate('/student/submit')}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg transition-all duration-200"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] hover:from-[#163a6b] hover:to-[#1C4D8D] text-white rounded-lg transition-all duration-200"
                   >
                     <PlusCircle size={16} />
                     Submit Paper

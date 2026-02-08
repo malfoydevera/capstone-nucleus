@@ -182,8 +182,8 @@ const MyResearch = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
         </div>
         <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading your research portfolio...</p>
       </div>
@@ -205,7 +205,7 @@ const MyResearch = () => {
           </div>
           <button
             onClick={() => navigate('/student/submit')}
-            className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-indigo-500/25 transform hover:-translate-y-0.5 flex items-center gap-3 group"
+            className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-[#1C4D8D]/25 transform hover:-translate-y-0.5 flex items-center gap-3 group"
           >
             <Plus size={20} />
             Submit New Research
@@ -232,7 +232,7 @@ const MyResearch = () => {
             <div className="text-sm text-slate-600 font-medium">Needs Action</div>
           </div>
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-indigo-600 mb-1">{statusCounts.under_review || 0}</div>
+            <div className="text-2xl font-black text-[#1C4D8D] mb-1">{statusCounts.under_review || 0}</div>
             <div className="text-sm text-slate-600 font-medium">In Review</div>
           </div>
         </div>
@@ -240,11 +240,11 @@ const MyResearch = () => {
         {/* Filters */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-3">
-            <Filter size={20} className="text-indigo-600" />
+            <Filter size={20} className="text-[#1C4D8D]" />
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setActiveFilter('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${activeFilter === 'all' ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg' : 'bg-white text-slate-700 border border-slate-300 hover:border-indigo-300'}`}
+                className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${activeFilter === 'all' ? 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white shadow-lg' : 'bg-white text-slate-700 border border-slate-300 hover:border-[#1C4D8D]'}`}
               >
                 All Papers ({papers.length})
               </button>
@@ -292,8 +292,8 @@ const MyResearch = () => {
       {/* Papers List */}
       {filteredPapers.length === 0 ? (
         <div className="bg-gradient-to-br from-white to-slate-50 rounded-3xl shadow-xl border border-slate-200 p-16 text-center">
-          <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center mx-auto mb-8">
-            <FileText size={40} className="text-indigo-500" />
+          <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center mx-auto mb-8">
+            <FileText size={40} className="text-[#1C4D8D]" />
           </div>
           <h3 className="text-2xl font-bold text-slate-900 mb-4">No research papers found</h3>
           <p className="text-lg text-slate-600 mb-8 max-w-md mx-auto">
@@ -303,7 +303,7 @@ const MyResearch = () => {
           </p>
           <button
             onClick={() => navigate('/student/submit')}
-            className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-500 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-3 mx-auto"
+            className="px-8 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-500 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-3 mx-auto"
           >
             <Plus size={20} />
             Submit Your First Paper
@@ -331,7 +331,7 @@ const MyResearch = () => {
                           <FileText size={24} className="text-slate-600" />
                         </div>
                         <div className="flex-1">
-                          <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-indigo-700 transition-colors duration-300">
+                          <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-[#1C4D8D] transition-colors duration-300">
                             {paper.title}
                           </h3>
                           <div className="flex items-center gap-4 mb-3">
@@ -392,7 +392,7 @@ const MyResearch = () => {
                         href={paper.file_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 font-medium hover:from-slate-200 hover:to-white transition-all duration-300 flex items-center gap-2 group-hover:border-indigo-300"
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 font-medium hover:from-slate-200 hover:to-white transition-all duration-300 flex items-center gap-2 group-hover:border-[#1C4D8D]"
                       >
                         <Eye size={16} />
                         Preview
@@ -404,7 +404,7 @@ const MyResearch = () => {
                             console.log('Resubmit clicked for paper:', paper.id, 'Status:', paper.status);
                             navigate('/student/submit', { state: { resubmit: paper } });
                           }}
-                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-medium hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 flex items-center gap-2 shadow-lg hover:shadow-xl"
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white font-medium hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-300 flex items-center gap-2 shadow-lg hover:shadow-xl"
                         >
                           <Edit3 size={16} />
                           {paper.status === 'revision_required' ? 'Edit & Resubmit' : 'Try Again'}
@@ -420,14 +420,14 @@ const MyResearch = () => {
                   {/* Progress Tracker */}
                   <div className="mb-6 px-4 py-5 bg-gradient-to-r from-slate-50 to-white rounded-xl border border-slate-200">
                     <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-                      <BarChart3 size={16} className="text-indigo-600" />
+                      <BarChart3 size={16} className="text-[#1C4D8D]" />
                       Submission Progress
                     </h4>
                     <div className="relative">
                       {/* Progress Line */}
                       <div className="absolute top-5 left-0 w-full h-1 bg-slate-200 rounded-full"></div>
                       <div 
-                        className="absolute top-5 left-0 h-1 bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full transition-all duration-500"
+                        className="absolute top-5 left-0 h-1 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] rounded-full transition-all duration-500"
                         style={{ 
                           width: `${
                             paper.status === 'pending_faculty' ? '25%' :
@@ -447,7 +447,7 @@ const MyResearch = () => {
                         <div className="flex flex-col items-center" style={{ width: '25%' }}>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
                             ['pending', 'pending_faculty', 'pending_editor', 'pending_admin', 'under_review', 'approved', 'revision_required', 'rejected'].includes(paper.status)
-                              ? 'bg-gradient-to-br from-indigo-500 to-blue-500 border-indigo-500 shadow-lg'
+                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg'
                               : 'bg-white border-slate-300'
                           }`}>
                             <CheckCircle size={20} className={
@@ -463,9 +463,9 @@ const MyResearch = () => {
                         <div className="flex flex-col items-center" style={{ width: '25%' }}>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
                             ['pending', 'pending_editor', 'pending_admin', 'under_review', 'approved'].includes(paper.status)
-                              ? 'bg-gradient-to-br from-indigo-500 to-blue-500 border-indigo-500 shadow-lg'
+                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg'
                               : paper.status === 'pending_faculty'
-                              ? 'bg-gradient-to-br from-purple-400 to-pink-400 border-purple-500 shadow-lg animate-pulse'
+                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg animate-pulse'
                               : paper.status === 'revision_required'
                               ? 'bg-gradient-to-br from-orange-400 to-amber-400 border-orange-500 shadow-lg'
                               : paper.status === 'rejected'
@@ -491,7 +491,7 @@ const MyResearch = () => {
                         <div className="flex flex-col items-center" style={{ width: '25%' }}>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
                             ['pending_editor', 'pending_admin', 'under_review', 'approved'].includes(paper.status)
-                              ? 'bg-gradient-to-br from-indigo-500 to-blue-500 border-indigo-500 shadow-lg'
+                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg'
                               : paper.status === 'pending'
                               ? 'bg-gradient-to-br from-yellow-400 to-amber-400 border-yellow-500 shadow-lg animate-pulse'
                               : 'bg-white border-slate-300'
@@ -511,9 +511,9 @@ const MyResearch = () => {
                         <div className="flex flex-col items-center" style={{ width: '25%' }}>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
                             paper.status === 'approved'
-                              ? 'bg-gradient-to-br from-indigo-500 to-blue-500 border-indigo-500 shadow-lg'
+                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg'
                               : ['pending_editor', 'pending_admin', 'under_review'].includes(paper.status)
-                              ? 'bg-gradient-to-br from-blue-400 to-cyan-400 border-blue-500 shadow-lg animate-pulse'
+                              ? 'bg-gradient-to-br from-[#2563eb] to-[#1C4D8D] border-[#2563eb] shadow-lg animate-pulse'
                               : 'bg-white border-slate-300'
                           }`}>
                             {['pending_editor', 'pending_admin', 'under_review'].includes(paper.status) ? (
@@ -596,28 +596,28 @@ const MyResearch = () => {
       )}
 
       {/* Statistics Card */}
-      <div className="mt-12 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl border border-indigo-200 p-8">
+      <div className="mt-12 bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border border-[#1C4D8D]/20 p-8">
         <div className="flex items-start gap-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg flex-shrink-0">
             <TrendingUp size={28} className="text-white" />
           </div>
           <div className="flex-1">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Research Insights</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-indigo-100">
-                <div className="text-2xl font-black text-indigo-700 mb-1">{statusCounts.pending || 0}</div>
+              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
+                <div className="text-2xl font-black text-[#1C4D8D] mb-1">{statusCounts.pending || 0}</div>
                 <div className="text-sm text-slate-700 font-medium">Awaiting Review</div>
               </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-indigo-100">
+              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
                 <div className="text-2xl font-black text-green-700 mb-1">{statusCounts.approved || 0}</div>
                 <div className="text-sm text-slate-700 font-medium">Published Works</div>
               </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-indigo-100">
+              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
                 <div className="text-2xl font-black text-orange-700 mb-1">{statusCounts.revision_required || 0}</div>
                 <div className="text-sm text-slate-700 font-medium">Revisions Needed</div>
               </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-indigo-100">
-                <div className="text-2xl font-black text-blue-700 mb-1">{statusCounts.under_review || 0}</div>
+              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
+                <div className="text-2xl font-black text-[#2563eb] mb-1">{statusCounts.under_review || 0}</div>
                 <div className="text-sm text-slate-700 font-medium">In Active Review</div>
               </div>
             </div>

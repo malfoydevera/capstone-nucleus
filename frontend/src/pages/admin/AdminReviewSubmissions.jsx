@@ -192,8 +192,8 @@ const AdminReviewSubmissions = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
         </div>
         <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading research submissions...</p>
       </div>
@@ -207,12 +207,12 @@ const AdminReviewSubmissions = () => {
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center shadow-lg">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
                 <ShieldCheck size={28} className="text-white" />
               </div>
               <div>
                 <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                  Final <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">Approval</span>
+                  Final <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Approval</span>
                 </h1>
                 <p className="text-slate-600 font-medium">
                   Review and publish research submissions requiring final administrative approval
@@ -224,7 +224,7 @@ const AdminReviewSubmissions = () => {
           <div className="flex items-center gap-4">
             <button
               onClick={fetchPapers}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors"
             >
               <RefreshCw size={16} />
               Refresh
@@ -251,7 +251,7 @@ const AdminReviewSubmissions = () => {
             label: 'Awaiting Admin Approval', 
             value: stats.pendingAdmin, 
             icon: Eye, 
-            color: 'from-purple-500 to-indigo-500',
+            color: 'from-[#1C4D8D] to-[#2563eb]',
             change: null 
           },
           { 
@@ -305,8 +305,8 @@ const AdminReviewSubmissions = () => {
       <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 mb-8">
         <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-              <Filter size={20} className="text-indigo-600" />
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+              <Filter size={20} className="text-[#1C4D8D]" />
             </div>
             <div>
               <h3 className="text-xl font-bold text-slate-900">Filter Submissions</h3>
@@ -318,8 +318,8 @@ const AdminReviewSubmissions = () => {
         <div className="p-6">
           <div className="flex flex-wrap gap-3">
             {[
-              { key: 'pending_admin', label: 'Awaiting Admin Approval', count: stats.pendingAdmin, color: 'purple' },
-              { key: 'needs_action', label: 'Needs Action', count: stats.pending + stats.underReview + stats.pendingAdmin, color: 'indigo' },
+              { key: 'pending_admin', label: 'Awaiting Admin Approval', count: stats.pendingAdmin, color: '[#1C4D8D]' },
+              { key: 'needs_action', label: 'Needs Action', count: stats.pending + stats.underReview + stats.pendingAdmin, color: '[#1C4D8D]' },
               { key: 'under_review', label: 'Under Review', count: stats.underReview, color: 'blue' },
               { key: 'pending', label: 'Pending Staff Review', count: stats.pending, color: 'amber' },
               { key: 'approved', label: 'Published', count: stats.approved, color: 'emerald' },
@@ -332,7 +332,7 @@ const AdminReviewSubmissions = () => {
                 className={`group px-5 py-3 rounded-xl font-medium transition-all duration-300 ${
                   statusFilter === filter.key
                     ? `bg-gradient-to-r from-${filter.color}-600 to-${filter.color === 'emerald' ? 'green' : filter.color === 'amber' ? 'orange' : filter.color}-600 text-white shadow-lg`
-                    : 'bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300'
+                    : 'bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -373,7 +373,7 @@ const AdminReviewSubmissions = () => {
             {statusFilter !== 'all' && (
               <button
                 onClick={() => setStatusFilter('all')}
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-300"
+                className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#1C4D8D]/90 hover:to-[#2563eb]/90 transition-all duration-300"
               >
                 View All Papers
               </button>
@@ -384,8 +384,8 @@ const AdminReviewSubmissions = () => {
         <div className="space-y-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-                <FileCheck size={20} className="text-indigo-600" />
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                <FileCheck size={20} className="text-[#1C4D8D]" />
               </div>
               <div>
                 <h3 className="text-xl font-bold text-slate-900">Research Submissions</h3>
@@ -395,7 +395,7 @@ const AdminReviewSubmissions = () => {
               </div>
             </div>
             <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-              <Lightbulb size={16} className="text-indigo-600" />
+              <Lightbulb size={16} className="text-[#1C4D8D]" />
               <span className="text-sm font-medium text-slate-700">
                 Click on any paper to review and make final decisions
               </span>
@@ -410,18 +410,18 @@ const AdminReviewSubmissions = () => {
               <div
                 key={paper.id}
                 onClick={() => navigate(`/admin/review/${paper.id}`)}
-                className="group bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 hover:shadow-xl hover:border-indigo-300 transition-all duration-300 cursor-pointer hover:-translate-y-1"
+                className="group bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 hover:shadow-xl hover:border-[#1C4D8D]/30 transition-all duration-300 cursor-pointer hover:-translate-y-1"
               >
                 <div className="p-8">
                   <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-6">
                     <div className="flex-1">
                       <div className="flex items-start gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center flex-shrink-0 mt-1">
-                          <BookOpen size={24} className="text-indigo-600" />
+                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center flex-shrink-0 mt-1">
+                          <BookOpen size={24} className="text-[#1C4D8D]" />
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
-                            <h3 className="text-2xl font-bold text-slate-900 group-hover:text-indigo-700 transition-colors">
+                            <h3 className="text-2xl font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors">
                               {paper.title}
                             </h3>
                             <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold ${statusConfig.bgColor} ${statusConfig.textColor} border ${statusConfig.borderColor}`}>
@@ -486,14 +486,14 @@ const AdminReviewSubmissions = () => {
                   {paper.keywords && paper.keywords.length > 0 && (
                     <div className="mb-6">
                       <div className="flex items-center gap-2 mb-3">
-                        <Tag size={16} className="text-indigo-600" />
+                        <Tag size={16} className="text-[#1C4D8D]" />
                         <span className="text-sm font-semibold text-slate-900">Keywords</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {paper.keywords.slice(0, 6).map((keyword, index) => (
                           <span
                             key={index}
-                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-100 to-blue-100 text-indigo-700 text-sm font-medium border border-indigo-200"
+                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] text-sm font-medium border border-[#1C4D8D]/20"
                           >
                             {keyword}
                           </span>
@@ -514,7 +514,7 @@ const AdminReviewSubmissions = () => {
                         e.stopPropagation();
                         navigate(`/admin/review/${paper.id}`);
                       }}
-                      className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 font-bold group/btn transition-colors"
+                      className="inline-flex items-center gap-2 text-[#1C4D8D] hover:text-[#1C4D8D]/80 font-bold group/btn transition-colors"
                     >
                       {paper.status === 'under_review' 
                         ? 'Final Approval Required'

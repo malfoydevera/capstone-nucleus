@@ -72,7 +72,7 @@ const FacultyDashboard = () => {
     const badges = {
       pending_faculty: { label: 'Pending Review', class: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
       pending_editor: { label: 'With Editor', class: 'bg-blue-100 text-blue-800 border-blue-200' },
-      pending_admin: { label: 'With Admin', class: 'bg-purple-100 text-purple-800 border-purple-200' },
+      pending_admin: { label: 'With Admin', class: 'bg-[#1C4D8D]/10 text-[#1C4D8D] border-[#1C4D8D]/20' },
       approved: { label: 'Approved', class: 'bg-green-100 text-green-800 border-green-200' },
       rejected: { label: 'Rejected', class: 'bg-red-100 text-red-800 border-red-200' },
       revision_required: { label: 'Revision Required', class: 'bg-orange-100 text-orange-800 border-orange-200' }
@@ -84,8 +84,8 @@ const FacultyDashboard = () => {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
         </div>
       </div>
     );
@@ -96,7 +96,7 @@ const FacultyDashboard = () => {
       {/* Welcome Header */}
       <div className="mb-10">
         <div className="flex items-start gap-4 mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
             <GraduationCap size={28} className="text-white" />
           </div>
           <div>
@@ -140,26 +140,26 @@ const FacultyDashboard = () => {
           <p className="text-sm text-green-600">Moved forward</p>
         </div>
 
-        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl border-2 border-indigo-200 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
+        <div className="bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border-2 border-[#1C4D8D]/20 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
           <div className="flex items-start justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-md">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-md">
               <FileText size={24} className="text-white" />
             </div>
           </div>
-          <p className="text-indigo-700 font-semibold mb-1">Total Assigned</p>
-          <p className="text-4xl font-black text-indigo-900 mb-2">{stats.totalAssigned}</p>
-          <p className="text-sm text-indigo-600">All-time papers</p>
+          <p className="text-[#1C4D8D] font-semibold mb-1">Total Assigned</p>
+          <p className="text-4xl font-black text-slate-900 mb-2">{stats.totalAssigned}</p>
+          <p className="text-sm text-[#1C4D8D]/80">All-time papers</p>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border-2 border-purple-200 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
+        <div className="bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border-2 border-[#1C4D8D]/20 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
           <div className="flex items-start justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-md">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-md">
               <TrendingUp size={24} className="text-white" />
             </div>
           </div>
-          <p className="text-purple-700 font-semibold mb-1">This Month</p>
-          <p className="text-4xl font-black text-purple-900 mb-2">{stats.thisMonth}</p>
-          <p className="text-sm text-purple-600">New submissions</p>
+          <p className="text-[#1C4D8D] font-semibold mb-1">This Month</p>
+          <p className="text-4xl font-black text-slate-900 mb-2">{stats.thisMonth}</p>
+          <p className="text-sm text-[#1C4D8D]/80">New submissions</p>
         </div>
       </div>
 
@@ -167,7 +167,7 @@ const FacultyDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
         <button
           onClick={() => navigate('/faculty/review')}
-          className="bg-gradient-to-br from-indigo-600 to-blue-600 text-white rounded-2xl p-8 shadow-2xl hover:shadow-indigo-500/25 transition-all duration-500 transform hover:scale-105 text-left group"
+          className="bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] text-white rounded-2xl p-8 shadow-2xl hover:shadow-[#1C4D8D]/25 transition-all duration-500 transform hover:scale-105 text-left group"
         >
           <div className="flex items-start justify-between mb-4">
             <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
@@ -176,7 +176,7 @@ const FacultyDashboard = () => {
             <ChevronRight size={28} className="text-white/80 group-hover:translate-x-1 transition-transform duration-300" />
           </div>
           <h3 className="text-2xl font-bold mb-2">Review Submissions</h3>
-          <p className="text-indigo-100 text-lg">
+          <p className="text-white/80 text-lg">
             {stats.pendingReview > 0 
               ? `${stats.pendingReview} paper${stats.pendingReview !== 1 ? 's' : ''} awaiting your review`
               : 'No papers pending review'}
@@ -212,14 +212,14 @@ const FacultyDashboard = () => {
       <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-              <FileText size={20} className="text-indigo-600" />
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+              <FileText size={20} className="text-[#1C4D8D]" />
             </div>
             <h2 className="text-2xl font-bold text-slate-900">Recent Assignments</h2>
           </div>
           <button
             onClick={() => navigate('/faculty/review')}
-            className="text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-2 transition-colors duration-300"
+            className="text-[#1C4D8D] hover:text-[#163a6b] font-semibold flex items-center gap-2 transition-colors duration-300"
           >
             View All
             <ChevronRight size={18} />
@@ -242,11 +242,11 @@ const FacultyDashboard = () => {
                 <div
                   key={paper.id}
                   onClick={() => navigate(`/faculty/review/${paper.id}`)}
-                  className="p-5 rounded-xl border-2 border-slate-200 bg-white hover:bg-slate-50 transition-all duration-300 cursor-pointer group hover:border-indigo-300"
+                  className="p-5 rounded-xl border-2 border-slate-200 bg-white hover:bg-slate-50 transition-all duration-300 cursor-pointer group hover:border-[#1C4D8D]/30"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors duration-300 mb-2 line-clamp-1">
+                      <h3 className="text-lg font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors duration-300 mb-2 line-clamp-1">
                         {paper.title}
                       </h3>
                       <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
@@ -262,7 +262,7 @@ const FacultyDashboard = () => {
                       <span className={`px-3 py-1 rounded-full border text-xs font-bold ${statusBadge.class}`}>
                         {statusBadge.label}
                       </span>
-                      <ChevronRight size={20} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all duration-300" />
+                      <ChevronRight size={20} className="text-slate-400 group-hover:text-[#1C4D8D] group-hover:translate-x-1 transition-all duration-300" />
                     </div>
                   </div>
                 </div>

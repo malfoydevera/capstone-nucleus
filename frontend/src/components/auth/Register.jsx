@@ -17,7 +17,7 @@ import {
   Briefcase,
   FileText
 } from 'lucide-react';
-import nuBuildingImg from '../../assets/nu-building.png';
+import nuBuildingImg from '../../assets/dasma.png.jpeg';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -101,7 +101,7 @@ const Register = () => {
     Math.min(Math.floor(formData.password.length / 2) * 20, 100) : 0;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 font-sans">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 font-sans overflow-y-auto scrollbar-hide">
       {/* Background Image with Overlay - Smooth fade in */}
       <div className="fixed inset-0 z-0 animate-fadeIn">
         <img 
@@ -109,14 +109,15 @@ const Register = () => {
           alt="NU Building Background" 
           className="w-full h-full object-cover transition-transform duration-10000 ease-linear"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/90 via-slate-900/80 to-slate-900/60" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#1C4D8D]/70 via-[#1C4D8D]/50 to-[#1C4D8D]/40" />
       </div>
 
       {/* Main Content */}
-      <div className="relative z-10 w-full max-w-6xl mx-auto px-4 py-12">
-        <div className="flex flex-col lg:flex-row items-center justify-center gap-12">
+      <div className="relative z-10 w-full min-h-screen flex items-center justify-center px-4 py-8 lg:py-12">
+        <div className="w-full max-w-6xl mx-auto">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-center gap-8 lg:gap-12">
           {/* Left Side - Branding and Info */}
-          <div className="w-full lg:w-1/2 text-white space-y-8 animate-slideInLeft">
+          <div className="w-full lg:w-5/12 text-white space-y-6 lg:space-y-8 animate-slideInLeft hidden lg:block">
             <Link to="/" className="flex items-center gap-3 mb-8 group hover:opacity-90 transition-all duration-300">
               <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-indigo-500/25 transition-all duration-300 group-hover:scale-105">
                 <BookOpen size={24} className="text-white" />
@@ -133,7 +134,7 @@ const Register = () => {
                 Join Academic Community
               </div>
               
-              <h1 className="text-5xl md:text-6xl font-black leading-tight animate-fadeIn">
+              <h1 className="text-4xl lg:text-5xl font-black leading-tight animate-fadeIn">
                 Begin Your <br />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-blue-300 to-indigo-300">
                   Research Journey
@@ -179,33 +180,44 @@ const Register = () => {
           </div>
 
           {/* Right Side - Registration Form */}
-          <div className="w-full lg:w-1/2 animate-slideInRight">
-            <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 md:p-12 shadow-2xl border border-white/20 transition-all duration-500 hover:shadow-3xl">
-              <div className="text-center mb-10">
-                <div className="w-16 h-16 bg-gradient-to-br from-indigo-600 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg transition-all duration-300 hover:scale-105">
-                  <UserPlus size={28} className="text-white" />
+          <div className="w-full lg:w-7/12 xl:w-1/2 animate-slideInRight">
+            {/* Mobile Header - Only visible on mobile */}
+            <div className="lg:hidden text-white text-center mb-6">
+              <Link to="/" className="inline-flex items-center gap-3 mb-4 group">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+                  <BookOpen size={20} className="text-white" />
                 </div>
-                <h2 className="text-3xl font-bold text-slate-900 mb-2">
+                <span className="font-bold text-xl tracking-tight">ResearchHub</span>
+              </Link>
+              <h1 className="text-2xl font-bold">Create Your Account</h1>
+            </div>
+            
+            <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-6 md:p-8 lg:p-10 shadow-2xl border border-white/20 transition-all duration-500 hover:shadow-3xl max-h-[85vh] lg:max-h-[90vh] overflow-y-auto scrollbar-hide">
+              <div className="text-center mb-6 lg:mb-10">
+                <div className="w-14 h-14 lg:w-16 lg:h-16 bg-gradient-to-br from-indigo-600 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 lg:mb-6 shadow-lg transition-all duration-300 hover:scale-105">
+                  <UserPlus size={24} className="text-white" />
+                </div>
+                <h2 className="text-2xl lg:text-3xl font-bold text-slate-900 mb-2">
                   Create Academic Account
                 </h2>
-                <p className="text-slate-600 font-medium">
+                <p className="text-slate-600 font-medium text-sm lg:text-base">
                   Join the ResearchHub community
                 </p>
               </div>
 
-              <form className="space-y-6" onSubmit={handleSubmit}>
+              <form className="space-y-4 lg:space-y-5" onSubmit={handleSubmit}>
                 {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-5 py-3.5 rounded-xl text-sm font-medium flex items-center gap-2 animate-shake">
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 animate-shake">
                     <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                     {error}
                   </div>
                 )}
 
                 {/* Full Name Field */}
-                <div className="space-y-2 transition-all duration-300">
+                <div className="space-y-1.5 transition-all duration-300">
                   <label htmlFor="fullName" className="block text-sm font-semibold text-slate-700">
-                    <div className="flex items-center gap-2 mb-1">
-                      <User size={16} className="text-indigo-600" />
+                    <div className="flex items-center gap-2">
+                      <User size={14} className="text-indigo-600" />
                       Full Name
                     </div>
                   </label>
@@ -216,16 +228,16 @@ const Register = () => {
                     required
                     value={formData.fullName}
                     onChange={handleChange}
-                    className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
                     placeholder="Enter your full name"
                   />
                 </div>
 
                 {/* Email Field */}
-                <div className="space-y-2 transition-all duration-300">
+                <div className="space-y-1.5 transition-all duration-300">
                   <label htmlFor="email" className="block text-sm font-semibold text-slate-700">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Mail size={16} className="text-indigo-600" />
+                    <div className="flex items-center gap-2">
+                      <Mail size={14} className="text-indigo-600" />
                       Institutional Email
                     </div>
                   </label>
@@ -236,19 +248,19 @@ const Register = () => {
                     required
                     value={formData.email}
                     onChange={handleChange}
-                    className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
                     placeholder="student@national-u.edu.ph"
                   />
-                  <p className="text-xs text-slate-500 mt-1 transition-all duration-300">
+                  <p className="text-xs text-slate-500 transition-all duration-300">
                     Use your institutional email address for verification
                   </p>
                 </div>
 
                 {/* Role Selection */}
-                <div className="space-y-2 transition-all duration-300">
+                <div className="space-y-1.5 transition-all duration-300">
                   <label htmlFor="role" className="block text-sm font-semibold text-slate-700">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Briefcase size={16} className="text-indigo-600" />
+                    <div className="flex items-center gap-2">
+                      <Briefcase size={14} className="text-indigo-600" />
                       Academic Role
                     </div>
                   </label>
@@ -258,7 +270,7 @@ const Register = () => {
                         key={option.value}
                         type="button"
                         onClick={() => handleChange({ target: { name: 'role', value: option.value } })}
-                        className={`p-3 rounded-lg border-2 transition-all duration-300 flex flex-col items-center gap-2 ${
+                        className={`p-2 lg:p-3 rounded-lg border-2 transition-all duration-300 flex flex-col items-center gap-1 lg:gap-2 ${
                           formData.role === option.value
                             ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
                             : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-25'
@@ -285,15 +297,15 @@ const Register = () => {
 
                 {/* CHANGE 3: Program Selection (Visible only for Students) */}
                 {formData.role === 'student' && (
-                  <div className="space-y-2 animate-fadeIn transition-all duration-300">
+                  <div className="space-y-1.5 animate-fadeIn transition-all duration-300">
                     <label className="block text-sm font-semibold text-slate-700">
-                      <div className="flex items-center gap-2 mb-1">
-                        <GraduationCap size={16} className="text-indigo-600" />
+                      <div className="flex items-center gap-2">
+                        <GraduationCap size={14} className="text-indigo-600" />
                         Program
                       </div>
                     </label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <label className={`relative flex items-center justify-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className={`relative flex items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all ${
                         formData.program === 'BSIT' 
                           ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' 
                           : 'border-slate-200 hover:border-indigo-200'
@@ -309,7 +321,7 @@ const Register = () => {
                         <span className="font-bold">BSIT</span>
                       </label>
                       
-                      <label className={`relative flex items-center justify-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      <label className={`relative flex items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all ${
                         formData.program === 'BSCS' 
                           ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' 
                           : 'border-slate-200 hover:border-indigo-200'
@@ -329,10 +341,10 @@ const Register = () => {
                 )}
 
                 {/* Password Field */}
-                <div className="space-y-3 transition-all duration-300">
+                <div className="space-y-1.5 transition-all duration-300">
                   <label htmlFor="password" className="block text-sm font-semibold text-slate-700">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Lock size={16} className="text-indigo-600" />
+                    <div className="flex items-center gap-2">
+                      <Lock size={14} className="text-indigo-600" />
                       Password
                     </div>
                   </label>
@@ -344,7 +356,7 @@ const Register = () => {
                       required
                       value={formData.password}
                       onChange={handleChange}
-                      className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300 pr-12"
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300 pr-12"
                       placeholder="Create a strong password"
                     />
                     <button
@@ -383,10 +395,10 @@ const Register = () => {
                 </div>
 
                 {/* Confirm Password Field */}
-                <div className="space-y-2 transition-all duration-300">
+                <div className="space-y-1.5 transition-all duration-300">
                   <label htmlFor="confirmPassword" className="block text-sm font-semibold text-slate-700">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Lock size={16} className="text-indigo-600" />
+                    <div className="flex items-center gap-2">
+                      <Lock size={14} className="text-indigo-600" />
                       Confirm Password
                     </div>
                   </label>
@@ -398,7 +410,7 @@ const Register = () => {
                       required
                       value={formData.confirmPassword}
                       onChange={handleChange}
-                      className={`w-full px-4 py-3.5 bg-white border rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm pr-12 ${
+                      className={`w-full px-4 py-3 bg-white border rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm pr-12 ${
                         formData.confirmPassword && formData.password !== formData.confirmPassword
                           ? 'border-red-300 hover:border-red-400'
                           : 'border-slate-200 hover:border-slate-300'
@@ -421,14 +433,14 @@ const Register = () => {
                 </div>
 
                 {/* Terms Agreement */}
-                <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl transition-all duration-300">
+                <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl transition-all duration-300">
                   <input
                     type="checkbox"
                     id="terms"
                     required
-                    className="mt-1 w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500 focus:ring-2 transition-all duration-300"
+                    className="mt-0.5 w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500 focus:ring-2 transition-all duration-300 flex-shrink-0"
                   />
-                  <label htmlFor="terms" className="text-sm text-slate-600">
+                  <label htmlFor="terms" className="text-xs lg:text-sm text-slate-600">
                     I agree to the <a href="#" className="text-indigo-600 hover:text-indigo-500 font-medium transition-colors">Terms of Service</a> and acknowledge that my academic work will be subject to institutional review and verification.
                   </label>
                 </div>
@@ -437,7 +449,7 @@ const Register = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3.5 px-6 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold text-base hover:from-indigo-700 hover:to-blue-700 transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:hover:transform-none flex items-center justify-center gap-3 group animate-pulse-subtle"
+                  className="w-full py-3 px-6 bg-[#1C4D8D] hover:bg-[#163a6b] text-white rounded-xl font-bold text-base transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-[#1C4D8D]/25 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:hover:transform-none flex items-center justify-center gap-3 group"
                 >
                   {loading ? (
                     <>
@@ -475,7 +487,7 @@ const Register = () => {
               </form>
 
               {/* Footer Note */}
-              <div className="mt-10 pt-6 border-t border-slate-100 transition-all duration-300">
+              <div className="mt-6 lg:mt-10 pt-4 lg:pt-6 border-t border-slate-100 transition-all duration-300">
                 <div className="flex items-center justify-center gap-2">
                   <Shield size={14} className="text-green-500 animate-pulse-slow" />
                   <p className="text-xs text-slate-500 text-center">
@@ -488,6 +500,7 @@ const Register = () => {
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

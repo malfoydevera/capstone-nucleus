@@ -290,7 +290,7 @@ const SubmitResearch = () => {
         </div>
         
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center shadow-lg">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
             <PenTool size={28} className="text-white" />
           </div>
           <div className="flex-1">
@@ -364,8 +364,8 @@ const SubmitResearch = () => {
         {/* Form Header */}
         <div className="px-8 py-6 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-              <BookOpen size={20} className="text-indigo-600" />
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+              <BookOpen size={20} className="text-[#1C4D8D]" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900">Research Details</h2>
@@ -378,7 +378,7 @@ const SubmitResearch = () => {
           {/* File Upload Section */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
-              <FileText size={20} className="text-indigo-600" />
+              <FileText size={20} className="text-[#1C4D8D]" />
               <label className="block text-lg font-bold text-slate-900">
                 Research Paper (PDF) {resubmitData ? '(Optional if keeping current)' : <span className="text-red-500">*</span>}
               </label>
@@ -389,16 +389,16 @@ const SubmitResearch = () => {
                 {...getRootProps()}
                 className={`border-3 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-500 transform hover:scale-[1.01] ${
                   isDragActive
-                    ? 'border-indigo-500 bg-gradient-to-r from-indigo-50 to-blue-50 border-solid'
-                    : 'border-slate-300 hover:border-indigo-400 hover:bg-gradient-to-r from-slate-50 to-white'
+                    ? 'border-[#1C4D8D] bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border-solid'
+                    : 'border-slate-300 hover:border-[#1C4D8D] hover:bg-gradient-to-r from-slate-50 to-white'
                 }`}
               >
                 <input {...getInputProps()} />
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center mx-auto mb-6">
-                  <Upload size={32} className="text-indigo-600" />
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center mx-auto mb-6">
+                  <Upload size={32} className="text-[#1C4D8D]" />
                 </div>
                 {isDragActive ? (
-                  <p className="text-xl font-bold text-indigo-600 mb-2">Drop PDF Here</p>
+                  <p className="text-xl font-bold text-[#1C4D8D] mb-2">Drop PDF Here</p>
                 ) : (
                   <>
                     <p className="text-lg font-bold text-slate-900 mb-2">
@@ -445,11 +445,11 @@ const SubmitResearch = () => {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="font-medium text-slate-700">Uploading...</span>
-                      <span className="font-bold text-indigo-600">{uploadProgress}%</span>
+                      <span className="font-bold text-[#1C4D8D]">{uploadProgress}%</span>
                     </div>
                     <div className="h-2 w-full bg-gradient-to-r from-slate-200 to-slate-100 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 transition-all duration-300 ease-out"
+                        className="h-full bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] transition-all duration-300 ease-out"
                         style={{ width: `${uploadProgress}%` }}
                       ></div>
                     </div>
@@ -458,11 +458,11 @@ const SubmitResearch = () => {
                 
                 {/* Extraction Status */}
                 {extracting && (
-                  <div className="mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200">
-                    <Loader2 size={18} className="text-indigo-600 animate-spin" />
+                  <div className="mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border border-[#1C4D8D]/20">
+                    <Loader2 size={18} className="text-[#1C4D8D] animate-spin" />
                     <div>
-                      <p className="text-sm font-bold text-indigo-700">Extracting title and abstract...</p>
-                      <p className="text-xs text-indigo-600">AI is analyzing your PDF to auto-fill the form</p>
+                      <p className="text-sm font-bold text-[#1C4D8D]">Extracting title and abstract...</p>
+                      <p className="text-xs text-[#2563eb]">AI is analyzing your PDF to auto-fill the form</p>
                     </div>
                   </div>
                 )}
@@ -494,7 +494,7 @@ const SubmitResearch = () => {
             <label htmlFor="title" className="block text-lg font-bold text-slate-900">
               Research Title <span className="text-red-500">*</span>
               {extracting && (
-                <span className="ml-2 inline-flex items-center gap-1 text-sm font-medium text-indigo-600">
+                <span className="ml-2 inline-flex items-center gap-1 text-sm font-medium text-[#1C4D8D]">
                   <Loader2 size={14} className="animate-spin" />
                   Extracting...
                 </span>
@@ -508,13 +508,13 @@ const SubmitResearch = () => {
                 value={formData.title}
                 onChange={handleChange}
                 disabled={extracting}
-                className={`w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 ${extracting ? 'opacity-60 cursor-not-allowed' : ''}`}
+                className={`w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 ${extracting ? 'opacity-60 cursor-not-allowed' : ''}`}
                 placeholder="Enter your research title"
                 required
               />
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
                 {extracting ? (
-                  <Loader2 size={20} className="text-indigo-500 animate-spin" />
+                  <Loader2 size={20} className="text-[#1C4D8D] animate-spin" />
                 ) : (
                   <BookOpen size={20} className="text-slate-400" />
                 )}
@@ -528,7 +528,7 @@ const SubmitResearch = () => {
             <label htmlFor="abstract" className="block text-lg font-bold text-slate-900">
               Abstract <span className="text-red-500">*</span>
               {extracting && (
-                <span className="ml-2 inline-flex items-center gap-1 text-sm font-medium text-indigo-600">
+                <span className="ml-2 inline-flex items-center gap-1 text-sm font-medium text-[#1C4D8D]">
                   <Loader2 size={14} className="animate-spin" />
                   Extracting...
                 </span>
@@ -541,7 +541,7 @@ const SubmitResearch = () => {
               onChange={handleChange}
               disabled={extracting}
               rows={6}
-              className={`w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 resize-none ${extracting ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 resize-none ${extracting ? 'opacity-60 cursor-not-allowed' : ''}`}
               placeholder="Provide a comprehensive summary of your research (150-250 words recommended)"
               required
             />
@@ -563,7 +563,7 @@ const SubmitResearch = () => {
                 name="keywords"
                 value={formData.keywords}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
                 placeholder="e.g., machine learning, artificial intelligence, data analysis"
               />
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
@@ -584,7 +584,7 @@ const SubmitResearch = () => {
                 name="category"
                 value={formData.category}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
                 required
               >
                 <option value="" className="text-slate-400">Select a research category</option>
@@ -612,7 +612,7 @@ const SubmitResearch = () => {
                 name="facultyId"
                 value={formData.facultyId}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
               >
                 <option value="">Select your faculty advisor (optional)</option>
                 {facultyMembers && facultyMembers.length > 0 ? (
@@ -651,7 +651,7 @@ const SubmitResearch = () => {
                 name="department"
                 value={formData.department}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
                 placeholder="e.g., Computer Science, Engineering"
               />
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
@@ -673,14 +673,14 @@ const SubmitResearch = () => {
                 {selectedCoAuthors.map((author) => (
                   <div
                     key={author.id}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-xl"
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border-2 border-[#1C4D8D]/20 rounded-xl"
                   >
-                    <User size={16} className="text-indigo-600" />
-                    <span className="text-sm font-semibold text-indigo-900">{author.full_name}</span>
+                    <User size={16} className="text-[#1C4D8D]" />
+                    <span className="text-sm font-semibold text-[#1C4D8D]">{author.full_name}</span>
                     <button
                       type="button"
                       onClick={() => removeCoAuthor(author.id)}
-                      className="ml-1 text-indigo-400 hover:text-indigo-600 transition-colors"
+                      className="ml-1 text-[#1C4D8D]/60 hover:text-[#1C4D8D] transition-colors"
                     >
                       <X size={16} />
                     </button>
@@ -696,7 +696,7 @@ const SubmitResearch = () => {
                 value={studentSearch}
                 onChange={(e) => handleStudentSearch(e.target.value)}
                 onFocus={() => studentSearch.length >= 2 && setShowSearchDropdown(true)}
-                className="w-full px-6 py-4 pl-12 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 pl-12 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
                 placeholder="Search students by name or email..."
               />
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
@@ -704,7 +704,7 @@ const SubmitResearch = () => {
               </div>
               {searchLoading && (
                 <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                  <Loader2 size={20} className="text-indigo-500 animate-spin" />
+                  <Loader2 size={20} className="text-[#1C4D8D] animate-spin" />
                 </div>
               )}
 
@@ -716,10 +716,10 @@ const SubmitResearch = () => {
                       key={student.id}
                       type="button"
                       onClick={() => addCoAuthor(student)}
-                      className="w-full px-4 py-3 text-left hover:bg-indigo-50 transition-colors border-b border-slate-100 last:border-b-0 flex items-center gap-3"
+                      className="w-full px-4 py-3 text-left hover:bg-[#1C4D8D]/10 transition-colors border-b border-slate-100 last:border-b-0 flex items-center gap-3"
                       disabled={selectedCoAuthors.find(a => a.id === student.id)}
                     >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-blue-500 flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center">
                         <User size={20} className="text-white" />
                       </div>
                       <div className="flex-1">
@@ -730,7 +730,7 @@ const SubmitResearch = () => {
                         )}
                       </div>
                       {selectedCoAuthors.find(a => a.id === student.id) && (
-                        <CheckCircle size={20} className="text-indigo-600" />
+                        <CheckCircle size={20} className="text-[#1C4D8D]" />
                       )}
                     </button>
                   ))}
@@ -753,7 +753,7 @@ const SubmitResearch = () => {
                 name="coAuthors"
                 value={formData.coAuthors}
                 onChange={handleChange}
-                className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+                className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
                 placeholder="External collaborators not in the system (comma-separated)"
               />
               <p className="text-xs text-slate-400 mt-1">For co-authors outside the university system</p>
@@ -781,7 +781,7 @@ const SubmitResearch = () => {
             <button
               type="submit"
               disabled={loading}
-              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-indigo-500/25 transform hover:-translate-y-0.5 disabled:hover:transform-none flex items-center gap-3"
+              className="px-8 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163a6b] hover:to-[#1C4D8D] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-[#1C4D8D]/25 transform hover:-translate-y-0.5 disabled:hover:transform-none flex items-center gap-3"
             >
               {loading ? (
                 <>
@@ -800,9 +800,9 @@ const SubmitResearch = () => {
       </form>
 
       {/* Submission Guidelines */}
-      <div className="mt-10 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 p-8">
+      <div className="mt-10 bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border border-[#1C4D8D]/20 p-8">
         <div className="flex items-start gap-4 mb-6">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center flex-shrink-0">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center flex-shrink-0">
             <Sparkles size={24} className="text-white" />
           </div>
           <div>
@@ -829,9 +829,9 @@ const SubmitResearch = () => {
               <p className="text-sm text-slate-600">All required fields must be filled</p>
             </div>
           </div>
-          <div className="flex items-start gap-3 p-4 rounded-xl bg-white/80 border border-blue-100">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-100 to-purple-50 flex items-center justify-center">
-              <Tag size={16} className="text-purple-600" />
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#1C4D8D]/20 to-[#1C4D8D]/10 flex items-center justify-center">
+              <Tag size={16} className="text-[#1C4D8D]" />
             </div>
             <div>
               <p className="font-semibold text-slate-800">Proper Keywords</p>

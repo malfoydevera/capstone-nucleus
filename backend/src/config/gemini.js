@@ -12,8 +12,7 @@ if (!process.env.GOOGLE_API_KEY) {
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
 const getModel = () => {
-  // Try gemini-flash-latest which should have free tier access
-  // Alternative free models: 'gemini-2.5-flash-lite', 'gemma-3-4b-it'
+  // Use gemini-2.0-flash which is the current available model
   const modelName = 'gemini-flash-latest';
   console.log(`Using model: ${modelName}`);
   

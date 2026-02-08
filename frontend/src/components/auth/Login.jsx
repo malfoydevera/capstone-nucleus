@@ -14,7 +14,7 @@ import {
   Key,
   LogIn
 } from 'lucide-react';
-import nuBuildingImg from '../../assets/nu-building.png';
+import nuBuildingImg from '../../assets/dasma.png.jpeg';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -71,8 +71,8 @@ const Login = () => {
           alt="NU Building Background" 
           className="w-full h-full object-cover transition-transform duration-30000 ease-linear transform hover:scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/90 via-slate-900/80 to-slate-900/60 transition-all duration-1000" />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#1C4D8D]/70 via-[#1C4D8D]/50 to-[#1C4D8D]/40 transition-all duration-1000" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent" />
       </div>
 
       {/* Floating particles for depth */}
@@ -281,7 +281,7 @@ const Login = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3.5 px-6 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold text-base hover:from-indigo-700 hover:to-blue-700 transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:hover:transform-none flex items-center justify-center gap-3 group animate-pulse-subtle"
+                  className="w-full py-3.5 px-6 bg-[#1C4D8D] hover:bg-[#163a6b] text-white rounded-xl font-bold text-base transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-[#1C4D8D]/25 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:hover:transform-none flex items-center justify-center gap-3 group"
                 >
                   {loading ? (
                     <>

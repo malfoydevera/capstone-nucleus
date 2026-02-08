@@ -116,7 +116,7 @@ const StaffDashboard = () => {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-slate-50 to-white">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mx-auto mb-6"></div>
+          <div className="w-16 h-16 border-4 border-[#1C4D8D]/20 border-t-[#1C4D8D] rounded-full animate-spin mx-auto mb-6"></div>
           <p className="text-lg text-slate-600 font-medium">Loading staff dashboard...</p>
         </div>
       </div>
@@ -130,7 +130,7 @@ const StaffDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center shadow-lg">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
                 <Award size={28} className="text-white" />
               </div>
               <div>
@@ -149,7 +149,7 @@ const StaffDashboard = () => {
                   <p className="text-sm font-bold">{user?.fullName || 'Faculty Member'}</p>
                   <p className="text-xs text-slate-300">Faculty Staff</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center font-bold">
                   {user?.fullName?.charAt(0) || 'F'}
                 </div>
               </div>
@@ -165,7 +165,7 @@ const StaffDashboard = () => {
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
             <div>
               <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-violet-600">Dr. {user?.fullName?.split(' ')[0] || 'Professor'}</span>
+                Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Dr. {user?.fullName?.split(' ')[0] || 'Professor'}</span>
               </h2>
               <p className="text-slate-600 font-medium">
                 Here's an overview of your academic review activities and statistics
@@ -185,10 +185,10 @@ const StaffDashboard = () => {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-sm font-medium text-slate-500 mb-1">Pending Reviews</p>
-                  <p className="text-3xl font-black text-purple-700">{stats.pendingReviews}</p>
+                  <p className="text-3xl font-black text-[#1C4D8D]">{stats.pendingReviews}</p>
                 </div>
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-100 to-violet-100 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                  <FileText size={24} className="text-purple-600" />
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D]/20 to-[#2563eb]/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                  <FileText size={24} className="text-[#1C4D8D]" />
                 </div>
               </div>
               <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -256,8 +256,8 @@ const StaffDashboard = () => {
               <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-                      <Zap size={20} className="text-indigo-600" />
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                      <Zap size={20} className="text-[#1C4D8D]" />
                     </div>
                     <div>
                       <h3 className="text-xl font-bold text-slate-900">Quick Actions</h3>
@@ -272,7 +272,7 @@ const StaffDashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <button
                     onClick={() => navigate('/staff/review')}
-                    className="group relative overflow-hidden bg-gradient-to-br from-indigo-600 to-blue-600 rounded-xl p-5 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+                    className="group relative overflow-hidden bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] rounded-xl p-5 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
                   >
                     <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-12 translate-x-12"></div>
                     <div className="relative z-10 flex items-center gap-4">
@@ -281,7 +281,7 @@ const StaffDashboard = () => {
                       </div>
                       <div className="text-left">
                         <p className="text-lg font-bold text-white mb-1">Review Submissions</p>
-                        <p className="text-indigo-100 text-sm">{stats.pendingReviews} papers pending</p>
+                        <p className="text-white/80 text-sm">{stats.pendingReviews} papers pending</p>
                       </div>
                     </div>
                     <ChevronRight size={20} className="absolute bottom-5 right-5 text-white opacity-70 group-hover:translate-x-2 transition-transform" />
@@ -289,7 +289,7 @@ const StaffDashboard = () => {
 
                   <button
                     onClick={() => navigate('/staff/my-research')}
-                    className="group relative overflow-hidden bg-gradient-to-br from-purple-600 to-violet-600 rounded-xl p-5 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+                    className="group relative overflow-hidden bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] rounded-xl p-5 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
                   >
                     <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-12 translate-x-12"></div>
                     <div className="relative z-10 flex items-center gap-4">
@@ -298,7 +298,7 @@ const StaffDashboard = () => {
                       </div>
                       <div className="text-left">
                         <p className="text-lg font-bold text-white mb-1">My Research</p>
-                        <p className="text-purple-100 text-sm">Manage publications</p>
+                        <p className="text-white/80 text-sm">Manage publications</p>
                       </div>
                     </div>
                     <ChevronRight size={20} className="absolute bottom-5 right-5 text-white opacity-70 group-hover:translate-x-2 transition-transform" />
@@ -356,7 +356,7 @@ const StaffDashboard = () => {
                   </div>
                   <button
                     onClick={fetchDashboardData}
-                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors text-sm font-medium"
+                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors text-sm font-medium"
                   >
                     Refresh
                   </button>
@@ -372,7 +372,7 @@ const StaffDashboard = () => {
                 ) : (
                   <div className="space-y-4">
                     {recentActivity.map((activity) => (
-                      <div key={activity.id} className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-indigo-200 transition-colors">
+                      <div key={activity.id} className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-[#1C4D8D]/20 transition-colors">
                         <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center flex-shrink-0">
                           {getActivityIcon(activity.type)}
                         </div>
@@ -403,8 +403,8 @@ const StaffDashboard = () => {
             <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
               <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-violet-100 flex items-center justify-center">
-                    <PieChart size={20} className="text-purple-600" />
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                    <PieChart size={20} className="text-[#1C4D8D]" />
                   </div>
                   <div>
                     <h3 className="text-xl font-bold text-slate-900">Review Statistics</h3>
@@ -481,7 +481,7 @@ const StaffDashboard = () => {
                 ) : (
                   <div className="space-y-4">
                     {topPapers.map((paper, index) => (
-                      <div key={paper.id} className="p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-indigo-200 transition-colors">
+                      <div key={paper.id} className="p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-[#1C4D8D]/20 transition-colors">
                         <div className="flex items-start gap-3 mb-3">
                           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-100 to-white flex items-center justify-center text-slate-700 font-bold text-sm">
                             #{index + 1}
@@ -518,9 +518,9 @@ const StaffDashboard = () => {
             </div>
 
             {/* Quick Tips */}
-            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl border border-indigo-200 p-6">
+            <div className="bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border border-[#1C4D8D]/20 p-6">
               <div className="flex items-start gap-3 mb-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center">
                   <Sparkles size={24} className="text-white" />
                 </div>
                 <div>

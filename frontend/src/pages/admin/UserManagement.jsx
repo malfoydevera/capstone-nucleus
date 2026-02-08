@@ -139,9 +139,9 @@ const UserManagement = () => {
         label: 'Administrator'
       },
       staff: {
-        color: 'from-purple-500 to-violet-500',
-        bgColor: 'bg-gradient-to-r from-purple-100 to-violet-100',
-        textColor: 'text-purple-700',
+        color: 'from-[#1C4D8D] to-[#2563eb]',
+        bgColor: 'bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10',
+        textColor: 'text-[#1C4D8D]',
         icon: Eye,
         label: 'Staff'
       },
@@ -185,8 +185,8 @@ const UserManagement = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
         </div>
         <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading users...</p>
       </div>
@@ -200,12 +200,12 @@ const UserManagement = () => {
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center shadow-lg">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
                 <Users size={28} className="text-white" />
               </div>
               <div>
                 <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                  User <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">Management</span>
+                  User <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Management</span>
                 </h1>
                 <p className="text-slate-600 font-medium">
                   Manage system users, roles, and permissions
@@ -217,7 +217,7 @@ const UserManagement = () => {
           <div className="flex items-center gap-4">
             <button
               onClick={fetchUsers}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors"
             >
               <RefreshCw size={16} />
               Refresh
@@ -237,7 +237,7 @@ const UserManagement = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
               <Users size={22} className="text-white" />
             </div>
             <span className="text-3xl font-black text-slate-900">{users.length}</span>
@@ -261,7 +261,7 @@ const UserManagement = () => {
 
         <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
               <Eye size={22} className="text-white" />
             </div>
             <span className="text-3xl font-black text-slate-900">
@@ -317,7 +317,7 @@ const UserManagement = () => {
                 placeholder="Search users by name, email, or role..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+                className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
               />
             </div>
           </div>
@@ -338,7 +338,7 @@ const UserManagement = () => {
                     className={`px-4 py-2 rounded-xl font-medium text-sm transition-all duration-300 ${
                       selectedRole === role
                         ? `${config.bgColor} border ${config.textColor.replace('text', 'border')} font-bold`
-                        : 'bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300'
+                        : 'bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -358,8 +358,8 @@ const UserManagement = () => {
         <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-                <Users size={20} className="text-indigo-600" />
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                <Users size={20} className="text-[#1C4D8D]" />
               </div>
               <div>
                 <h3 className="text-xl font-bold text-slate-900">User List</h3>
@@ -392,7 +392,7 @@ const UserManagement = () => {
                   setSearchTerm('');
                   setSelectedRole('all');
                 }}
-                className="px-6 py-3 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl font-medium hover:border-indigo-300 transition-colors"
+                className="px-6 py-3 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl font-medium hover:border-[#1C4D8D]/30 transition-colors"
               >
                 Clear filters
               </button>
@@ -406,7 +406,7 @@ const UserManagement = () => {
                   <th className="px-6 py-4 text-left">
                     <button
                       onClick={() => handleSort('full_name')}
-                      className="flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-indigo-600 transition-colors"
+                      className="flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-[#1C4D8D] transition-colors"
                     >
                       User
                       <ChevronRight size={14} className={`transition-transform ${
@@ -418,7 +418,7 @@ const UserManagement = () => {
                   <th className="px-6 py-4 text-left">
                     <button
                       onClick={() => handleSort('role')}
-                      className="flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-indigo-600 transition-colors"
+                      className="flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-[#1C4D8D] transition-colors"
                     >
                       Role
                       <ChevronRight size={14} className={`transition-transform ${
@@ -430,7 +430,7 @@ const UserManagement = () => {
                   <th className="px-6 py-4 text-left">
                     <button
                       onClick={() => handleSort('createdAt')}
-                      className="flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-indigo-600 transition-colors"
+                      className="flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-[#1C4D8D] transition-colors"
                     >
                       Joined
                       <ChevronRight size={14} className={`transition-transform ${
@@ -450,7 +450,7 @@ const UserManagement = () => {
                     <tr key={user.id} className="hover:bg-gradient-to-r from-slate-50/50 to-white transition-all duration-300">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center text-indigo-700 font-bold text-lg shadow-lg">
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center text-[#1C4D8D] font-bold text-lg shadow-lg">
                             {user.full_name?.charAt(0).toUpperCase() || '?'}
                           </div>
                           <div>

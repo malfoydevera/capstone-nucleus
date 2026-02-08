@@ -144,11 +144,11 @@ const FacultyReview = () => {
         priority: 'medium'
       },
       pending_admin: {
-        color: 'from-purple-100 to-indigo-50 border-purple-200',
-        text: 'text-purple-800',
+        color: 'from-[#1C4D8D]/10 to-[#2563eb]/10 border-[#1C4D8D]/20',
+        text: 'text-[#1C4D8D]',
         icon: Award,
         label: 'With Admin',
-        badge: 'bg-gradient-to-r from-purple-500 to-indigo-500',
+        badge: 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]',
         priority: 'medium'
       },
       approved: {
@@ -190,8 +190,8 @@ const FacultyReview = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
         </div>
         <p className="mt-6 text-lg font-semibold text-slate-700">Loading assigned papers...</p>
       </div>
@@ -204,7 +204,7 @@ const FacultyReview = () => {
       <div className="mb-10">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
               <GraduationCap size={28} className="text-white" />
             </div>
             <div>
@@ -255,17 +255,17 @@ const FacultyReview = () => {
             <p className="text-sm text-green-600 mt-3">Moved to next stage</p>
           </div>
 
-          <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl border-2 border-indigo-200 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
+          <div className="bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border-2 border-[#1C4D8D]/20 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-indigo-700 font-semibold mb-1">Total Assigned</p>
-                <p className="text-4xl font-black text-indigo-900">{stats.total}</p>
+                <p className="text-[#1C4D8D] font-semibold mb-1">Total Assigned</p>
+                <p className="text-4xl font-black text-slate-900">{stats.total}</p>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center">
                 <BookOpen size={24} className="text-white" />
               </div>
             </div>
-            <p className="text-sm text-indigo-600 mt-3">All-time assignments</p>
+            <p className="text-sm text-[#1C4D8D]/80 mt-3">All-time assignments</p>
           </div>
         </div>
       </div>
@@ -309,7 +309,7 @@ const FacultyReview = () => {
                 placeholder="Search by title, author, or keywords..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-5 py-3 pl-12 bg-white border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300"
+                className="w-full px-5 py-3 pl-12 bg-white border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
               />
               <Search size={20} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" />
             </div>
@@ -353,7 +353,7 @@ const FacultyReview = () => {
                   {/* Paper Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-4 mb-3">
-                      <h3 className="text-xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors duration-300 line-clamp-2">
+                      <h3 className="text-xl font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors duration-300 line-clamp-2">
                         {paper.title}
                       </h3>
                       <div className={`px-4 py-2 rounded-xl border-2 ${statusConfig.color} ${statusConfig.text} text-sm font-bold whitespace-nowrap`}>
@@ -406,7 +406,7 @@ const FacultyReview = () => {
                         {paper.keywords.slice(0, 5).map((keyword, idx) => (
                           <span
                             key={idx}
-                            className="px-3 py-1 rounded-full bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 text-indigo-700 text-xs font-semibold"
+                            className="px-3 py-1 rounded-full bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border border-[#1C4D8D]/20 text-[#1C4D8D] text-xs font-semibold"
                           >
                             {keyword}
                           </span>
@@ -417,7 +417,7 @@ const FacultyReview = () => {
 
                   {/* Action Arrow */}
                   <div className="flex-shrink-0 flex items-center">
-                    <ChevronRight size={24} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all duration-300" />
+                    <ChevronRight size={24} className="text-slate-400 group-hover:text-[#1C4D8D] group-hover:translate-x-1 transition-all duration-300" />
                   </div>
                 </div>
               </div>

@@ -79,10 +79,12 @@ export const analyticsAPI = {
 
 export const aiAPI = {
   chatWithPaper: async (paperId, fileUrl, message) => {
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     const response = await fetch(`${API_BASE_URL}/ai/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
       },
       body: JSON.stringify({
         paperId,
@@ -98,14 +100,17 @@ export const aiAPI = {
 
     return response.json();
   },
-  
-  // Extract title and abstract from PDF
+
   extractPdfMetadata: async (file) => {
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     const formData = new FormData();
     formData.append('file', file);
-    
+
     const response = await fetch(`${API_BASE_URL}/ai/extract-pdf`, {
       method: 'POST',
+      headers: {
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      },
       body: formData
     });
 

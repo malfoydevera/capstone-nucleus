@@ -60,7 +60,7 @@ const AdminAnalytics = () => {
     { name: 'Computer Science', count: 124, color: 'from-blue-500 to-cyan-500' },
     { name: 'Engineering', count: 89, color: 'from-emerald-500 to-green-500' },
     { name: 'Medicine', count: 76, color: 'from-red-500 to-pink-500' },
-    { name: 'Business', count: 54, color: 'from-purple-500 to-violet-500' },
+    { name: 'Business', count: 54, color: 'from-[#1C4D8D] to-[#2563eb]' },
     { name: 'Education', count: 42, color: 'from-amber-500 to-orange-500' },
   ];
 
@@ -92,12 +92,12 @@ const AdminAnalytics = () => {
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center shadow-lg">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
                 <BarChart3 size={28} className="text-white" />
               </div>
               <div>
                 <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                  System <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">Analytics</span>
+                  System <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Analytics</span>
                 </h1>
                 <p className="text-slate-600 font-medium">
                   Comprehensive overview of repository performance and usage metrics
@@ -114,8 +114,8 @@ const AdminAnalytics = () => {
                   onClick={() => setTimeRange(range)}
                   className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${
                     timeRange === range
-                      ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg'
-                      : 'text-slate-700 hover:text-indigo-600'
+                      ? 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white shadow-lg'
+                      : 'text-slate-700 hover:text-[#1C4D8D]'
                   }`}
                 >
                   {range.charAt(0).toUpperCase() + range.slice(1)}
@@ -124,7 +124,7 @@ const AdminAnalytics = () => {
             </div>
             <button
               onClick={handleRefresh}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors"
               disabled={loading}
             >
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -154,7 +154,7 @@ const AdminAnalytics = () => {
 
         <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
           <div className="flex items-center justify-between mb-4">
-            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center shadow-lg`}>
+            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg`}>
               <Users size={22} className="text-white" />
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
@@ -280,8 +280,8 @@ const AdminAnalytics = () => {
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-violet-100 flex items-center justify-center">
-                  <PieChart size={20} className="text-purple-600" />
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                  <PieChart size={20} className="text-[#1C4D8D]" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Top Categories</h3>
@@ -293,7 +293,7 @@ const AdminAnalytics = () => {
             <div className="p-6">
               <div className="space-y-4">
                 {topCategories.map((category, index) => (
-                  <div key={index} className="group flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-indigo-300 transition-colors">
+                  <div key={index} className="group flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-[#1C4D8D]/30 transition-colors">
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${category.color} flex items-center justify-center shadow-sm`}>
                         <BookOpen size={14} className="text-white" />
@@ -333,7 +333,7 @@ const AdminAnalytics = () => {
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                       activity.type === 'download' ? 'bg-blue-100 text-blue-600' :
                       activity.type === 'approval' ? 'bg-emerald-100 text-emerald-600' :
-                      activity.type === 'submission' ? 'bg-purple-100 text-purple-600' :
+                      activity.type === 'submission' ? 'bg-[#1C4D8D]/10 text-[#1C4D8D]' :
                       activity.type === 'review' ? 'bg-amber-100 text-amber-600' :
                       'bg-slate-100 text-slate-600'
                     }`}>
@@ -347,10 +347,10 @@ const AdminAnalytics = () => {
                       <p className="text-sm font-medium text-slate-900 truncate">
                         <span className="font-semibold">{activity.user}</span> {activity.action}
                         {activity.paper && (
-                          <span className="font-semibold text-indigo-600"> "{activity.paper}"</span>
+                          <span className="font-semibold text-[#1C4D8D]"> "{activity.paper}"</span>
                         )}
                         {activity.count && (
-                          <span className="font-semibold text-indigo-600"> ({activity.count} papers)</span>
+                          <span className="font-semibold text-[#1C4D8D]"> ({activity.count} papers)</span>
                         )}
                       </p>
                       <p className="text-xs text-slate-500">{activity.time}</p>
@@ -358,7 +358,7 @@ const AdminAnalytics = () => {
                   </div>
                 ))}
               </div>
-              <button className="w-full mt-4 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors text-sm font-medium">
+              <button className="w-full mt-4 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors text-sm font-medium">
                 View All Activity
               </button>
             </div>
@@ -406,8 +406,8 @@ const AdminAnalytics = () => {
 
         <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-violet-100 flex items-center justify-center">
-              <Target size={20} className="text-purple-600" />
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+              <Target size={20} className="text-[#1C4D8D]" />
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-900">System Uptime</p>
@@ -420,18 +420,18 @@ const AdminAnalytics = () => {
       {/* Coming Soon Placeholder */}
       <div className="mt-8 bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border-2 border-dashed border-slate-300 overflow-hidden">
         <div className="p-12 text-center">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center mx-auto mb-6">
-            <ChartNoAxesColumn size={36} className="text-indigo-600" />
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center mx-auto mb-6">
+            <ChartNoAxesColumn size={36} className="text-[#1C4D8D]" />
           </div>
           <h3 className="text-2xl font-bold text-slate-900 mb-3">Advanced Analytics Dashboard</h3>
           <p className="text-slate-600 mb-8 max-w-md mx-auto">
             More detailed charts, predictive analytics, and custom reporting features are coming soon.
           </p>
           <div className="flex justify-center gap-4">
-            <button className="px-6 py-3 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl font-medium hover:border-indigo-300 transition-colors">
+            <button className="px-6 py-3 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl font-medium hover:border-[#1C4D8D]/30 transition-colors">
               Request Feature
             </button>
-            <button className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-300">
+            <button className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163d70] hover:to-[#1d4ed8] transition-all duration-300">
               Schedule Demo
             </button>
           </div>

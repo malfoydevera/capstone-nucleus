@@ -109,8 +109,8 @@ const StudentDashboard = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
         </div>
         <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading your academic dashboard...</p>
       </div>
@@ -124,19 +124,19 @@ const StudentDashboard = () => {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+              <div className="w-12 h-12 bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] rounded-xl flex items-center justify-center shadow-lg">
                 <GraduationCap size={24} className="text-white" />
               </div>
               <div>
                 <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-                  Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">{user?.fullName}</span>!
+                  Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">{user?.fullName}</span>!
                 </h1>
                 <p className="text-slate-600 font-medium mt-2">
                   Research Scholar • National University Dasmariñas
                 </p>
               </div>
             </div>
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 text-indigo-700 text-sm font-semibold">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-[#1C4D8D]/10 to-blue-50 border border-[#1C4D8D]/20 text-[#1C4D8D] text-sm font-semibold">
               <Calendar size={14} />
               {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </div>
@@ -152,7 +152,7 @@ const StudentDashboard = () => {
 
       {/* Statistics Grid with Enhanced Design */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 p-6 border border-slate-100 hover:border-indigo-200 group transform hover:-translate-y-1">
+        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 p-6 border border-slate-100 hover:border-[#1C4D8D]/30 group transform hover:-translate-y-1">
           <div className="flex items-center justify-between mb-6">
             <div>
               <p className="text-sm font-medium text-slate-500 mb-1">Total Submissions</p>
@@ -221,12 +221,12 @@ const StudentDashboard = () => {
             <h2 className="text-2xl font-bold text-slate-900">Research Actions</h2>
             <p className="text-slate-600 font-medium">Manage your academic contributions</p>
           </div>
-          <BarChart3 size={24} className="text-indigo-600" />
+          <BarChart3 size={24} className="text-[#1C4D8D]" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <button
             onClick={() => navigate('/student/submit')}
-            className="group relative overflow-hidden bg-gradient-to-br from-indigo-600 to-blue-600 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02]"
+            className="group relative overflow-hidden bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02]"
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
             <div className="relative z-10 flex items-center gap-4">
@@ -235,7 +235,7 @@ const StudentDashboard = () => {
               </div>
               <div className="text-left">
                 <p className="text-xl font-bold text-white mb-1">Submit Research</p>
-                <p className="text-indigo-100 text-sm">Upload new academic paper</p>
+                <p className="text-blue-100 text-sm">Upload new academic paper</p>
               </div>
             </div>
             <ChevronRight size={20} className="absolute bottom-6 right-6 text-white opacity-70 group-hover:translate-x-2 transition-transform duration-300" />
@@ -243,7 +243,7 @@ const StudentDashboard = () => {
           
           <button
             onClick={() => navigate('/student/my-research')}
-            className="group relative overflow-hidden bg-gradient-to-br from-blue-600 to-indigo-500 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02]"
+            className="group relative overflow-hidden bg-gradient-to-br from-[#2563eb] to-[#1C4D8D] rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02]"
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
             <div className="relative z-10 flex items-center gap-4">
@@ -260,7 +260,7 @@ const StudentDashboard = () => {
           
           <button
             onClick={() => navigate('/student/browse')}
-            className="group relative overflow-hidden bg-gradient-to-br from-purple-600 to-indigo-600 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02]"
+            className="group relative overflow-hidden bg-gradient-to-br from-[#1C4D8D] to-[#163a6b] rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02]"
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
             <div className="relative z-10 flex items-center gap-4">
@@ -269,7 +269,7 @@ const StudentDashboard = () => {
               </div>
               <div className="text-left">
                 <p className="text-xl font-bold text-white mb-1">Browse Repository</p>
-                <p className="text-purple-100 text-sm">Explore academic papers</p>
+                <p className="text-blue-100 text-sm">Explore academic papers</p>
               </div>
             </div>
             <ChevronRight size={20} className="absolute bottom-6 right-6 text-white opacity-70 group-hover:translate-x-2 transition-transform duration-300" />
@@ -287,7 +287,7 @@ const StudentDashboard = () => {
             </div>
             <button
               onClick={() => navigate('/student/my-research')}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-700 font-semibold hover:from-indigo-100 hover:to-blue-100 transition-all duration-300 group"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] font-semibold hover:from-[#1C4D8D]/20 hover:to-[#2563eb]/20 transition-all duration-300 group"
             >
               View All
               <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform duration-300" />
@@ -296,14 +296,14 @@ const StudentDashboard = () => {
           
           {recentPapers.length === 0 ? (
             <div className="px-8 py-16 text-center">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-50 flex items-center justify-center mx-auto mb-6">
-                <FileText size={32} className="text-indigo-400" />
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center mx-auto mb-6">
+                <FileText size={32} className="text-[#1C4D8D]" />
               </div>
               <h4 className="text-lg font-semibold text-slate-700 mb-2">No submissions yet</h4>
               <p className="text-slate-500 mb-6 max-w-md mx-auto">Start your research journey by submitting your first academic paper</p>
               <button
                 onClick={() => navigate('/student/submit')}
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
               >
                 Submit Your First Paper
               </button>
@@ -323,7 +323,7 @@ const StudentDashboard = () => {
                           <FileText size={18} className="text-slate-600" />
                         </div>
                         <div>
-                          <h4 className="font-bold text-slate-900 group-hover:text-indigo-700 transition-colors duration-300 mb-1 line-clamp-1">
+                          <h4 className="font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors duration-300 mb-1 line-clamp-1">
                             {paper.title}
                           </h4>
                           <div className="flex items-center gap-4 text-sm">
@@ -340,7 +340,7 @@ const StudentDashboard = () => {
                       </div>
                       <p className="text-slate-600 text-sm line-clamp-2 pl-13">{paper.abstract}</p>
                     </div>
-                    <ChevronRight size={20} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-2 transition-all duration-300 flex-shrink-0 mt-2" />
+                    <ChevronRight size={20} className="text-slate-400 group-hover:text-[#1C4D8D] group-hover:translate-x-2 transition-all duration-300 flex-shrink-0 mt-2" />
                   </div>
                 </div>
               ))}
@@ -350,15 +350,15 @@ const StudentDashboard = () => {
       </div>
 
       {/* Enhanced Tips Section */}
-      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 p-8 shadow-lg">
+      <div className="bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border border-[#1C4D8D]/20 p-8 shadow-lg">
         <div className="flex items-start gap-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg flex-shrink-0">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg flex-shrink-0">
             <Lightbulb size={28} className="text-white" />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-4">
               <h4 className="text-xl font-bold text-slate-900">Academic Success Guide</h4>
-              <div className="px-3 py-1 rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 text-xs font-bold">
+              <div className="px-3 py-1 rounded-full bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] text-xs font-bold">
                 PRO TIPS
               </div>
             </div>
@@ -383,8 +383,8 @@ const StudentDashboard = () => {
                   </div>
                 </div>
                 <div className="flex items-start gap-3 p-4 rounded-xl bg-white/80 border border-blue-100 hover:bg-white transition-all duration-300 transform hover:-translate-y-1">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-100 to-purple-50 flex items-center justify-center flex-shrink-0">
-                    <Search size={16} className="text-purple-600" />
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#1C4D8D]/20 to-[#1C4D8D]/10 flex items-center justify-center flex-shrink-0">
+                    <Search size={16} className="text-[#1C4D8D]" />
                   </div>
                   <div>
                     <p className="font-semibold text-slate-800 mb-1">Relevant Keywords</p>
@@ -412,8 +412,8 @@ const StudentDashboard = () => {
                   </div>
                 </div>
                 <div className="flex items-start gap-3 p-4 rounded-xl bg-white/80 border border-blue-100 hover:bg-white transition-all duration-300 transform hover:-translate-y-1">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-100 to-indigo-50 flex items-center justify-center flex-shrink-0">
-                    <TrendingUp size={16} className="text-indigo-600" />
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#1C4D8D]/20 to-[#1C4D8D]/10 flex items-center justify-center flex-shrink-0">
+                    <TrendingUp size={16} className="text-[#1C4D8D]" />
                   </div>
                   <div>
                     <p className="font-semibold text-slate-800 mb-1">Continuous Improvement</p>

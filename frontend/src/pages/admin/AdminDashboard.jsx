@@ -37,13 +37,13 @@ const AdminDashboard = () => {
     { label: 'Total Users', value: '1,247', change: '+12%', icon: Users, color: 'from-blue-500 to-cyan-500' },
     { label: 'Research Papers', value: '856', change: '+8%', icon: FileText, color: 'from-emerald-500 to-green-500' },
     { label: 'Pending Reviews', value: '42', change: '-3%', icon: Clock, color: 'from-amber-500 to-orange-500' },
-    { label: 'Approved Today', value: '18', change: '+15%', icon: CheckCircle, color: 'from-violet-500 to-purple-500' },
+    { label: 'Approved Today', value: '18', change: '+15%', icon: CheckCircle, color: 'from-[#1C4D8D] to-[#2563eb]' },
   ];
 
   const quickActions = [
     { title: 'User Management', icon: Users, description: 'Manage users and permissions', color: 'bg-gradient-to-br from-blue-100 to-cyan-100', border: 'border-blue-200', textColor: 'text-blue-700', link: '/admin/users' },
     { title: 'Research Oversight', icon: FileCheck, description: 'Review all submissions', color: 'bg-gradient-to-br from-emerald-100 to-green-100', border: 'border-emerald-200', textColor: 'text-emerald-700', link: '/admin/research' },
-    { title: 'System Analytics', icon: BarChart3, description: 'View detailed reports', color: 'bg-gradient-to-br from-violet-100 to-purple-100', border: 'border-violet-200', textColor: 'text-violet-700', link: '/admin/analytics' },
+    { title: 'System Analytics', icon: BarChart3, description: 'View detailed reports', color: 'bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10', border: 'border-[#1C4D8D]/20', textColor: 'text-[#1C4D8D]', link: '/admin/analytics' },
     { title: 'Repository Access', icon: Database, description: 'Full research archive', color: 'bg-gradient-to-br from-amber-100 to-orange-100', border: 'border-amber-200', textColor: 'text-amber-700', link: '/admin/repository' },
   ];
 
@@ -61,7 +61,7 @@ const AdminDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-lg">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
                 <Shield size={22} className="text-white" />
               </div>
               <div>
@@ -83,7 +83,7 @@ const AdminDashboard = () => {
                   <p className="text-sm font-medium">{user?.fullName}</p>
                   <p className="text-xs text-slate-300 capitalize">{user?.role} Account</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-400 to-blue-400 flex items-center justify-center font-bold text-white shadow-lg">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center font-bold text-white shadow-lg">
                   {user?.fullName?.charAt(0) || 'A'}
                 </div>
               </div>
@@ -108,12 +108,12 @@ const AdminDashboard = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center shadow-lg">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
                     <GraduationCap size={28} className="text-white" />
                   </div>
                   <div>
                     <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                      Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">{user?.fullName?.split(' ')[0] || 'Admin'}</span>
+                      Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">{user?.fullName?.split(' ')[0] || 'Admin'}</span>
                     </h2>
                     <p className="text-slate-600 font-medium">
                       Here's what's happening in your academic research portal today.
@@ -125,7 +125,7 @@ const AdminDashboard = () => {
               <div className="flex items-center gap-4">
                 <div className="px-4 py-2 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-300">
                   <div className="flex items-center gap-2">
-                    <Calendar size={16} className="text-indigo-600" />
+                    <Calendar size={16} className="text-[#1C4D8D]" />
                     <span className="text-sm font-semibold text-slate-700">
                       {new Date().toLocaleDateString('en-US', { 
                         weekday: 'long', 
@@ -174,8 +174,8 @@ const AdminDashboard = () => {
             <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
               <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-                    <Award size={20} className="text-indigo-600" />
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                    <Award size={20} className="text-[#1C4D8D]" />
                   </div>
                   <div>
                     <h3 className="text-xl font-bold text-slate-900">Quick Actions</h3>
@@ -251,7 +251,7 @@ const AdminDashboard = () => {
                     </div>
                   ))}
                 </div>
-                <button className="w-full mt-4 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors text-sm font-medium">
+                <button className="w-full mt-4 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors text-sm font-medium">
                   View All Activity
                 </button>
               </div>
@@ -264,8 +264,8 @@ const AdminDashboard = () => {
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-violet-100 flex items-center justify-center">
-                  <Settings size={20} className="text-purple-600" />
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                  <Settings size={20} className="text-[#1C4D8D]" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Admin Tools</h3>
@@ -291,8 +291,8 @@ const AdminDashboard = () => {
                   <h4 className="font-bold text-slate-900 mb-1">Review Queue</h4>
                   <p className="text-sm text-slate-600">Monitor pending reviews</p>
                 </div>
-                <div className="p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-purple-200 transition-colors">
-                  <Database size={20} className="text-purple-600 mb-2" />
+                <div className="p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-[#1C4D8D]/20 transition-colors">
+                  <Database size={20} className="text-[#1C4D8D] mb-2" />
                   <h4 className="font-bold text-slate-900 mb-1">Backup</h4>
                   <p className="text-sm text-slate-600">System backup and restore</p>
                 </div>
@@ -306,8 +306,8 @@ const AdminDashboard = () => {
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-                  <Shield size={20} className="text-indigo-600" />
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                  <Shield size={20} className="text-[#1C4D8D]" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Your Account</h3>
@@ -320,7 +320,7 @@ const AdminDashboard = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-400 to-blue-400 flex items-center justify-center text-white font-bold text-2xl shadow-lg">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center text-white font-bold text-2xl shadow-lg">
                       {user?.fullName?.charAt(0) || 'A'}
                     </div>
                     <div>

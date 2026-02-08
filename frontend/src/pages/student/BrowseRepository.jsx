@@ -195,14 +195,14 @@ const BrowseRepository = () => {
 
   const getCategoryColor = (categoryId) => {
     const colors = [
-      'from-blue-500 to-cyan-500',
-      'from-indigo-500 to-blue-500',
-      'from-purple-500 to-pink-500',
+      'from-[#1C4D8D] to-[#2563eb]',
+      'from-[#2563eb] to-[#1C4D8D]',
+      'from-[#1C4D8D] to-teal-500',
       'from-green-500 to-emerald-500',
       'from-amber-500 to-orange-500',
       'from-red-500 to-pink-500',
       'from-teal-500 to-green-500',
-      'from-violet-500 to-purple-500'
+      'from-[#1C4D8D] to-cyan-500'
     ];
     if (!categoryId) return 'from-gray-500 to-slate-500';
     const index = categories.findIndex(cat => cat.id === categoryId);
@@ -267,8 +267,8 @@ const BrowseRepository = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-50 to-white">
         <div className="text-center">
           <div className="relative">
-            <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-            <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+            <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
           </div>
           <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading research repository...</p>
         </div>
@@ -281,13 +281,13 @@ const BrowseRepository = () => {
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Hero Section */}
         <div className="mb-12 text-center">
-          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 text-indigo-700 text-sm font-semibold mb-6">
+          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border border-[#1C4D8D]/20 text-[#1C4D8D] text-sm font-semibold mb-6">
             <Sparkles size={16} />
             National University Dasmariñas
           </div>
           
           <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-4">
-            Research <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">Repository</span>
+            Research <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Repository</span>
           </h1>
           
           <p className="text-xl text-slate-600 max-w-3xl mx-auto mb-10">
@@ -309,7 +309,7 @@ const BrowseRepository = () => {
               <div className="text-sm text-slate-600 font-medium">Total Views</div>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="text-2xl font-black text-indigo-600">{stats.totalDownloads.toLocaleString()}</div>
+              <div className="text-2xl font-black text-[#1C4D8D]">{stats.totalDownloads.toLocaleString()}</div>
               <div className="text-sm text-slate-600 font-medium">Downloads</div>
             </div>
           </div>
@@ -326,7 +326,7 @@ const BrowseRepository = () => {
                 placeholder="Search research papers, authors, or keywords..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-14 pr-32 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 text-lg shadow-lg"
+                className="w-full pl-14 pr-32 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#1C4D8D] focus:ring-4 focus:ring-[#1C4D8D]/10 text-lg shadow-lg"
               />
               <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
                 {(searchTerm || selectedCategory) && (
@@ -372,7 +372,7 @@ const BrowseRepository = () => {
                   placeholder="Enter author name..."
                   value={authorSearch}
                   onChange={(e) => setAuthorSearch(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm"
+                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#1C4D8D] focus:ring-2 focus:ring-[#1C4D8D]/10 text-sm"
                 />
               </div>
 
@@ -385,7 +385,7 @@ const BrowseRepository = () => {
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm cursor-pointer"
+                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#1C4D8D] focus:ring-2 focus:ring-[#1C4D8D]/10 text-sm cursor-pointer"
                 >
                   <option value="">All Categories</option>
                   {categories.map((category) => (
@@ -405,7 +405,7 @@ const BrowseRepository = () => {
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm cursor-pointer"
+                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#1C4D8D] focus:ring-2 focus:ring-[#1C4D8D]/10 text-sm cursor-pointer"
                 >
                   <option value="">All Years</option>
                   {availableYears.map((year) => (
@@ -425,7 +425,7 @@ const BrowseRepository = () => {
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm cursor-pointer"
+                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#1C4D8D] focus:ring-2 focus:ring-[#1C4D8D]/10 text-sm cursor-pointer"
                 >
                   {sortOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -443,9 +443,9 @@ const BrowseRepository = () => {
                   <>
                     <span className="text-sm font-medium text-slate-600">Active filters:</span>
                     {searchTerm && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-full">
+                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#1C4D8D]/10 text-[#1C4D8D] text-xs font-semibold rounded-full">
                         Search: "{searchTerm}"
-                        <button onClick={() => setSearchTerm('')} className="hover:bg-indigo-100 rounded-full p-0.5">
+                        <button onClick={() => setSearchTerm('')} className="hover:bg-[#1C4D8D]/20 rounded-full p-0.5">
                           <X size={12} />
                         </button>
                       </span>
@@ -467,9 +467,9 @@ const BrowseRepository = () => {
                       </span>
                     )}
                     {selectedYear && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-purple-50 text-purple-700 text-xs font-semibold rounded-full">
+                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#2563eb]/10 text-[#2563eb] text-xs font-semibold rounded-full">
                         Year: {selectedYear}
-                        <button onClick={() => setSelectedYear('')} className="hover:bg-purple-100 rounded-full p-0.5">
+                        <button onClick={() => setSelectedYear('')} className="hover:bg-[#2563eb]/20 rounded-full p-0.5">
                           <X size={12} />
                         </button>
                       </span>
@@ -551,7 +551,7 @@ const BrowseRepository = () => {
                       onClick={() => handleCategorySelect('')}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                         selectedCategory === '' 
-                          ? 'bg-indigo-600 text-white' 
+                          ? 'bg-[#1C4D8D] text-white' 
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                       }`}
                     >
@@ -563,7 +563,7 @@ const BrowseRepository = () => {
                         onClick={() => handleCategorySelect(category.id)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                           selectedCategory === category.id 
-                            ? 'bg-indigo-600 text-white' 
+                            ? 'bg-[#1C4D8D] text-white' 
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                       >
@@ -588,7 +588,7 @@ const BrowseRepository = () => {
                           onClick={() => handleSortSelect(option.value)}
                           className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${
                             sortBy === option.value 
-                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700' 
+                              ? 'border-[#1C4D8D] bg-[#1C4D8D]/10 text-[#1C4D8D]' 
                               : 'border-slate-200 hover:border-slate-300'
                           }`}
                         >
@@ -597,7 +597,7 @@ const BrowseRepository = () => {
                             <span>{option.label}</span>
                           </div>
                           {sortBy === option.value && (
-                            <div className="w-2 h-2 bg-indigo-600 rounded-full"></div>
+                            <div className="w-2 h-2 bg-[#1C4D8D] rounded-full"></div>
                           )}
                         </button>
                       );
@@ -665,7 +665,7 @@ const BrowseRepository = () => {
               <div
                 key={paper.id}
                 onClick={() => handleViewDetails(paper)}
-                className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-indigo-200 transition-all duration-300 overflow-hidden cursor-pointer"
+                className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-[#1C4D8D]/30 transition-all duration-300 overflow-hidden cursor-pointer"
               >
                 {/* Category Badge */}
                 <div className={`h-2 bg-gradient-to-r ${getCategoryColor(paper.category)}`}></div>
@@ -688,7 +688,7 @@ const BrowseRepository = () => {
                     </div>
                   </div>
 
-                  <h3 className="text-lg font-bold text-slate-900 mb-3 line-clamp-2 group-hover:text-indigo-700 transition-colors">
+                  <h3 className="text-lg font-bold text-slate-900 mb-3 line-clamp-2 group-hover:text-[#1C4D8D] transition-colors">
                     {paper.title}
                   </h3>
 
@@ -723,7 +723,7 @@ const BrowseRepository = () => {
                         {paper.keywords.length > 3 && (
                           <button
                             onClick={(e) => togglePaperExpand(paper.id, e)}
-                            className="px-2.5 py-1 text-xs text-indigo-600 hover:text-indigo-700"
+                            className="px-2.5 py-1 text-xs text-[#1C4D8D] hover:text-[#163a6b]"
                           >
                             +{paper.keywords.length - 3} more
                           </button>
@@ -748,7 +748,7 @@ const BrowseRepository = () => {
                   <div className="flex gap-2 pt-4 border-t border-slate-100">
                     <button
                       onClick={(e) => handleDownload(paper, e)}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl hover:from-indigo-700 hover:to-blue-700 transition-all font-medium text-sm"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all font-medium text-sm"
                     >
                       <Download size={16} />
                       Download PDF
@@ -774,7 +774,7 @@ const BrowseRepository = () => {
               <div
                 key={paper.id}
                 onClick={() => handleViewDetails(paper)}
-                className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-indigo-200 transition-all duration-300 cursor-pointer"
+                className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-[#1C4D8D]/30 transition-all duration-300 cursor-pointer"
               >
                 <div className="p-6">
                   <div className="flex flex-col lg:flex-row lg:items-start gap-6">
@@ -797,7 +797,7 @@ const BrowseRepository = () => {
                             </div>
                           </div>
                           
-                          <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-indigo-700 transition-colors">
+                          <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-[#1C4D8D] transition-colors">
                             {paper.title}
                           </h3>
                         </div>
@@ -834,7 +834,7 @@ const BrowseRepository = () => {
                           e.stopPropagation();
                           handleViewDetails(paper);
                         }}
-                        className="px-4 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl hover:from-indigo-700 hover:to-blue-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                        className="px-4 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl hover:from-[#163a6b] hover:to-[#1C4D8D] transition-colors font-medium text-sm flex items-center justify-center gap-2"
                       >
                         <Eye size={16} />
                         View Details
@@ -858,7 +858,7 @@ const BrowseRepository = () => {
         {filteredPapers.length > 0 && (
           <div className="mt-10 text-center">
             <div className="inline-flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl">
-              <FileText size={18} className="text-indigo-600" />
+              <FileText size={18} className="text-[#1C4D8D]" />
               <div>
                 <p className="text-sm font-medium text-slate-700">
                   Showing {filteredPapers.length} of {papers.length} research papers

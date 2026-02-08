@@ -109,12 +109,12 @@ const StaffSettings = () => {
       {/* Header */}
       <div className="mb-10">
         <div className="flex items-start gap-4 mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center shadow-lg">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
             <SettingsIcon size={28} className="text-white" />
           </div>
           <div className="flex-1">
             <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-              Account <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">Settings</span>
+              Account <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Settings</span>
             </h1>
             <p className="text-lg text-slate-600 font-medium">
               Manage your academic profile, preferences, and security
@@ -138,8 +138,8 @@ const StaffSettings = () => {
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-6 py-3 rounded-xl font-medium transition-all duration-300 flex items-center gap-3 ${
                   activeTab === tab.id
-                    ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg'
-                    : 'bg-white text-slate-700 border border-slate-300 hover:border-indigo-300'
+                    ? 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white shadow-lg'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:border-[#1C4D8D]/30'
                 }`}
               >
                 <Icon size={18} />
@@ -168,8 +168,8 @@ const StaffSettings = () => {
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
             <div className="px-8 py-6 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-                  <User size={20} className="text-indigo-600" />
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
+                  <User size={20} className="text-[#1C4D8D]" />
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Personal Information</h2>
@@ -182,10 +182,10 @@ const StaffSettings = () => {
               {/* Avatar Section */}
               <div className="flex items-start gap-8 mb-10">
                 <div className="relative">
-                  <div className="w-32 h-32 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center text-white text-4xl font-bold shadow-xl">
+                  <div className="w-32 h-32 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center text-white text-4xl font-bold shadow-xl">
                     MS
                   </div>
-                  <button className="absolute -bottom-2 -right-2 w-10 h-10 rounded-xl bg-gradient-to-br from-white to-slate-100 border border-slate-300 shadow-lg flex items-center justify-center text-slate-700 hover:text-indigo-600 transition-colors">
+                  <button className="absolute -bottom-2 -right-2 w-10 h-10 rounded-xl bg-gradient-to-br from-white to-slate-100 border border-slate-300 shadow-lg flex items-center justify-center text-slate-700 hover:text-[#1C4D8D] transition-colors">
                     <Camera size={18} />
                   </button>
                 </div>
@@ -194,7 +194,7 @@ const StaffSettings = () => {
                   <p className="text-slate-600 mb-4">
                     Upload a professional photo for your academic profile. Recommended: 500x500px, JPG or PNG
                   </p>
-                  <button className="px-4 py-2 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl font-medium hover:border-indigo-300 transition-colors flex items-center gap-2">
+                  <button className="px-4 py-2 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl font-medium hover:border-[#1C4D8D]/30 transition-colors flex items-center gap-2">
                     <Upload size={16} />
                     Upload New Photo
                   </button>
@@ -206,7 +206,7 @@ const StaffSettings = () => {
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-slate-900">
                     <div className="flex items-center gap-2 mb-1">
-                      <User size={16} className="text-indigo-600" />
+                      <User size={16} className="text-[#1C4D8D]" />
                       Full Name
                     </div>
                   </label>
@@ -215,7 +215,7 @@ const StaffSettings = () => {
                     name="fullName"
                     value={settings.fullName}
                     onChange={handleProfileChange}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
                     placeholder="Enter your full name"
                   />
                 </div>
@@ -223,7 +223,7 @@ const StaffSettings = () => {
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-slate-900">
                     <div className="flex items-center gap-2 mb-1">
-                      <Mail size={16} className="text-indigo-600" />
+                      <Mail size={16} className="text-[#1C4D8D]" />
                       Email Address
                     </div>
                   </label>
@@ -239,7 +239,7 @@ const StaffSettings = () => {
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-slate-900">
                     <div className="flex items-center gap-2 mb-1">
-                      <Phone size={16} className="text-indigo-600" />
+                      <Phone size={16} className="text-[#1C4D8D]" />
                       Phone Number
                     </div>
                   </label>
@@ -248,7 +248,7 @@ const StaffSettings = () => {
                     name="phone"
                     value={settings.phone}
                     onChange={handleProfileChange}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
                     placeholder="+63 912 345 6789"
                   />
                 </div>
@@ -256,7 +256,7 @@ const StaffSettings = () => {
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-slate-900">
                     <div className="flex items-center gap-2 mb-1">
-                      <Building size={16} className="text-indigo-600" />
+                      <Building size={16} className="text-[#1C4D8D]" />
                       Department
                     </div>
                   </label>
@@ -264,7 +264,7 @@ const StaffSettings = () => {
                     name="department"
                     value={settings.department}
                     onChange={handleProfileChange}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
                   >
                     {departments.map(dept => (
                       <option key={dept} value={dept}>{dept}</option>
@@ -277,7 +277,7 @@ const StaffSettings = () => {
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-slate-900">
                     <div className="flex items-center gap-2 mb-1">
-                      <Briefcase size={16} className="text-indigo-600" />
+                      <Briefcase size={16} className="text-[#1C4D8D]" />
                       Office Location
                     </div>
                   </label>
@@ -286,7 +286,7 @@ const StaffSettings = () => {
                     name="office"
                     value={settings.office}
                     onChange={handleProfileChange}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
                     placeholder="Building and room number"
                   />
                 </div>
@@ -294,7 +294,7 @@ const StaffSettings = () => {
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-slate-900">
                     <div className="flex items-center gap-2 mb-1">
-                      <Globe size={16} className="text-indigo-600" />
+                      <Globe size={16} className="text-[#1C4D8D]" />
                       Website / Research Profile
                     </div>
                   </label>
@@ -303,7 +303,7 @@ const StaffSettings = () => {
                     name="website"
                     value={settings.website}
                     onChange={handleProfileChange}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
                     placeholder="Your research profile URL"
                   />
                 </div>
@@ -311,7 +311,7 @@ const StaffSettings = () => {
                 <div className="space-y-2">
                   <label className="block text-sm font-bold text-slate-900">
                     <div className="flex items-center gap-2 mb-1">
-                      <FileText size={16} className="text-indigo-600" />
+                      <FileText size={16} className="text-[#1C4D8D]" />
                       Academic Bio
                     </div>
                   </label>
@@ -320,7 +320,7 @@ const StaffSettings = () => {
                     value={settings.bio}
                     onChange={handleProfileChange}
                     rows={4}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium resize-none"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium resize-none"
                     placeholder="Briefly describe your academic background, research interests, and specialization..."
                   />
                   <p className="text-xs text-slate-500">
@@ -362,7 +362,7 @@ const StaffSettings = () => {
                     onChange={() => handleNotificationChange('email')}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:ring-4 peer-focus:ring-[#1C4D8D]/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1C4D8D]"></div>
                 </label>
               </div>
 
@@ -378,7 +378,7 @@ const StaffSettings = () => {
                     onChange={() => handleNotificationChange('reviewRequests')}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:ring-4 peer-focus:ring-[#1C4D8D]/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1C4D8D]"></div>
                 </label>
               </div>
 
@@ -394,7 +394,7 @@ const StaffSettings = () => {
                     onChange={() => handleNotificationChange('paperUpdates')}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:ring-4 peer-focus:ring-[#1C4D8D]/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1C4D8D]"></div>
                 </label>
               </div>
 
@@ -410,12 +410,12 @@ const StaffSettings = () => {
                     onChange={() => handleNotificationChange('systemAlerts')}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:ring-4 peer-focus:ring-[#1C4D8D]/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1C4D8D]"></div>
                 </label>
               </div>
             </div>
 
-            <div className="mt-8 p-6 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
+            <div className="mt-8 p-6 rounded-xl bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border border-[#1C4D8D]/20">
               <div className="flex items-start gap-3">
                 <Bell size={20} className="text-blue-600 mt-0.5" />
                 <div>
@@ -450,7 +450,7 @@ const StaffSettings = () => {
               <div className="space-y-2">
                 <label className="block text-sm font-bold text-slate-900">
                   <div className="flex items-center gap-2 mb-1">
-                    <Lock size={16} className="text-indigo-600" />
+                    <Lock size={16} className="text-[#1C4D8D]" />
                     Current Password
                   </div>
                 </label>
@@ -460,7 +460,7 @@ const StaffSettings = () => {
                     name="current"
                     value={password.current}
                     onChange={handlePasswordChange}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium pr-12"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium pr-12"
                     placeholder="Enter current password"
                   />
                   <button
@@ -475,7 +475,7 @@ const StaffSettings = () => {
               <div className="space-y-2">
                 <label className="block text-sm font-bold text-slate-900">
                   <div className="flex items-center gap-2 mb-1">
-                    <Lock size={16} className="text-indigo-600" />
+                    <Lock size={16} className="text-[#1C4D8D]" />
                     New Password
                   </div>
                 </label>
@@ -485,7 +485,7 @@ const StaffSettings = () => {
                     name="new"
                     value={password.new}
                     onChange={handlePasswordChange}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium pr-12"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium pr-12"
                     placeholder="Enter new password"
                   />
                   <button
@@ -500,7 +500,7 @@ const StaffSettings = () => {
               <div className="space-y-2">
                 <label className="block text-sm font-bold text-slate-900">
                   <div className="flex items-center gap-2 mb-1">
-                    <Lock size={16} className="text-indigo-600" />
+                    <Lock size={16} className="text-[#1C4D8D]" />
                     Confirm New Password
                   </div>
                 </label>
@@ -510,7 +510,7 @@ const StaffSettings = () => {
                     name="confirm"
                     value={password.confirm}
                     onChange={handlePasswordChange}
-                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium pr-12"
+                    className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium pr-12"
                     placeholder="Confirm new password"
                   />
                   <button
@@ -546,7 +546,7 @@ const StaffSettings = () => {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-500 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3"
+          className="px-8 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163d70] hover:to-[#1d4ed8] transition-all duration-500 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3"
         >
           {saving ? (
             <>

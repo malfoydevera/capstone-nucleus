@@ -8,7 +8,7 @@ const ManageSchedule = () => {
           <h1 className="text-3xl font-bold text-gray-900">My Schedule</h1>
           <p className="mt-1 text-sm text-gray-500">Manage your consultation and review availability</p>
         </div>
-        <button className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+        <button className="flex items-center gap-2 bg-[#1C4D8D] text-white px-4 py-2 rounded-lg hover:bg-[#163a6b]">
           <Plus size={18} /> Add Slot
         </button>
       </div>
@@ -19,7 +19,7 @@ const ManageSchedule = () => {
         <p className="mt-2 text-gray-500 max-w-sm mx-auto">
           This feature will allow students to book consultation times with you directly.
         </p>
-        <p className="mt-4 text-sm text-indigo-600 font-medium cursor-pointer">
+        <p className="mt-4 text-sm text-[#1C4D8D] font-medium cursor-pointer">
           Connect Google Calendar →
         </p>
       </div>

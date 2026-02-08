@@ -186,7 +186,7 @@ const ReviewDetail = () => {
         icon: Clock, label: 'Pending Review'
       },
       pending_faculty: {
-        badgeColor: 'bg-gradient-to-r from-purple-100 to-pink-100 text-purple-800 border-purple-200',
+        badgeColor: 'bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
         icon: Clock, label: 'With Faculty'
       },
       pending_editor: {
@@ -194,7 +194,7 @@ const ReviewDetail = () => {
         icon: Eye, label: 'Awaiting Editor Review'
       },
       pending_admin: {
-        badgeColor: 'bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-800 border-indigo-200',
+        badgeColor: 'bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
         icon: Shield, label: 'Awaiting Admin Review'
       },
       under_review: {
@@ -221,8 +221,8 @@ const ReviewDetail = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
         </div>
         <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading research details...</p>
       </div>
@@ -234,13 +234,13 @@ const ReviewDetail = () => {
                      user?.role === 'admin' ? '/admin/papers' : '/staff/review';
     return (
       <div className="max-w-5xl mx-auto px-4 py-8">
-        <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors mb-8">
+        <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors mb-8">
           <ArrowLeft size={18} /> Back to Review Queue
         </button>
         <div className="text-center py-16">
           <FileText size={40} className="text-slate-400 mx-auto mb-6" />
           <h2 className="text-2xl font-bold text-slate-900 mb-3">Research paper not found</h2>
-          <button onClick={() => navigate(backPath)} className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold">Return to Review Queue</button>
+          <button onClick={() => navigate(backPath)} className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold">Return to Review Queue</button>
         </div>
       </div>
     );
@@ -290,18 +290,18 @@ const ReviewDetail = () => {
     <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-8">
-        <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors mb-6 group">
+        <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors mb-6 group">
           <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
           Back to Review Queue
         </button>
 
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center shadow-lg">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
               <FileCheck size={28} className="text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-black text-slate-900 mb-2">Review <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">Submission</span></h1>
+              <h1 className="text-3xl font-black text-slate-900 mb-2">Review <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Submission</span></h1>
               <div className="flex items-center gap-4">
                 <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold ${statusConfig.badgeColor} border`}>
                   <StatusIcon size={14} /> {statusConfig.label}
@@ -311,7 +311,7 @@ const ReviewDetail = () => {
             </div>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-            <Shield size={16} className="text-indigo-600" />
+            <Shield size={16} className="text-[#1C4D8D]" />
             <span className="text-sm font-semibold text-slate-700">Academic Review</span>
           </div>
         </div>
@@ -326,7 +326,7 @@ const ReviewDetail = () => {
         <div className="mb-8 bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
-              <BarChart3 size={20} className="text-indigo-600" />
+              <BarChart3 size={20} className="text-[#1C4D8D]" />
               Review Workflow Progress
             </h3>
           </div>
@@ -336,7 +336,7 @@ const ReviewDetail = () => {
               <div className="absolute top-5 left-0 right-0 h-1 bg-slate-200 rounded-full" style={{ left: '24px', right: '24px' }}></div>
               {/* Progress Bar Fill */}
               <div 
-                className="absolute top-5 left-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full transition-all duration-500" 
+                className="absolute top-5 left-0 h-1 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] rounded-full transition-all duration-500" 
                 style={{ 
                   left: '24px', 
                   width: currentStageIndex >= 0 ? `calc(${(currentStageIndex / (stages.length - 1)) * 100}% - 24px)` : '0%'
@@ -357,7 +357,7 @@ const ReviewDetail = () => {
                         w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm
                         transition-all duration-300 shadow-lg z-10
                         ${isCompleted ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white' : ''}
-                        ${isCurrent ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white ring-4 ring-indigo-200 animate-pulse' : ''}
+                        ${isCurrent ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] text-white ring-4 ring-[#1C4D8D]/20 animate-pulse' : ''}
                         ${isPending ? 'bg-white text-slate-400 border-2 border-slate-200' : ''}
                       `}>
                         {isCompleted ? <CheckCircle size={24} /> : 
@@ -370,13 +370,13 @@ const ReviewDetail = () => {
                         <p className={`
                           text-sm font-bold
                           ${isCompleted ? 'text-green-700' : ''}
-                          ${isCurrent ? 'text-indigo-700' : ''}
+                          ${isCurrent ? 'text-[#1C4D8D]' : ''}
                           ${isPending ? 'text-slate-400' : ''}
                         `}>
                           {stage.label}
                         </p>
                         {isCurrent && (
-                          <p className="text-xs text-indigo-600 mt-1 font-medium animate-pulse">
+                          <p className="text-xs text-[#1C4D8D] mt-1 font-medium animate-pulse">
                             In Progress
                           </p>
                         )}
@@ -400,7 +400,7 @@ const ReviewDetail = () => {
         <div className="lg:col-span-2 space-y-8">
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
             <div className="px-8 py-6 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex items-center gap-3">
-              <BookOpen size={20} className="text-indigo-600" />
+              <BookOpen size={20} className="text-[#1C4D8D]" />
               <div>
                 <h2 className="text-xl font-bold text-slate-900">Research Details</h2>
                 <p className="text-slate-600 text-sm">Full submission and document preview</p>
@@ -421,7 +421,7 @@ const ReviewDetail = () => {
                   </div>
                 </div>
                 <div className="flex items-start gap-4 p-4 rounded-xl bg-white border border-slate-200">
-                  <Calendar size={20} className="text-purple-600 mt-1" />
+                  <Calendar size={20} className="text-[#1C4D8D] mt-1" />
                   <div>
                     <p className="text-sm font-semibold text-slate-900">Submission Date</p>
                     <p className="text-lg font-bold text-slate-900">{formatDate(paper.submission_date || paper.created_at)}</p>
@@ -433,7 +433,7 @@ const ReviewDetail = () => {
               {/* Abstract */}
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-4">
-                  <FileText size={18} className="text-indigo-600" />
+                  <FileText size={18} className="text-[#1C4D8D]" />
                   <h4 className="text-lg font-bold text-slate-900">Abstract</h4>
                 </div>
                 <div className="p-4 rounded-xl bg-white border border-slate-200">
@@ -445,11 +445,11 @@ const ReviewDetail = () => {
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <Maximize2 size={18} className="text-indigo-600" />
+                    <Maximize2 size={18} className="text-[#1C4D8D]" />
                     <h4 className="text-lg font-bold text-slate-900">Document Preview</h4>
                   </div>
                   <div className="flex gap-3">
-                    <a href={paper.file_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                    <a href={paper.file_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-[#1C4D8D] hover:text-[#163a6b] flex items-center gap-1">
                       <ExternalLink size={14} /> Full Screen
                     </a>
                   </div>
@@ -476,12 +476,12 @@ const ReviewDetail = () => {
               {paper.keywords?.length > 0 && (
                 <div className="mb-8">
                   <div className="flex items-center gap-2 mb-3">
-                    <Tag size={18} className="text-indigo-600" />
+                    <Tag size={18} className="text-[#1C4D8D]" />
                     <h4 className="text-lg font-bold text-slate-900">Keywords</h4>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {paper.keywords.map((kw, i) => (
-                      <span key={i} className="px-4 py-2 rounded-xl bg-indigo-50 text-indigo-700 text-sm font-medium border border-indigo-100">{kw}</span>
+                      <span key={i} className="px-4 py-2 rounded-xl bg-[#1C4D8D]/10 text-[#1C4D8D] text-sm font-medium border border-[#1C4D8D]/20">{kw}</span>
                     ))}
                   </div>
                 </div>
@@ -510,7 +510,7 @@ const ReviewDetail = () => {
           })() && (
             <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
-                <FileCheck size={20} className="text-indigo-600" />
+                <FileCheck size={20} className="text-[#1C4D8D]" />
                 <h3 className="font-bold text-slate-900">Review Actions</h3>
               </div>
               <div className="p-6 space-y-4">
@@ -530,7 +530,7 @@ const ReviewDetail = () => {
           {/* Timeline & Stats */}
           <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 space-y-6">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-              <Clock size={20} className="text-purple-600" />
+              <Clock size={20} className="text-[#1C4D8D]" />
               <h3 className="font-bold text-slate-900">Submission Info</h3>
             </div>
             <div className="space-y-4">
