@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { analyticsAPI, authAPI } from '../../utils/api';
 import {
   BarChart3,
   TrendingUp,
@@ -31,38 +32,98 @@ const AdminAnalytics = () => {
   const [timeRange, setTimeRange] = useState('month');
   const [loading, setLoading] = useState(false);
 
-  // Mock data - in a real app, this would come from an API
   const [stats, setStats] = useState({
-    totalDownloads: 1234,
-    activeUsers: 856,
-    submissionRate: 24,
-    approvalRate: 78,
-    avgReviewTime: 2.5,
-    totalPapers: 342
+    totalDownloads: 0,
+    avgDownloadsPerDay: 0,
+    downloadsChange: 0,
+    activeUsers: 0,
+    newUsersThisWeek: 0,
+    approvalRate: 0,
+    submissionRate: 0,
+    totalPapers: 0
   });
 
   const [trends, setTrends] = useState({
-    downloads: {
-      labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-      data: [65, 78, 92, 105, 120, 134, 156]
-    },
-    submissions: {
-      labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-      data: [12, 15, 18, 22, 24, 28, 24]
-    },
-    users: {
-      labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-      data: [456, 478, 512, 560, 612, 698, 856]
-    }
+    downloads: { labels: [], data: [] },
+    submissions: { labels: [], data: [] },
+    users: { labels: [], data: [] }
   });
 
-  const topCategories = [
-    { name: 'Computer Science', count: 124, color: 'from-blue-500 to-cyan-500' },
-    { name: 'Engineering', count: 89, color: 'from-emerald-500 to-green-500' },
-    { name: 'Medicine', count: 76, color: 'from-red-500 to-pink-500' },
-    { name: 'Business', count: 54, color: 'from-[#1C4D8D] to-[#2563eb]' },
-    { name: 'Education', count: 42, color: 'from-amber-500 to-orange-500' },
-  ];
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        setLoading(true);
+        // System stats
+        const sysRes = await analyticsAPI.getSystemStats();
+        // Download stats (monthly)
+        const downloadRes = await analyticsAPI.getDownloadStats(timeRange);
+        // User activity (weekly)
+        const userRes = await analyticsAPI.getUserActivity('week');
+        // All users (for active users count)
+        const usersRes = await authAPI.getAllUsers();
+
+        setStats({
+          totalDownloads: sysRes.data.totalDownloads || 0,
+          avgDownloadsPerDay: sysRes.data.avgDownloadsPerDay || 0,
+          downloadsChange: sysRes.data.downloadsChange || 0,
+          activeUsers: sysRes.data.activeUsers || usersRes.data.users.length || 0,
+          newUsersThisWeek: sysRes.data.newUsersThisWeek || 0,
+          approvalRate: sysRes.data.approvalRate || 0,
+          submissionRate: sysRes.data.submissionRate || 0,
+          totalPapers: sysRes.data.totalPapers || 0
+        });
+
+        setTrends({
+          downloads: {
+            labels: downloadRes.data.labels || [],
+            data: downloadRes.data.data || []
+          },
+          submissions: {
+            labels: userRes.data.labels || [],
+            data: userRes.data.submissions || []
+          },
+          users: {
+            labels: userRes.data.labels || [],
+            data: userRes.data.users || []
+          }
+        });
+      } catch (err) {
+        // fallback: keep zeros
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAnalytics();
+  }, [timeRange]);
+
+  const [topCategories, setTopCategories] = useState([]);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await analyticsAPI.getCategoryStats();
+        // Assign colors in order, fallback to gray
+        const colors = [
+          'from-blue-500 to-cyan-500',
+          'from-emerald-500 to-green-500',
+          'from-red-500 to-pink-500',
+          'from-[#1C4D8D] to-[#2563eb]',
+          'from-amber-500 to-orange-500',
+          'from-gray-500 to-slate-500'
+        ];
+        setTopCategories(
+          (res.data.categories || []).map((cat, i) => ({
+            name: cat.name,
+            count: cat.count,
+            color: colors[i % colors.length]
+          }))
+        );
+      } catch (err) {
+        setTopCategories([]);
+      }
+    };
+    fetchCategories();
+  }, [stats.totalPapers]);
 
   const recentActivity = [
     { user: 'John Smith', action: 'downloaded paper', paper: 'AI in Healthcare', time: '10 min ago', type: 'download' },
@@ -142,13 +203,13 @@ const AdminAnalytics = () => {
               <Download size={22} className="text-white" />
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-              +12% this month
+              {stats.downloadsChange > 0 ? `+${stats.downloadsChange}%` : `${stats.downloadsChange}%`} this month
             </span>
           </div>
           <h3 className="text-3xl font-black text-slate-900 mb-1">{stats.totalDownloads.toLocaleString()}</h3>
           <p className="text-slate-600 font-medium">Total Downloads</p>
           <div className="mt-4 pt-4 border-t border-slate-200">
-            <div className="text-sm text-slate-500">Avg. 42 downloads/day</div>
+            <div className="text-sm text-slate-500">Avg. {stats.avgDownloadsPerDay}/day</div>
           </div>
         </div>
 
@@ -158,13 +219,13 @@ const AdminAnalytics = () => {
               <Users size={22} className="text-white" />
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-              +5% this month
+              +{stats.newUsersThisWeek} this week
             </span>
           </div>
           <h3 className="text-3xl font-black text-slate-900 mb-1">{stats.activeUsers.toLocaleString()}</h3>
           <p className="text-slate-600 font-medium">Active Users</p>
           <div className="mt-4 pt-4 border-t border-slate-200">
-            <div className="text-sm text-slate-500">42 new users this week</div>
+            <div className="text-sm text-slate-500">{stats.newUsersThisWeek} new users this week</div>
           </div>
         </div>
 
@@ -214,7 +275,7 @@ const AdminAnalytics = () => {
                     <div className="text-xs text-slate-500 mb-2">{trends.downloads.labels[index]}</div>
                     <div
                       className="w-full bg-gradient-to-t from-blue-500 to-cyan-500 rounded-t-lg transition-all duration-300 hover:opacity-80"
-                      style={{ height: `${(value / Math.max(...trends.downloads.data)) * 80}%` }}
+                      style={{ height: `${(value / Math.max(...trends.downloads.data || [1])) * 80}%` }}
                       title={`${value} downloads`}
                     />
                     <div className="text-xs font-medium text-slate-700 mt-2">{value}</div>
@@ -304,7 +365,7 @@ const AdminAnalytics = () => {
                       </div>
                     </div>
                     <div className="text-sm font-bold text-slate-700">
-                      {Math.round((category.count / stats.totalPapers) * 100)}%
+                      {stats.totalPapers > 0 ? Math.round((category.count / stats.totalPapers) * 100) : 0}%
                     </div>
                   </div>
                 ))}

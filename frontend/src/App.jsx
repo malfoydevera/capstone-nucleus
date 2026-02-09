@@ -117,7 +117,7 @@ function App() {
               </ProtectedRoute>
             } />
             <Route path="/student/browse" element={
-              <ProtectedRoute allowedRoles={['student', 'staff', 'admin']}>
+              <ProtectedRoute allowedRoles={['student', 'faculty', 'staff', 'admin']}>
                 <BrowseRepository />
               </ProtectedRoute>
             } />
@@ -155,16 +155,6 @@ function App() {
             <Route path="/staff/my-research" element={
               <ProtectedRoute allowedRoles={['staff']}>
                 <MyResearch />
-              </ProtectedRoute>
-            } />
-            <Route path="/staff/schedule" element={
-              <ProtectedRoute allowedRoles={['staff']}>
-                <ManageSchedule />
-              </ProtectedRoute>
-            } />
-            <Route path="/staff/settings" element={
-              <ProtectedRoute allowedRoles={['staff']}>
-                <StaffSettings />
               </ProtectedRoute>
             } />
 

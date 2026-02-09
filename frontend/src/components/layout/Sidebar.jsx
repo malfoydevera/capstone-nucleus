@@ -201,20 +201,6 @@ const Sidebar = () => {
         badge: null,
         description: 'Your publications'
       },
-      { 
-        name: 'Schedule', 
-        icon: Calendar, 
-        path: '/staff/schedule',
-        badge: null,
-        description: 'Review schedule'
-      },
-      { 
-        name: 'Settings', 
-        icon: Settings, 
-        path: '/staff/settings',
-        badge: null,
-        description: 'Preferences'
-      },
     ],
     faculty: [
       { 
@@ -231,20 +217,13 @@ const Sidebar = () => {
         badge: stats.facultyPending > 0 ? stats.facultyPending : null,
         description: 'Review assigned papers'
       },
-      { 
-        name: 'Browse Repository', 
-        icon: Search, 
-        path: '/student/browse',
-        badge: null,
-        description: 'Explore papers'
-      },
-      { 
-        name: 'Profile', 
-        icon: User, 
-        path: '/faculty/profile',
-        badge: null,
-        description: 'Account settings'
-      },
+        { 
+          name: 'Browse Repository', 
+          icon: Search, 
+          path: '/student/browse',
+          badge: null,
+          description: 'Explore papers'
+        },
     ],
     student: [
       { 
@@ -274,13 +253,6 @@ const Sidebar = () => {
         path: '/student/browse',
         badge: null,
         description: 'Explore papers'
-      },
-      { 
-        name: 'Profile', 
-        icon: User, 
-        path: '/student/profile',
-        badge: null,
-        description: 'Account settings'
       },
     ]
   };

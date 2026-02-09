@@ -1,5 +1,7 @@
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { authAPI, researchAPI } from '../../utils/api';
 import {
   Users,
   Settings,
@@ -33,12 +35,48 @@ const AdminDashboard = () => {
     navigate('/login');
   };
 
-  const stats = [
-    { label: 'Total Users', value: '1,247', change: '+12%', icon: Users, color: 'from-blue-500 to-cyan-500' },
-    { label: 'Research Papers', value: '856', change: '+8%', icon: FileText, color: 'from-emerald-500 to-green-500' },
-    { label: 'Pending Reviews', value: '42', change: '-3%', icon: Clock, color: 'from-amber-500 to-orange-500' },
-    { label: 'Approved Today', value: '18', change: '+15%', icon: CheckCircle, color: 'from-[#1C4D8D] to-[#2563eb]' },
-  ];
+  const [stats, setStats] = useState([
+    { label: 'Total Users', value: '...', change: '', icon: Users, color: 'from-blue-500 to-cyan-500' },
+    { label: 'Research Papers', value: '...', change: '', icon: FileText, color: 'from-emerald-500 to-green-500' },
+    { label: 'Pending Reviews', value: '...', change: '', icon: Clock, color: 'from-amber-500 to-orange-500' },
+    { label: 'Approved Today', value: '...', change: '', icon: CheckCircle, color: 'from-[#1C4D8D] to-[#2563eb]' },
+  ]);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        // Total Users
+        const usersRes = await authAPI.getAllUsers();
+        const totalUsers = usersRes.data.users.length;
+
+        // Research Papers
+        const papersRes = await researchAPI.getAllResearch();
+        const totalPapers = papersRes.data.papers.length;
+
+        // Pending Reviews (admin)
+        const pendingRes = await researchAPI.getAllResearch('pending_admin');
+        const pendingReviews = pendingRes.data.papers.length;
+
+        // Approved Today
+        const approvedRes = await researchAPI.getAllResearch('approved');
+        const today = new Date().toISOString().slice(0, 10);
+        const approvedToday = approvedRes.data.papers.filter(p => {
+          const date = (p.approved_date || p.updated_at || p.published_date || p.created_at || '').slice(0, 10);
+          return date === today;
+        }).length;
+
+        setStats([
+          { label: 'Total Users', value: totalUsers, change: '', icon: Users, color: 'from-blue-500 to-cyan-500' },
+          { label: 'Research Papers', value: totalPapers, change: '', icon: FileText, color: 'from-emerald-500 to-green-500' },
+          { label: 'Pending Reviews', value: pendingReviews, change: '', icon: Clock, color: 'from-amber-500 to-orange-500' },
+          { label: 'Approved Today', value: approvedToday, change: '', icon: CheckCircle, color: 'from-[#1C4D8D] to-[#2563eb]' },
+        ]);
+      } catch (err) {
+        // fallback: keep ...
+      }
+    };
+    fetchStats();
+  }, []);
 
   const quickActions = [
     { title: 'User Management', icon: Users, description: 'Manage users and permissions', color: 'bg-gradient-to-br from-blue-100 to-cyan-100', border: 'border-blue-200', textColor: 'text-blue-700', link: '/admin/users' },
