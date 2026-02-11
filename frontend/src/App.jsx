@@ -26,6 +26,9 @@ import StaffSettings from './pages/staff/StaffSettings';
 
 // NEW IMPORT for Research Detail View
 import ResearchDetail from './pages/student/ResearchDetail';
+import StudentProfile from './pages/student/StudentProfile';
+// FacultyBrowseRepository removed — faculty now uses shared BrowseRepository
+import StaffBrowseRepository from './pages/staff/StaffBrowseRepository';
 
 const DashboardLayout = () => {
   return (
@@ -121,6 +124,11 @@ function App() {
                 <BrowseRepository />
               </ProtectedRoute>
             } />
+            <Route path="/student/profile" element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <StudentProfile />
+              </ProtectedRoute>
+            } />
             
             {/* Research Detail View - Accessible to all authenticated users */}
             <Route path="/research/:id" element={
@@ -140,6 +148,11 @@ function App() {
                 <ReviewDetail />
               </ProtectedRoute>
             } />
+            <Route path="/faculty/repository" element={
+              <ProtectedRoute allowedRoles={['faculty']}>
+                <BrowseRepository />
+              </ProtectedRoute>
+            } />
 
             {/* Staff Specific Routes */}
             <Route path="/staff/review" element={
@@ -152,14 +165,9 @@ function App() {
                 <ReviewDetail />
               </ProtectedRoute>
             } />
-            <Route path="/staff/my-research" element={
+            <Route path="/staff/repository" element={
               <ProtectedRoute allowedRoles={['staff']}>
-                <MyResearch />
-              </ProtectedRoute>
-            } />
-            <Route path="/staff/schedule" element={
-              <ProtectedRoute allowedRoles={['staff']}>
-                <ManageSchedule />
+                <BrowseRepository />
               </ProtectedRoute>
             } />
             <Route path="/staff/settings" element={

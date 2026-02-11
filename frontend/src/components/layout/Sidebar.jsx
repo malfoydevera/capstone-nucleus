@@ -195,18 +195,11 @@ const Sidebar = () => {
         description: 'Review student papers'
       },
       { 
-        name: 'My Research', 
+        name: 'Browse Repository', 
         icon: BookOpen, 
-        path: '/staff/my-research',
+        path: '/staff/repository',
         badge: null,
-        description: 'Your publications'
-      },
-      { 
-        name: 'Schedule', 
-        icon: Calendar, 
-        path: '/staff/schedule',
-        badge: null,
-        description: 'Review schedule'
+        description: 'Browse research papers'
       },
       { 
         name: 'Settings', 
@@ -234,7 +227,7 @@ const Sidebar = () => {
       { 
         name: 'Browse Repository', 
         icon: Search, 
-        path: '/student/browse',
+        path: '/faculty/repository',
         badge: null,
         description: 'Explore papers'
       },

@@ -42,23 +42,40 @@ const StudentDashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
+      setLoading(true);
       const response = await researchAPI.getMyResearch();
-      const papers = response.data.papers;
+      const papers = response.data.papers || [];
 
       // Calculate statistics
       const statistics = {
         total: papers.length,
-        pending: papers.filter(p => p.status === 'pending').length,
-        underReview: papers.filter(p => p.status === 'under_review').length,
+        pending: papers.filter(p => p.status === 'pending' || p.status === 'pending_faculty').length,
+        underReview: papers.filter(p => p.status === 'under_review' || p.status === 'pending_editor').length,
         approved: papers.filter(p => p.status === 'approved').length,
         rejected: papers.filter(p => p.status === 'rejected').length,
         revisionRequired: papers.filter(p => p.status === 'revision_required').length
       };
 
       setStats(statistics);
-      setRecentPapers(papers.slice(0, 3)); // Get 3 most recent
+
+      // Get recent papers (last 5)
+      const sortedPapers = [...papers].sort((a, b) => 
+        new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at)
+      );
+      setRecentPapers(sortedPapers.slice(0, 5));
+      
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
+      // Set default values if API fails
+      setStats({
+        total: 0,
+        pending: 0,
+        underReview: 0,
+        approved: 0,
+        rejected: 0,
+        revisionRequired: 0
+      });
+      setRecentPapers([]);
     } finally {
       setLoading(false);
     }

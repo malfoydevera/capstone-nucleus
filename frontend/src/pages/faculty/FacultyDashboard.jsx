@@ -32,8 +32,9 @@ const FacultyDashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
+      setLoading(true);
       const response = await researchAPI.getFacultyAssignedPapers();
-      const papers = response.data.papers;
+      const papers = response.data.papers || [];
 
       // Calculate stats
       const now = new Date();
@@ -53,6 +54,14 @@ const FacultyDashboard = () => {
       setRecentPapers(sortedPapers.slice(0, 5));
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
+      // Set default values if API fails
+      setStats({
+        pendingReview: 0,
+        approved: 0,
+        totalAssigned: 0,
+        thisMonth: 0
+      });
+      setRecentPapers([]);
     } finally {
       setLoading(false);
     }
