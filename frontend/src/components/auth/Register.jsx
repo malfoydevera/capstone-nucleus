@@ -123,7 +123,7 @@ const Register = () => {
                 <BookOpen size={24} className="text-white" />
               </div>
               <div className="flex flex-col">
-                <span className="font-bold text-2xl tracking-tight">ResearchHub</span>
+                <span className="font-bold text-2xl tracking-tight">NUCLEUS</span>
                 <span className="text-sm text-white/70 font-medium">NU Dasmariñas</span>
               </div>
             </Link>

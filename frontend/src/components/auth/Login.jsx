@@ -104,7 +104,7 @@ const Login = () => {
                 <BookOpen size={24} className="text-white transition-transform duration-500 group-hover:scale-110" />
               </div>
               <div className="flex flex-col transform transition-all duration-500 group-hover:translate-x-1">
-                <span className="font-bold text-2xl tracking-tight">ResearchHub</span>
+                <span className="font-bold text-2xl tracking-tight">NUCLEUS</span>
                 <span className="text-sm text-white/70 font-medium">NU Dasmariñas</span>
               </div>
             </Link>

@@ -1,411 +1,542 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import {
-  FileText,
-  Clock,
-  CheckCircle,
-  TrendingUp,
-  Eye,
-  Calendar,
-  Award,
+import { 
+  FileText, 
+  Clock, 
+  CheckCircle, 
+  Eye, 
+  Search, 
+  Users,
   ChevronRight,
-  Search,
-  Download,
-  BookOpen,
-  Users
+  Calendar,
+  RefreshCw,
+  Sun,
+  Moon,
+  Settings
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
 
+// Donut Chart Component
+const DonutChart = ({ data, colors, size = 80 }) => {
+  const total = data.reduce((acc, item) => acc + item.value, 0);
+  let cumulativePercent = 0;
+
+  const getCoordinatesForPercent = (percent) => {
+    const x = Math.cos(2 * Math.PI * percent);
+    const y = Math.sin(2 * Math.PI * percent);
+    return [x, y];
+  };
+
+  return (
+    <svg width={size} height={size} viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: 'rotate(-90deg)' }}>
+      {total === 0 ? (
+        <circle cx="0" cy="0" r="1" fill="none" stroke="#e2e8f0" strokeWidth="0.35" />
+      ) : (
+        data.map((slice, index) => {
+          if (slice.value === 0) return null;
+          const percent = slice.value / total;
+          const [startX, startY] = getCoordinatesForPercent(cumulativePercent);
+          cumulativePercent += percent;
+          const [endX, endY] = getCoordinatesForPercent(cumulativePercent);
+          const largeArcFlag = percent > 0.5 ? 1 : 0;
+          const pathData = [
+            `M ${startX} ${startY}`,
+            `A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY}`,
+          ].join(' ');
+          return (
+            <path
+              key={index}
+              d={pathData}
+              fill="none"
+              stroke={colors[index]}
+              strokeWidth="0.35"
+              strokeLinecap="round"
+            />
+          );
+        })
+      )}
+      <circle cx="0" cy="0" r="0.65" fill="white" />
+    </svg>
+  );
+};
+
+// Mini Bar Chart Component
+const MiniBarChart = ({ data, maxHeight = 100 }) => {
+  const maxValue = Math.max(...data.map(d => d.value), 1);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  return (
+    <div className="flex items-end gap-2 h-full">
+      {data.map((item, index) => {
+        const height = (item.value / maxValue) * maxHeight;
+        const isCurrentMonth = index === new Date().getMonth();
+        return (
+          <div key={index} className="flex flex-col items-center gap-1 flex-1">
+            <div 
+              className={`w-full rounded-t-sm transition-all duration-500 ${
+                isCurrentMonth 
+                  ? 'bg-gradient-to-t from-cyan-600 to-cyan-400' 
+                  : 'bg-gradient-to-t from-cyan-200 to-cyan-100 hover:from-cyan-300 hover:to-cyan-200'
+              }`}
+              style={{ height: `${Math.max(height, 4)}px` }}
+            />
+            <span className="text-[10px] text-slate-400 font-medium">{months[index]}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Circular Progress Component
+const CircularProgress = ({ percentage, color, size = 48 }) => {
+  const strokeWidth = 4;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (percentage / 100) * circumference;
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="transform -rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e2e8f0" strokeWidth={strokeWidth} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className="transition-all duration-1000 ease-out"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`text-xs font-bold`} style={{ color }}>{percentage}%</span>
+      </div>
+    </div>
+  );
+};
+
 const StaffDashboard = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
-
-  const [papers, setPapers] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0, pending: 0, underReview: 0, approved: 0, rejected: 0, revisionRequired: 0
+  });
+  const [recentPapers, setRecentPapers] = useState([]);
+  const [allPapers, setAllPapers] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const researchRes = await researchAPI.getAllResearch();
-      setPapers(researchRes.data?.papers || researchRes.data || []);
-    } catch (err) {
-      console.error('Staff dashboard fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     fetchDashboardData();
-  }, [fetchDashboardData]);
+  }, []);
 
-  // ── Derived statistics ──
-  const now = new Date();
-  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const response = await researchAPI.getAllResearch();
+      const papers = response.data?.papers || response.data || [];
+      setAllPapers(papers);
 
-  const pendingPapers = papers.filter(p =>
-    ['pending', 'pending_editor', 'pending_admin', 'under_review'].includes(p.status)
-  );
-  const approvedPapers = papers.filter(p => p.status === 'approved' || p.status === 'published');
-  const rejectedPapers = papers.filter(p => p.status === 'rejected');
-  const revisionPapers = papers.filter(p => p.status === 'revision_required');
-  const reviewedPapers = [...approvedPapers, ...rejectedPapers, ...revisionPapers];
+      const statistics = {
+        total: papers.length,
+        pending: papers.filter(p => p.status === 'pending' || p.status === 'pending_faculty' || p.status === 'pending_editor').length,
+        underReview: papers.filter(p => p.status === 'under_review' || p.status === 'pending_admin').length,
+        approved: papers.filter(p => p.status === 'approved' || p.status === 'published').length,
+        rejected: papers.filter(p => p.status === 'rejected').length,
+        revisionRequired: papers.filter(p => p.status === 'revision_required').length
+      };
+      setStats(statistics);
 
-  const papersThisMonth = papers.filter(p => new Date(p.created_at || p.submission_date) >= firstOfMonth).length;
-  const reviewedThisMonth = reviewedPapers.filter(p => new Date(p.updated_at || p.created_at) >= firstOfMonth).length;
+      const sortedPapers = [...papers].sort((a, b) => 
+        new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at)
+      );
+      setRecentPapers(sortedPapers.slice(0, 5));
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error);
+      setStats({ total: 0, pending: 0, underReview: 0, approved: 0, rejected: 0, revisionRequired: 0 });
+      setRecentPapers([]);
+      setAllPapers([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const approvalRate = reviewedPapers.length > 0
-    ? Math.round((approvedPapers.length / reviewedPapers.length) * 100)
-    : 0;
+  const monthlyData = useMemo(() => {
+    const months = Array(12).fill(0).map((_, i) => ({ month: i, value: 0 }));
+    allPapers.forEach(paper => {
+      const date = new Date(paper.submission_date || paper.created_at);
+      if (date.getFullYear() === selectedYear) {
+        months[date.getMonth()].value++;
+      }
+    });
+    return months;
+  }, [allPapers, selectedYear]);
 
-  const uniqueStudents = new Set(papers.map(p => p.author_id || p.users?.id)).size;
+  const uniqueStudents = new Set(allPapers.map(p => p.author_id || p.users?.id)).size;
+  const reviewedPapers = stats.approved + stats.rejected + stats.revisionRequired;
+  const approvalRate = reviewedPapers > 0 ? Math.round((stats.approved / reviewedPapers) * 100) : 0;
+  const reviewPercentage = stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0;
 
-  const totalViews = papers.reduce((s, p) => s + (p.view_count || 0), 0);
-  const totalDownloads = papers.reduce((s, p) => s + (p.download_count || 0), 0);
-
-  const recentPapers = [...papers]
-    .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
-    .slice(0, 5);
+  const getStatusColor = (status) => {
+    const colors = {
+      pending: 'text-amber-600 bg-amber-50',
+      pending_faculty: 'text-amber-600 bg-amber-50',
+      pending_editor: 'text-cyan-600 bg-cyan-50',
+      pending_admin: 'text-indigo-600 bg-indigo-50',
+      under_review: 'text-blue-600 bg-blue-50',
+      approved: 'text-emerald-600 bg-emerald-50',
+      published: 'text-emerald-600 bg-emerald-50',
+      rejected: 'text-red-600 bg-red-50',
+      revision_required: 'text-orange-600 bg-orange-50'
+    };
+    return colors[status] || 'text-slate-600 bg-slate-50';
+  };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'Recently';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    return new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   const getStatusBadge = (status) => {
-    const badges = {
-      pending: { label: 'Pending', class: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-      pending_faculty: { label: 'With Faculty', class: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-      pending_editor: { label: 'With Editor', class: 'bg-blue-100 text-blue-800 border-blue-200' },
-      pending_admin: { label: 'With Admin', class: 'bg-[#1C4D8D]/10 text-[#1C4D8D] border-[#1C4D8D]/20' },
-      under_review: { label: 'Under Review', class: 'bg-blue-100 text-blue-800 border-blue-200' },
-      approved: { label: 'Approved', class: 'bg-green-100 text-green-800 border-green-200' },
-      published: { label: 'Published', class: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-      rejected: { label: 'Rejected', class: 'bg-red-100 text-red-800 border-red-200' },
-      revision_required: { label: 'Revision Required', class: 'bg-orange-100 text-orange-800 border-orange-200' }
+    const statusMap = {
+      pending: 'Pending', pending_faculty: 'With Faculty', pending_editor: 'With Editor',
+      pending_admin: 'With Admin', under_review: 'In Review', approved: 'Approved',
+      published: 'Published', rejected: 'Rejected', revision_required: 'Revision'
     };
-    return badges[status] || { label: 'Unknown', class: 'bg-gray-100 text-gray-800 border-gray-200' };
+    return statusMap[status] || status;
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-slate-200 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
+        <p className="mt-4 text-sm text-slate-500">Loading dashboard...</p>
       </div>
     );
   }
 
+  const statusChartData = [
+    { value: stats.approved, label: 'Approved' },
+    { value: stats.pending + stats.underReview, label: 'Pending' },
+    { value: stats.rejected, label: 'Rejected' }
+  ];
+  const statusChartColors = ['#10b981', '#f59e0b', '#ef4444'];
+
+  const activityChartData = [
+    { value: stats.approved, label: 'Completed' },
+    { value: stats.revisionRequired, label: 'Needs Work' }
+  ];
+  const activityChartColors = ['#06b6d4', '#8b5cf6'];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 animate-fadeIn">
-      {/* Welcome Header */}
-      <div className="mb-10">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg shadow-[#1C4D8D]/20">
-              <Award size={28} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-1">
-                Welcome, Staff Member
-              </h1>
-              <p className="text-lg text-slate-500 font-medium">
-                Your editorial review dashboard
-              </p>
+    <div className="min-h-screen bg-slate-50/50">
+      <div className="max-w-7xl mx-auto px-6 py-8 animate-fadeIn">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-sm text-slate-600">
+              <Calendar size={14} />
+              <span>{new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-sm font-medium">
-            <Calendar size={16} />
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 p-1 bg-white rounded-lg border border-slate-200">
+              <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Sun size={16} /></button>
+              <button className="p-1.5 rounded bg-slate-100 text-slate-600"><div className="w-4 h-4 rounded-full bg-slate-600"></div></button>
+              <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Moon size={16} /></button>
+            </div>
+            <div className="flex items-center gap-2">
+              <img 
+                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Staff')}&background=06b6d4&color=fff`}
+                alt="Profile"
+                className="w-9 h-9 rounded-full"
+              />
+              <span className="text-sm font-medium text-slate-700">{user?.fullName}</span>
+            </div>
           </div>
         </div>
-        <div className="h-px bg-gradient-to-r from-[#1C4D8D]/20 via-[#2563eb]/10 to-transparent"></div>
-      </div>
 
-      {/* Stats Grid */}
-      <div className="flex items-center gap-2 mb-4">
-        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Overview</h2>
-        <div className="flex-1 h-px bg-slate-200"></div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        <div className="bg-gradient-to-br from-yellow-50 to-amber-50 rounded-2xl border-2 border-yellow-200 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
-          <div className="flex items-start justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-500 to-amber-500 flex items-center justify-center shadow-md">
-              <Clock size={24} className="text-white" />
+        {/* Stats Row 1 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Total Papers</p>
+                <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                <FileText size={20} className="text-slate-600" />
+              </div>
             </div>
-            {pendingPapers.length > 0 && (
-              <span className="px-3 py-1 rounded-full bg-yellow-200 text-yellow-800 text-xs font-bold">
-                Action Needed
+            <div className="mt-3 flex items-center gap-1">
+              <span className="text-xs text-emerald-600 font-medium">↑ 12.5%</span>
+              <span className="text-xs text-slate-400">since last month</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Approved</p>
+                <p className="text-3xl font-bold text-slate-900">{stats.approved}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <CheckCircle size={20} className="text-emerald-600" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-1">
+              <span className="text-xs text-emerald-600 font-medium">↑ 8.2%</span>
+              <span className="text-xs text-slate-400">since last month</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Status</p>
+                <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
+                <p className="text-xs text-slate-400 mt-1">total papers</p>
+              </div>
+              <DonutChart data={statusChartData} colors={statusChartColors} size={70} />
+            </div>
+            <div className="mt-3 flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span className="text-slate-500">{stats.approved} Approved</span>
               </span>
-            )}
-          </div>
-          <p className="text-yellow-700 font-semibold mb-1">Pending Reviews</p>
-          <p className="text-4xl font-black text-yellow-900 mb-2">{pendingPapers.length}</p>
-          <p className="text-sm text-yellow-600">Awaiting your review</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl border-2 border-green-200 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
-          <div className="flex items-start justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center shadow-md">
-              <CheckCircle size={24} className="text-white" />
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                <span className="text-slate-500">{stats.pending} Pending</span>
+              </span>
             </div>
-            <span className="px-3 py-1 rounded-full bg-green-200 text-green-800 text-xs font-bold">
-              {approvalRate}% rate
-            </span>
-          </div>
-          <p className="text-green-700 font-semibold mb-1">Reviewed This Month</p>
-          <p className="text-4xl font-black text-green-900 mb-2">{reviewedThisMonth}</p>
-          <p className="text-sm text-green-600">{reviewedPapers.length} total reviewed</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border-2 border-[#1C4D8D]/20 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
-          <div className="flex items-start justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-md">
-              <BookOpen size={24} className="text-white" />
-            </div>
-          </div>
-          <p className="text-[#1C4D8D] font-semibold mb-1">Total Papers</p>
-          <p className="text-4xl font-black text-slate-900 mb-2">{papers.length}</p>
-          <p className="text-sm text-[#1C4D8D]/80">+{papersThisMonth} this month</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border-2 border-[#1C4D8D]/20 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
-          <div className="flex items-start justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-md">
-              <Users size={24} className="text-white" />
-            </div>
-          </div>
-          <p className="text-[#1C4D8D] font-semibold mb-1">Student Researchers</p>
-          <p className="text-4xl font-black text-slate-900 mb-2">{uniqueStudents}</p>
-          <p className="text-sm text-[#1C4D8D]/80">Active contributors</p>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="flex items-center gap-2 mb-4">
-        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Quick Actions</h2>
-        <div className="flex-1 h-px bg-slate-200"></div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-        <button
-          onClick={() => navigate('/staff/review')}
-          className="bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] text-white rounded-2xl p-8 shadow-2xl hover:shadow-[#1C4D8D]/30 transition-all duration-500 transform hover:scale-[1.03] text-left group ring-0 hover:ring-4 ring-[#1C4D8D]/10"
-        >
-          <div className="flex items-start justify-between mb-5">
-            <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm group-hover:bg-white/30 transition-colors duration-300">
-              <Eye size={28} className="text-white" />
-            </div>
-            <ChevronRight size={28} className="text-white/60 group-hover:text-white group-hover:translate-x-2 transition-all duration-300" />
-          </div>
-          <h3 className="text-2xl font-bold mb-2">Review Submissions</h3>
-          <p className="text-white/80 text-lg">
-            {pendingPapers.length > 0
-              ? `${pendingPapers.length} paper${pendingPapers.length !== 1 ? 's' : ''} awaiting your review`
-              : 'No papers pending review'}
-          </p>
-        </button>
-
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg hover:shadow-xl transition-shadow duration-300">
-          <div className="flex items-start gap-4 mb-5">
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center">
-              <TrendingUp size={28} className="text-green-600" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-xl font-bold text-slate-900 mb-1">Your Performance</h3>
-              <p className="text-slate-500 text-sm">Processed {reviewedPapers.length} research submissions</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 pt-4 border-t border-dashed border-slate-200">
-            <div className="flex-1 text-center">
-              <p className="text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wide">Approval Rate</p>
-              <p className="text-2xl font-black text-slate-900">{approvalRate}%</p>
-            </div>
-            <div className="w-px h-10 bg-slate-200"></div>
-            <div className="flex-1 text-center">
-              <p className="text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wide">This Month</p>
-              <p className="text-2xl font-black text-slate-900">{reviewedThisMonth}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Secondary Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
-        <button
-          onClick={() => navigate('/staff/repository')}
-          className="bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 text-left group"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-              <Search size={24} className="text-white" />
-            </div>
-            <ChevronRight size={22} className="text-white/70 group-hover:translate-x-1 transition-transform" />
-          </div>
-          <p className="text-lg font-bold">Browse Repository</p>
-          <p className="text-sm text-white/80 mt-1">Explore research papers</p>
-        </button>
-
-        <button
-          onClick={() => navigate('/staff/settings')}
-          className="bg-gradient-to-br from-slate-600 to-slate-800 text-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 text-left group"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-              <Award size={24} className="text-white" />
-            </div>
-            <ChevronRight size={22} className="text-white/70 group-hover:translate-x-1 transition-transform" />
-          </div>
-          <p className="text-lg font-bold">Settings</p>
-          <p className="text-sm text-white/80 mt-1">Account preferences</p>
-        </button>
-      </div>
-
-      {/* Engagement + Status Breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-              <Eye size={20} className="text-[#1C4D8D]" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900">Engagement</h2>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center p-5 rounded-xl bg-blue-50 border border-blue-100 hover:border-blue-300 hover:shadow-md transition-all duration-300">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center mx-auto mb-3">
-                <Eye size={20} className="text-blue-600" />
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Activity</p>
+                <p className="text-3xl font-bold text-slate-900">{reviewedPapers}</p>
+                <p className="text-xs text-slate-400 mt-1">reviewed</p>
               </div>
-              <p className="text-2xl font-black text-slate-900">{totalViews.toLocaleString()}</p>
-              <p className="text-xs font-semibold text-slate-500 mt-1 uppercase tracking-wide">Total Views</p>
+              <DonutChart data={activityChartData} colors={activityChartColors} size={70} />
             </div>
-            <div className="text-center p-5 rounded-xl bg-emerald-50 border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all duration-300">
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-                <Download size={20} className="text-emerald-600" />
+            <div className="mt-3 flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
+                <span className="text-slate-500">{approvalRate}% Rate</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-violet-500"></span>
+                <span className="text-slate-500">{stats.revisionRequired} Revision</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Row 2 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Pending Review</p>
+                <p className="text-3xl font-bold text-slate-900">{stats.pending + stats.underReview}</p>
               </div>
-              <p className="text-2xl font-black text-slate-900">{totalDownloads.toLocaleString()}</p>
-              <p className="text-xs font-semibold text-slate-500 mt-1 uppercase tracking-wide">Downloads</p>
-            </div>
-            <div className="text-center p-5 rounded-xl bg-amber-50 border border-amber-100 hover:border-amber-300 hover:shadow-md transition-all duration-300">
-              <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center mx-auto mb-3">
-                <Calendar size={20} className="text-amber-600" />
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                <Clock size={20} className="text-amber-600" />
               </div>
-              <p className="text-2xl font-black text-slate-900">{papersThisMonth}</p>
-              <p className="text-xs font-semibold text-slate-500 mt-1 uppercase tracking-wide">This Month</p>
             </div>
-            <div className="text-center p-5 rounded-xl bg-violet-50 border border-violet-100 hover:border-violet-300 hover:shadow-md transition-all duration-300">
-              <div className="w-10 h-10 rounded-lg bg-violet-100 flex items-center justify-center mx-auto mb-3">
+            <div className="mt-3 flex items-center gap-1">
+              {stats.pending > 0 ? (
+                <span className="text-xs text-amber-600 font-medium">Action needed</span>
+              ) : (
+                <span className="text-xs text-slate-400">All caught up</span>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Researchers</p>
+                <p className="text-3xl font-bold text-slate-900">{uniqueStudents}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
                 <Users size={20} className="text-violet-600" />
               </div>
-              <p className="text-2xl font-black text-slate-900">{uniqueStudents}</p>
-              <p className="text-xs font-semibold text-slate-500 mt-1 uppercase tracking-wide">Researchers</p>
+            </div>
+            <div className="mt-3 flex items-center gap-1">
+              <span className="text-xs text-slate-400">active contributors</span>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-              <TrendingUp size={20} className="text-[#1C4D8D]" />
+        {/* Charts Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+          <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-semibold text-slate-900">Submission Activity</h3>
+              <select 
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="text-sm text-slate-600 bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              >
+                <option value={2026}>2026</option>
+                <option value={2025}>2025</option>
+                <option value={2024}>2024</option>
+              </select>
             </div>
-            <h2 className="text-2xl font-bold text-slate-900">Status Breakdown</h2>
+            <div className="h-40">
+              <MiniBarChart data={monthlyData} maxHeight={120} />
+            </div>
           </div>
 
-          <div className="space-y-4">
-            {[
-              { label: 'Pending', count: pendingPapers.length, gradient: 'from-yellow-500 to-amber-500' },
-              { label: 'Approved', count: approvedPapers.length, gradient: 'from-green-500 to-emerald-500' },
-              { label: 'Revision Required', count: revisionPapers.length, gradient: 'from-amber-500 to-orange-500' },
-              { label: 'Rejected', count: rejectedPapers.length, gradient: 'from-red-500 to-rose-500' },
-            ].map((item, i) => {
-              const pct = papers.length > 0 ? Math.round((item.count / papers.length) * 100) : 0;
-              return (
-                <div key={i}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm font-semibold text-slate-700">{item.label}</span>
-                    <span className="text-sm font-bold text-slate-900">{item.count} ({pct}%)</span>
-                  </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full bg-gradient-to-r ${item.gradient} transition-all duration-500`} style={{ width: `${pct}%` }}></div>
-                  </div>
-                </div>
-              );
-            })}
-            <div className="pt-3 mt-2 border-t border-slate-200 flex items-center justify-between">
-              <span className="text-sm text-slate-500 font-medium">Total</span>
-              <span className="text-lg font-bold text-slate-900">{papers.length}</span>
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <CheckCircle size={24} className="text-emerald-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-slate-500">Approval Rate</p>
+                <p className="text-xl font-bold text-slate-900">{approvalRate}%</p>
+                <p className="text-xs text-slate-400">{reviewedPapers} reviewed</p>
+              </div>
+              <CircularProgress percentage={approvalRate || 0} color="#10b981" size={52} />
+            </div>
+
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-cyan-50 flex items-center justify-center">
+                <Eye size={24} className="text-cyan-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-slate-500">Pending</p>
+                <p className="text-xl font-bold text-slate-900">{stats.pending} Papers</p>
+                <p className="text-xs text-slate-400">awaiting review</p>
+              </div>
+              <CircularProgress percentage={reviewPercentage || 0} color="#06b6d4" size={52} />
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Recent Papers */}
-      <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-              <FileText size={20} className="text-[#1C4D8D]" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900">Recent Submissions</h2>
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700 text-xs font-bold">{papers.length} total</span>
-          </div>
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
           <button
             onClick={() => navigate('/staff/review')}
-            className="text-[#1C4D8D] hover:text-[#163a6b] font-semibold flex items-center gap-2 transition-colors duration-300 hover:gap-3"
+            className="group bg-gradient-to-br from-cyan-600 to-cyan-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
           >
-            View All
-            <ChevronRight size={18} />
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <Eye size={24} className="text-white" />
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-white">Review Papers</p>
+                <p className="text-sm text-cyan-100">{stats.pending} pending</p>
+              </div>
+              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => navigate('/staff/repository')}
+            className="group bg-gradient-to-br from-violet-600 to-violet-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <Search size={24} className="text-white" />
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-white">Browse Repository</p>
+                <p className="text-sm text-violet-100">Explore papers</p>
+              </div>
+              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => navigate('/staff/settings')}
+            className="group bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <Settings size={24} className="text-white" />
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-white">Settings</p>
+                <p className="text-sm text-emerald-100">Preferences</p>
+              </div>
+              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+            </div>
           </button>
         </div>
 
-        {recentPapers.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-              <FileText size={32} className="text-slate-300" />
+        {/* Recent Submissions Table */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="font-semibold text-slate-900">Recent Submissions</h3>
+            <button onClick={() => fetchDashboardData()} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+              <RefreshCw size={16} className="text-slate-400" />
+            </button>
+          </div>
+          
+          {recentPapers.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                <FileText size={24} className="text-slate-400" />
+              </div>
+              <p className="text-slate-600 font-medium mb-1">No submissions yet</p>
+              <p className="text-sm text-slate-400">Papers will appear here as they are submitted</p>
             </div>
-            <p className="text-slate-500 text-lg font-medium">No papers submitted yet</p>
-            <p className="text-slate-400 text-sm mt-1">Submissions will appear here as they come in</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {recentPapers.map((paper) => {
-              const statusBadge = getStatusBadge(paper.status);
-              return (
-                <div
-                  key={paper.id}
-                  onClick={() => navigate(`/staff/review/${paper.id}`)}
-                  className="p-5 rounded-xl border-2 border-slate-200 bg-white hover:bg-[#1C4D8D]/[0.02] transition-all duration-300 cursor-pointer group hover:border-[#1C4D8D]/30 hover:shadow-md hover:-translate-y-0.5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors duration-300 mb-2 line-clamp-1">
-                        {paper.title}
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
-                        <span className="font-medium">{paper.users?.full_name || 'Unknown'}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <Calendar size={14} />
-                          {formatDate(paper.submission_date || paper.created_at)}
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50 text-left">
+                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Title</th>
+                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Author</th>
+                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
+                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recentPapers.map((paper) => (
+                    <tr 
+                      key={paper.id} 
+                      className="hover:bg-slate-50 cursor-pointer transition-colors"
+                      onClick={() => navigate(`/staff/review/${paper.id}`)}
+                    >
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                            <FileText size={16} className="text-slate-500" />
+                          </div>
+                          <span className="font-medium text-slate-900 truncate max-w-[200px]">{paper.title}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-600">{paper.users?.full_name || 'Unknown'}</td>
+                      <td className="px-5 py-4 text-sm text-slate-500">{formatDate(paper.submission_date || paper.created_at)}</td>
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(paper.status)}`}>
+                          {getStatusBadge(paper.status)}
                         </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`px-3 py-1 rounded-full border text-xs font-bold ${statusBadge.class}`}>
-                        {statusBadge.label}
-                      </span>
-                      <ChevronRight size={20} className="text-slate-400 group-hover:text-[#1C4D8D] group-hover:translate-x-1 transition-all duration-300" />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                      </td>
+                      <td className="px-5 py-4">
+                        <ChevronRight size={16} className="text-slate-300" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -61,7 +61,7 @@ const Landing = () => {
           </div>
           <div className="flex flex-col">
             <span className="font-bold text-xl tracking-tight text-white">
-              ResearchHub
+              NUCLEUS
             </span>
             <span className="text-xs text-white/70 font-medium">NU Dasmariñas</span>
           </div>
