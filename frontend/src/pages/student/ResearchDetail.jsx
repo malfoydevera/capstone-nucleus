@@ -5,8 +5,6 @@ import {
   FileText, 
   User, 
   Calendar, 
-  Download, 
-  ExternalLink, 
   Eye, 
   Tag, 
   Users, 
@@ -27,7 +25,8 @@ import {
   Maximize2
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
-import ResearchChat from '../../components/ai/ResearchChat'; // Add this import
+import ResearchChat from '../../components/ai/ResearchChat';
+import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
 
 const ResearchDetail = () => {
   const { id } = useParams();
@@ -74,16 +73,6 @@ const ResearchDetail = () => {
       setViewCount(prev => prev + 1);
     } catch (error) {
       console.error('Failed to track view:', error);
-    }
-  };
-
-  const handleDownload = async () => {
-    try {
-      await researchAPI.trackDownload(id);
-      window.open(paper.file_url, '_blank');
-      setDownloadCount(prev => prev + 1);
-    } catch (error) {
-      console.error('Download error:', error);
     }
   };
 
@@ -191,15 +180,7 @@ const ResearchDetail = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleDownload}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-300"
-              >
-                <Download size={18} />
-                Download PDF
-              </button>
-            </div>
+            {/* Download button removed - PDF is view-only */}
           </div>
         </div>
 
@@ -258,36 +239,27 @@ const ResearchDetail = () => {
                   </div>
                 </div>
 
-                {/* PDF PREVIEW SECTION */}
+                {/* PDF PREVIEW SECTION - Secure Viewer with Watermark */}
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <Maximize2 size={18} className="text-indigo-600" />
                       <h4 className="text-lg font-bold text-slate-900">Document Preview</h4>
                     </div>
-                    <button 
-                      onClick={() => window.open(paper.file_url, '_blank')}
-                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-                    >
-                      <ExternalLink size={14} />
-                      Full Screen
-                    </button>
+                    <span className="text-xs font-medium text-slate-500 flex items-center gap-1">
+                      🔒 View Only
+                    </span>
                   </div>
-                  <div className="rounded-2xl border-2 border-slate-200 overflow-hidden bg-slate-100 shadow-inner">
-                    {paper.file_url ? (
-                      <iframe
-                        src={`${paper.file_url}#toolbar=0&navpanes=0`}
-                        width="100%"
-                        height="600px"
-                        title="Research PDF Preview"
-                        className="w-full"
-                      />
-                    ) : (
-                      <div className="h-[300px] flex items-center justify-center text-slate-400">
-                        Preview not available
-                      </div>
-                    )}
-                  </div>
+                  {paper.file_url ? (
+                    <SecurePDFViewer 
+                      fileUrl={paper.file_url} 
+                      watermarkText="NU"
+                    />
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-slate-400 rounded-2xl border-2 border-slate-200 bg-slate-100">
+                      Preview not available
+                    </div>
+                  )}
                 </div>
 
                 {/* Author Info */}
