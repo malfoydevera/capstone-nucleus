@@ -24,6 +24,9 @@ const upload = multer({
 router.get('/published', researchController.getPublishedResearch);
 router.get('/categories', researchController.getCategories);
 
+// Get Dean/Program Chair members (for adviser to pick target when approving)
+router.get('/dean-chair/members', authenticate, authorize('faculty'), researchController.getDeanChairMembers);
+
 // Get faculty members (for student submission)
 router.get('/faculty/members', authenticate, researchController.getFacultyMembers);
 
@@ -59,21 +62,21 @@ router.get(
 router.post(
   '/:id/approve',
   authenticate,
-  authorize('faculty', 'staff', 'admin'),
+  authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'),
   researchController.approveResearch
 );
 
 router.post(
   '/:id/reject',
   authenticate,
-  authorize('faculty', 'staff', 'admin'),
+  authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'),
   researchController.rejectResearch
 );
 
 router.post(
   '/:id/revision',
   authenticate,
-  authorize('faculty', 'staff', 'admin'),
+  authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'),
   researchController.requestRevision
 );
 
@@ -83,6 +86,14 @@ router.get(
   authenticate,
   authorize('faculty'),
   researchController.getFacultyAssignedPapers
+);
+
+// ========== DEAN & PROGRAM CHAIR ROUTES ==========
+router.get(
+  '/dean-chair/assigned',
+  authenticate,
+  authorize('dean', 'program_chair'),
+  researchController.getDeanChairAssignedPapers
 );
 
 // ========== ADMIN ONLY ROUTES ==========

@@ -56,7 +56,7 @@ const Sidebar = () => {
   const location = useLocation();
 
   useEffect(() => {
-    if (user?.role === 'staff' || user?.role === 'admin' || user?.role === 'faculty') {
+    if (['staff', 'admin', 'faculty', 'dean', 'program_chair'].includes(user?.role)) {
       fetchBadgeStats();
       fetchNotifications();
       
@@ -76,6 +76,12 @@ const Sidebar = () => {
         const papers = response.data.papers;
         const pendingCount = papers.filter(p => p.status === 'pending_faculty').length;
         setStats({ facultyPending: pendingCount });
+      } else if (user?.role === 'dean' || user?.role === 'program_chair') {
+        const response = await researchAPI.getDeanChairAssignedPapers();
+        const papers = response.data.papers;
+        const pendingStatus = user.role === 'dean' ? 'pending_dean' : 'pending_program_chair';
+        const pendingCount = papers.filter(p => p.status === pendingStatus).length;
+        setStats({ deanChairPending: pendingCount });
       } else {
         const response = await researchAPI.getAllResearch();
         const papers = response.data.papers;
@@ -123,13 +129,25 @@ const Sidebar = () => {
         color: 'from-[#1C4D8D] to-[#2563eb]',
         badgeColor: 'bg-[#1C4D8D]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
         icon: GraduationCap,
-        name: 'Faculty Member'
+        name: 'Adviser'
+      },
+      dean: {
+        color: 'from-violet-600 to-purple-600',
+        badgeColor: 'bg-violet-100 text-violet-700 border-violet-200',
+        icon: Award,
+        name: 'Dean'
+      },
+      program_chair: {
+        color: 'from-teal-600 to-cyan-600',
+        badgeColor: 'bg-teal-100 text-teal-700 border-teal-200',
+        icon: Users,
+        name: 'Program Chair'
       },
       staff: {
         color: 'from-[#2563eb] to-[#1C4D8D]',
         badgeColor: 'bg-[#2563eb]/10 text-[#2563eb] border-[#2563eb]/20',
         icon: Award,
-        name: 'Editor Staff'
+        name: 'Research Editor'
       },
       student: {
         color: 'from-[#1C4D8D] to-[#2563eb]',
@@ -239,6 +257,52 @@ const Sidebar = () => {
         description: 'Account settings'
       },
     ],
+    dean: [
+      { 
+        name: 'Dashboard', 
+        icon: LayoutDashboard, 
+        path: '/dashboard',
+        badge: null,
+        description: 'Overview'
+      },
+      { 
+        name: 'Review Submissions', 
+        icon: FileCheck, 
+        path: '/dean/review',
+        badge: stats.deanChairPending > 0 ? stats.deanChairPending : null,
+        description: 'Review assigned papers'
+      },
+      { 
+        name: 'Browse Repository', 
+        icon: Search, 
+        path: '/dean/repository',
+        badge: null,
+        description: 'Explore papers'
+      },
+    ],
+    program_chair: [
+      { 
+        name: 'Dashboard', 
+        icon: LayoutDashboard, 
+        path: '/dashboard',
+        badge: null,
+        description: 'Overview'
+      },
+      { 
+        name: 'Review Submissions', 
+        icon: FileCheck, 
+        path: '/dean/review',
+        badge: stats.deanChairPending > 0 ? stats.deanChairPending : null,
+        description: 'Review assigned papers'
+      },
+      { 
+        name: 'Browse Repository', 
+        icon: Search, 
+        path: '/dean/repository',
+        badge: null,
+        description: 'Explore papers'
+      },
+    ],
     student: [
       { 
         name: 'Dashboard', 
@@ -294,7 +358,7 @@ const Sidebar = () => {
               <Library size={24} className="text-white" />
             </div>
             <div>
-              <div className="font-bold text-white text-lg tracking-tight">ResearchHub</div>
+              <div className="font-bold text-white text-lg tracking-tight">NUcleus</div>
               <div className="text-xs text-slate-400 font-medium">NU Dasmariñas</div>
             </div>
           </div>

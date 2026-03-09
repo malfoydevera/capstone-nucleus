@@ -178,6 +178,10 @@ exports.submitResearch = async (req, res) => {
 
         if (lastReviewerRole === 'faculty') {
           newStatus = 'pending_faculty';
+        } else if (lastReviewerRole === 'dean') {
+          newStatus = 'pending_dean';
+        } else if (lastReviewerRole === 'program_chair') {
+          newStatus = 'pending_program_chair';
         } else if (lastReviewerRole === 'staff') {
           newStatus = 'pending_editor';
         } else if (lastReviewerRole === 'admin') {
@@ -516,38 +520,73 @@ exports.approveResearch = async (req, res) => {
     let newStatus;
     let notificationMessage;
     let nextReviewers = [];
+    let extraUpdate = {}; // additional fields to write on update
 
-    // Sequential approval workflow: Faculty -> Editor (Staff) -> Admin
+    // Sequential approval workflow:
+    // Adviser (faculty) → Dean OR Program Chair → Research Editor (staff) → Admin
     if (reviewerRole === 'faculty' && paper.status === 'pending_faculty') {
-      // Faculty approves: move to Editor review
+      // Adviser approves: must specify which Dean or Program Chair to forward to
+      const { targetUserId, targetRole } = req.body;
+
+      if (!targetUserId || !targetRole) {
+        return res.status(400).json({ error: 'targetUserId and targetRole are required when adviser approves a paper.' });
+      }
+      if (!['dean', 'program_chair'].includes(targetRole)) {
+        return res.status(400).json({ error: 'targetRole must be either "dean" or "program_chair".' });
+      }
+
+      // Verify the target user actually has the claimed role
+      const { data: targetUser } = await supabase
+        .from('users')
+        .select('id, full_name, role')
+        .eq('id', targetUserId)
+        .eq('role', targetRole)
+        .single();
+
+      if (!targetUser) {
+        return res.status(400).json({ error: 'Target reviewer not found or does not have the specified role.' });
+      }
+
+      newStatus = targetRole === 'dean' ? 'pending_dean' : 'pending_program_chair';
+      extraUpdate.dean_chair_id = targetUserId;
+      notificationMessage = 'Your research has been approved by your adviser and is now pending Dean/Program Chair review';
+
+      nextReviewers = [targetUserId];
+    } else if (reviewerRole === 'dean' && paper.status === 'pending_dean') {
+      // Dean approves: move to Research Editor
       newStatus = 'pending_editor';
-      notificationMessage = 'Your research has been approved by faculty and is now under editor review';
-      
-      // Notify all editors/staff
+      notificationMessage = 'Your research has been approved by the Dean and is now under Research Editor review';
+
       const { data: staffUsers } = await supabase
         .from('users')
         .select('id')
         .eq('role', 'staff');
-      
-      if (staffUsers) {
-        nextReviewers = staffUsers.map(staff => staff.id);
-      }
+
+      if (staffUsers) nextReviewers = staffUsers.map(s => s.id);
+    } else if (reviewerRole === 'program_chair' && paper.status === 'pending_program_chair') {
+      // Program Chair approves: move to Research Editor
+      newStatus = 'pending_editor';
+      notificationMessage = 'Your research has been approved by the Program Chair and is now under Research Editor review';
+
+      const { data: staffUsers } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'staff');
+
+      if (staffUsers) nextReviewers = staffUsers.map(s => s.id);
     } else if (reviewerRole === 'staff' && paper.status === 'pending_editor') {
-      // Editor approves: move to Admin review
+      // Research Editor approves: move to Admin review
       newStatus = 'pending_admin';
-      notificationMessage = 'Your research has been approved by the editor and is awaiting final admin approval';
-      
-      // Notify all admins
+      notificationMessage = 'Your research has been approved by the Research Editor and is awaiting final Admin approval';
+
       const { data: adminUsers } = await supabase
         .from('users')
         .select('id')
         .eq('role', 'admin');
-      
-      if (adminUsers) {
-        nextReviewers = adminUsers.map(admin => admin.id);
-      }
+
+      if (adminUsers) nextReviewers = adminUsers.map(a => a.id);
     } else if (reviewerRole === 'admin' && (paper.status === 'pending_admin' || paper.status === 'under_review')) {
-      // Admin final approval: publish
+      // Admin final approval
       newStatus = 'approved';
       notificationMessage = 'Congratulations! Your research has been approved and published';
     } else {
@@ -569,7 +608,8 @@ exports.approveResearch = async (req, res) => {
       .from('research_papers')
       .update({ 
         status: newStatus,
-        published_date: newStatus === 'approved' ? new Date().toISOString() : null
+        published_date: newStatus === 'approved' ? new Date().toISOString() : null,
+        ...extraUpdate
       })
       .eq('id', id)
       .select();
@@ -726,28 +766,51 @@ exports.requestRevision = async (req, res) => {
     let notificationMessage;
 
     if (reviewerRole === 'faculty' && paper.status === 'pending_faculty') {
-      // Faculty sends directly to student for revision
+      // Adviser sends directly to student for revision
       newStatus = 'revision_required';
-      notificationUserId = paper.student_id;
+      notificationUserId = paper.author_id;
       notificationTitle = `Revision Required: ${paper.title}`;
-      notificationMessage = `Your faculty advisor requires revisions. Notes: ${notes}`;
-      console.log('Flow: Faculty → Student (revision required)');
-    } 
+      notificationMessage = `Your adviser requires revisions. Notes: ${notes}`;
+      console.log('Flow: Adviser → Student (revision required)');
+    }
+    else if (
+      (reviewerRole === 'dean' && paper.status === 'pending_dean') ||
+      (reviewerRole === 'program_chair' && paper.status === 'pending_program_chair')
+    ) {
+      // Dean / Program Chair sends back to student for revision
+      newStatus = 'revision_required';
+      notificationUserId = paper.author_id;
+      const roleLabel = reviewerRole === 'dean' ? 'Dean' : 'Program Chair';
+      notificationTitle = `Revision Required: ${paper.title}`;
+      notificationMessage = `The ${roleLabel} requires revisions. Notes: ${notes}`;
+      console.log(`Flow: ${roleLabel} → Student (revision required)`);
+    }
     else if (reviewerRole === 'staff' && paper.status === 'pending_editor') {
-      // Staff sends back to faculty for review
-      newStatus = 'pending_faculty';
-      notificationUserId = paper.faculty_id;
+      // Research Editor sends back to Dean/Program Chair (or faculty if no dean_chair_id)
+      if (paper.dean_chair_id) {
+        // Determine which status to return to based on the assigned reviewer's role
+        const { data: deanChairUser } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', paper.dean_chair_id)
+          .single();
+        newStatus = deanChairUser?.role === 'dean' ? 'pending_dean' : 'pending_program_chair';
+        notificationUserId = paper.dean_chair_id;
+      } else {
+        newStatus = 'pending_faculty';
+        notificationUserId = paper.faculty_id;
+      }
       notificationTitle = `Paper Returned for Review: ${paper.title}`;
-      notificationMessage = `The editor has concerns and returned this paper to you. Editor notes: ${notes}`;
-      console.log('Flow: Staff → Faculty (returned with notes)');
+      notificationMessage = `The Research Editor returned this paper with notes: ${notes}`;
+      console.log('Flow: Research Editor → Dean/Program Chair (returned with notes)');
     }
     else if (reviewerRole === 'admin' && paper.status === 'pending_admin') {
-      // Admin sends back to staff/editor for review
+      // Admin sends back to Research Editor
       newStatus = 'pending_editor';
-      notificationUserId = paper.reviewed_by || paper.faculty_id;
+      notificationUserId = null; // Notify all staff
       notificationTitle = `Paper Returned for Review: ${paper.title}`;
-      notificationMessage = `The admin has concerns and returned this paper. Admin notes: ${notes}`;
-      console.log('Flow: Admin → Staff (returned with notes)');
+      notificationMessage = `The Admin returned this paper with notes: ${notes}`;
+      console.log('Flow: Admin → Research Editor (returned with notes)');
     }
     else {
       return res.status(400).json({ 
@@ -778,8 +841,9 @@ exports.requestRevision = async (req, res) => {
 
     console.log('Paper updated successfully. New status:', updatedPaper.status);
     
-    // Create notification for the appropriate user
+    // Create notifications
     if (notificationUserId) {
+      // Single recipient (student, faculty, dean, or program_chair)
       const { error: notifError } = await supabase
         .from('notifications')
         .insert({
@@ -789,9 +853,21 @@ exports.requestRevision = async (req, res) => {
           title: notificationTitle,
           message: notificationMessage
         });
-
-      if (notifError) {
-        console.error('Notification error:', notifError);
+      if (notifError) console.error('Notification error:', notifError);
+    } else if (newStatus === 'pending_editor') {
+      // Admin returned to Research Editor — notify all staff
+      const { data: staffUsers } = await supabase
+        .from('users').select('id').eq('role', 'staff');
+      if (staffUsers?.length > 0) {
+        await supabase.from('notifications').insert(
+          staffUsers.map(s => ({
+            user_id: s.id,
+            research_id: id,
+            type: 'returned_for_review',
+            title: notificationTitle,
+            message: notificationMessage
+          }))
+        );
       }
     }
     
@@ -921,6 +997,54 @@ exports.getFacultyMembers = async (req, res) => {
   }
 };
 
+// Get Dean and Program Chair members (for adviser to pick a target when approving)
+exports.getDeanChairMembers = async (req, res) => {
+  try {
+    const { data: members, error } = await supabase
+      .from('users')
+      .select('id, full_name, email, role, department')
+      .in('role', ['dean', 'program_chair'])
+      .order('role')
+      .order('full_name');
+
+    if (error) throw error;
+    res.json({ members });
+  } catch (error) {
+    console.error('Get dean/chair members error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Get papers assigned to the logged-in Dean or Program Chair
+exports.getDeanChairAssignedPapers = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const { status } = req.query;
+
+    const pendingStatus = userRole === 'dean' ? 'pending_dean' : 'pending_program_chair';
+
+    let query = supabase
+      .from('research_papers')
+      .select(`*, author:users!author_id (id, full_name, email)`)
+      .eq('dean_chair_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const { data: papers, error } = await query;
+    if (error) throw error;
+
+    const transformedPapers = papers.map(paper => ({ ...paper, users: paper.author }));
+    res.json({ papers: transformedPapers, pendingStatus });
+  } catch (error) {
+    console.error('Get dean/chair papers error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
 // Get faculty assigned papers (for faculty dashboard)
 exports.getFacultyAssignedPapers = async (req, res) => {
   try {
@@ -957,7 +1081,7 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const validRoles = ['student', 'staff', 'admin'];
+    const validRoles = ['student', 'faculty', 'staff', 'admin', 'dean', 'program_chair'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }

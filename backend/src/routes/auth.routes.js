@@ -14,8 +14,10 @@ router.get('/me', authenticate, authController.getCurrentUser);
 router.get('/students/search', authenticate, authController.searchStudents);
 
 // NEW: Admin Management Routes
-// Note: We use the existing auth.middleware from your previous uploads
 router.get('/users', authenticate, authorize('admin'), authController.getAllUsers);
 router.delete('/users/:id', authenticate, authorize('admin'), authController.deleteUser);
+
+// Admin-only: Create privileged accounts (faculty, staff, dean, program_chair, admin)
+router.post('/users/create', authenticate, authorize('admin'), authController.createPrivilegedUser);
 
 module.exports = router;

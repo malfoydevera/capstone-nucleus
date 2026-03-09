@@ -32,7 +32,7 @@ export const authAPI = {
   
   // UPDATED: Now accepts an optional 'role' parameter for filtering
   getAllUsers: (role) => api.get('/auth/users', { params: { role } }),
-  
+  createUser: (data) => api.post('/auth/users/create', data),
   deleteUser: (id) => api.delete(`/auth/users/${id}`),
   
   // Search students for co-author selection
@@ -47,7 +47,7 @@ export const researchAPI = {
   getMyResearch: () => api.get('/research/my/papers'),
   getAllResearch: (status) => api.get('/research/all/papers', { params: { status } }),
   getResearchById: (id) => api.get(`/research/${id}`),
-  approveResearch: (id, comments) => api.post(`/research/${id}/approve`, { comments }),
+  approveResearch: (id, comments, extra = {}) => api.post(`/research/${id}/approve`, { comments, ...extra }),
   rejectResearch: (id, reason) => api.post(`/research/${id}/reject`, { reason }),
   requestRevision: (id, notes) => api.post(`/research/${id}/revision`, { notes }),
   getPublishedResearch: (params) => api.get('/research/published', { params }),
@@ -60,6 +60,10 @@ export const researchAPI = {
   // NEW: Faculty endpoints
   getFacultyMembers: (department) => api.get('/research/faculty/members', { params: { department } }),
   getFacultyAssignedPapers: (status) => api.get('/research/faculty/assigned', { params: { status } }),
+
+  // NEW: Dean & Program Chair endpoints
+  getDeanChairMembers: () => api.get('/research/dean-chair/members'),
+  getDeanChairAssignedPapers: (status) => api.get('/research/dean-chair/assigned', { params: { status } }),
   
   // NEW: Admin research management endpoints
   adminGetAllResearch: () => api.get('/research/admin/all'),

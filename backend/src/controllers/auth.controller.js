@@ -14,7 +14,7 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const validRoles = ['student', 'faculty', 'staff', 'admin'];
+    const validRoles = ['student', 'faculty', 'staff', 'admin', 'dean', 'program_chair'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
@@ -191,6 +191,68 @@ exports.searchStudents = async (req, res) => {
   } catch (error) {
     console.error('Search students error:', error);
     res.status(500).json({ error: 'Failed to search students' });
+  }
+};
+
+// NEW: Create Privileged User (Admin only)
+// Creates faculty, staff, dean, program_chair, or admin accounts
+exports.createPrivilegedUser = async (req, res) => {
+  try {
+    const { email, password, fullName, role, department } = req.body;
+
+    const allowedRoles = ['faculty', 'staff', 'dean', 'program_chair', 'admin'];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Must be faculty, staff, dean, program_chair, or admin.' });
+    }
+
+    if (!email || !password || !fullName || !role) {
+      return res.status(400).json({ error: 'Email, password, full name, and role are required.' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    }
+
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase().trim())
+      .single();
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const { data: newUser, error } = await supabase
+      .from('users')
+      .insert([{
+        email: email.toLowerCase().trim(),
+        password: hashedPassword,
+        full_name: fullName.trim(),
+        role,
+        department: department?.trim() || null,
+      }])
+      .select('id, email, full_name, role, department, created_at')
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({
+      message: `${role.replace('_', ' ')} account created successfully.`,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        fullName: newUser.full_name,
+        role: newUser.role,
+        department: newUser.department,
+        createdAt: newUser.created_at,
+      },
+    });
+  } catch (error) {
+    console.error('Create privileged user error:', error);
+    res.status(500).json({ error: 'Failed to create user account.' });
   }
 };
 

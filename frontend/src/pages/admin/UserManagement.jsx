@@ -32,6 +32,11 @@ const UserManagement = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    email: '', password: '', fullName: '', role: 'faculty', department: ''
+  });
 
   useEffect(() => {
     fetchUsers();
@@ -102,6 +107,25 @@ const UserManagement = () => {
     setShowDeleteModal(true);
   };
 
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setCreateLoading(true);
+    const loadingToast = toast.loading('Creating account...');
+    try {
+      const response = await authAPI.createUser(createForm);
+      setUsers(prev => [response.data.user, ...prev]);
+      toast.success(`${response.data.user.role.replace('_', ' ')} account created!`, {
+        id: loadingToast, icon: '✅', duration: 3000
+      });
+      setCreateForm({ email: '', password: '', fullName: '', role: 'faculty', department: '' });
+      setShowCreateModal(false);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to create user', { id: loadingToast });
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (!userToDelete) return;
 
@@ -138,12 +162,33 @@ const UserManagement = () => {
         icon: Shield,
         label: 'Administrator'
       },
+      faculty: {
+        color: 'from-amber-500 to-yellow-500',
+        bgColor: 'bg-gradient-to-r from-amber-100 to-yellow-100',
+        textColor: 'text-amber-700',
+        icon: Users,
+        label: 'Adviser'
+      },
+      dean: {
+        color: 'from-violet-500 to-purple-500',
+        bgColor: 'bg-gradient-to-r from-violet-100 to-purple-100',
+        textColor: 'text-violet-700',
+        icon: Shield,
+        label: 'Dean'
+      },
+      program_chair: {
+        color: 'from-teal-500 to-cyan-500',
+        bgColor: 'bg-gradient-to-r from-teal-100 to-cyan-100',
+        textColor: 'text-teal-700',
+        icon: Users,
+        label: 'Program Chair'
+      },
       staff: {
         color: 'from-[#1C4D8D] to-[#2563eb]',
         bgColor: 'bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10',
         textColor: 'text-[#1C4D8D]',
         icon: Eye,
-        label: 'Staff'
+        label: 'Research Editor'
       },
       student: {
         color: 'from-blue-500 to-cyan-500',
@@ -222,13 +267,13 @@ const UserManagement = () => {
               <RefreshCw size={16} />
               Refresh
             </button>
-            {/* Placeholder for Add User modal */}
-            {/* <button
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-300"
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#1a4480] hover:to-[#1d55d0] transition-all duration-300 shadow-md"
             >
               <UserPlus size={16} />
               Add User
-            </button> */}
+            </button>
           </div>
         </div>
       </div>
@@ -328,7 +373,7 @@ const UserManagement = () => {
               <span className="text-sm font-medium text-slate-700">Filter:</span>
             </div>
             <div className="flex gap-2">
-              {['all', 'admin', 'staff', 'student', 'user'].map((role) => {
+              {['all', 'admin', 'faculty', 'dean', 'program_chair', 'staff', 'student'].map((role) => {
                 const config = getRoleConfig(role);
                 const Icon = config.icon;
                 return (
@@ -546,6 +591,127 @@ const UserManagement = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center">
+                  <UserPlus size={18} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">Create Account</h3>
+                  <p className="text-slate-500 text-sm">Add a privileged user to the system</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors text-lg font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleCreateUser} className="p-6 space-y-4">
+              {/* Full Name */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Full Name <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dr. Maria Santos"
+                  value={createForm.fullName}
+                  onChange={e => setCreateForm({ ...createForm, fullName: e.target.value })}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
+                  required
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Email Address <span className="text-red-500">*</span></label>
+                <input
+                  type="email"
+                  placeholder="user@university.edu"
+                  value={createForm.email}
+                  onChange={e => setCreateForm({ ...createForm, email: e.target.value })}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
+                  required
+                />
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Temporary Password <span className="text-red-500">*</span></label>
+                <input
+                  type="password"
+                  placeholder="Minimum 6 characters"
+                  value={createForm.password}
+                  onChange={e => setCreateForm({ ...createForm, password: e.target.value })}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
+                  required
+                  minLength={6}
+                />
+              </div>
+
+              {/* Role */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Role <span className="text-red-500">*</span></label>
+                <select
+                  value={createForm.role}
+                  onChange={e => setCreateForm({ ...createForm, role: e.target.value })}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all bg-white"
+                >
+                  <option value="faculty">Adviser (Faculty)</option>
+                  <option value="dean">Dean</option>
+                  <option value="program_chair">Program Chair</option>
+                  <option value="staff">Research Editor (Staff)</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+
+              {/* Department (optional) */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Department <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. College of Engineering"
+                  value={createForm.department}
+                  onChange={e => setCreateForm({ ...createForm, department: e.target.value })}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex-1 px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors"
+                  disabled={createLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#1a4480] hover:to-[#1d55d0] transition-all duration-300 disabled:opacity-50"
+                  disabled={createLoading}
+                >
+                  {createLoading ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Creating...
+                    </div>
+                  ) : 'Create Account'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

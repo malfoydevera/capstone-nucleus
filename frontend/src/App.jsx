@@ -15,6 +15,8 @@ import ReviewSubmissions from './pages/staff/ReviewSubmissions';
 import FacultyReview from './pages/faculty/FacultyReview';
 import ReviewDetail from './pages/staff/ReviewDetail';
 import AdminReviewSubmissions from './pages/admin/AdminReviewSubmissions';
+import DeanChairDashboard from './pages/dean/DeanChairDashboard';
+import DeanChairReview from './pages/dean/DeanChairReview';
 
 // NEW IMPORTS
 import Landing from './pages/Landing'; 
@@ -66,6 +68,9 @@ const DashboardRouter = () => {
       return <StudentDashboard />;
     case 'faculty':
       return <FacultyDashboard />;
+    case 'dean':
+    case 'program_chair':
+      return <DeanChairDashboard />;
     case 'staff':
       return <StaffDashboard />;
     case 'admin':
@@ -132,12 +137,12 @@ function App() {
             
             {/* Research Detail View - Accessible to all authenticated users */}
             <Route path="/research/:id" element={
-              <ProtectedRoute allowedRoles={['student', 'faculty', 'staff', 'admin']}>
+              <ProtectedRoute allowedRoles={['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin']}>
                 <ResearchDetail />
               </ProtectedRoute>
             } />
 
-            {/* Faculty Specific Routes */}
+            {/* Faculty (Adviser) Specific Routes */}
             <Route path="/faculty/review" element={
               <ProtectedRoute allowedRoles={['faculty']}>
                 <FacultyReview />
@@ -150,6 +155,23 @@ function App() {
             } />
             <Route path="/faculty/repository" element={
               <ProtectedRoute allowedRoles={['faculty']}>
+                <BrowseRepository />
+              </ProtectedRoute>
+            } />
+
+            {/* Dean & Program Chair Specific Routes */}
+            <Route path="/dean/review" element={
+              <ProtectedRoute allowedRoles={['dean', 'program_chair']}>
+                <DeanChairReview />
+              </ProtectedRoute>
+            } />
+            <Route path="/dean/review/:id" element={
+              <ProtectedRoute allowedRoles={['dean', 'program_chair', 'admin']}>
+                <ReviewDetail />
+              </ProtectedRoute>
+            } />
+            <Route path="/dean/repository" element={
+              <ProtectedRoute allowedRoles={['dean', 'program_chair']}>
                 <BrowseRepository />
               </ProtectedRoute>
             } />

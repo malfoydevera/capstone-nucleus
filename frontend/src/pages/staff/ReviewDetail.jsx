@@ -41,6 +41,18 @@ const ReviewDetail = () => {
   const [comments, setComments] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [revisionNotes, setRevisionNotes] = useState('');
+  const [deanChairList, setDeanChairList] = useState([]);
+  const [selectedTargetId, setSelectedTargetId] = useState('');
+  const [selectedTargetRole, setSelectedTargetRole] = useState('');
+
+  // Fetch Dean/Program Chair members when adviser is reviewing
+  useEffect(() => {
+    if (user?.role === 'faculty') {
+      researchAPI.getDeanChairMembers()
+        .then(res => setDeanChairList(res.data.members || []))
+        .catch(err => console.error('Failed to fetch dean/chair members:', err));
+    }
+  }, [user]);
 
   useEffect(() => {
     fetchPaperDetail();
@@ -66,37 +78,28 @@ const ReviewDetail = () => {
 
   const handleApprove = async () => {
     if (!comments.trim()) {
-      toast.error('Please provide approval comments', {
-        icon: '📝',
-      });
+      toast.error('Please provide approval comments', { icon: '📝' });
+      return;
+    }
+    // Adviser must pick a Dean or Program Chair
+    if (user?.role === 'faculty' && (!selectedTargetId || !selectedTargetRole)) {
+      toast.error('Please select a Dean or Program Chair to forward the paper to', { icon: '👤' });
       return;
     }
     setActionLoading(true);
     const loadingToast = toast.loading('Processing approval...');
     try {
-      console.log('=== Approving paper ===');
-      console.log('Paper ID:', id);
-      console.log('User role:', user?.role);
-      console.log('Current paper status:', paper?.status);
-      console.log('Comments:', comments);
-      
-      const response = await researchAPI.approveResearch(id, comments);
-      console.log('Approval response:', response.data);
-      
-      toast.success('Research approved successfully! 🎉', {
-        id: loadingToast,
-        duration: 3000,
-      });
-      // Navigate based on user role
-      const reviewPath = user?.role === 'faculty' ? '/faculty/review' : 
-                        user?.role === 'admin' ? '/admin/papers' : '/staff/review';
+      const extra = user?.role === 'faculty' && selectedTargetId
+        ? { targetUserId: selectedTargetId, targetRole: selectedTargetRole }
+        : {};
+      const response = await researchAPI.approveResearch(id, comments, extra);
+      toast.success('Research approved successfully! 🎉', { id: loadingToast, duration: 3000 });
+      const reviewPath = user?.role === 'faculty' ? '/faculty/review'
+        : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
+        : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
       navigate(reviewPath);
     } catch (error) {
-      console.error('Failed to approve paper:', error);
-      console.error('Error response:', error.response?.data);
-      toast.error(error.response?.data?.error || 'Failed to approve research', {
-        id: loadingToast,
-      });
+      toast.error(error.response?.data?.error || 'Failed to approve research', { id: loadingToast });
     } finally {
       setActionLoading(false);
       setShowApproveModal(false);
@@ -114,18 +117,13 @@ const ReviewDetail = () => {
     const loadingToast = toast.loading('Processing rejection...');
     try {
       await researchAPI.rejectResearch(id, rejectionReason);
-      toast.success('Research rejected', {
-        id: loadingToast,
-        icon: '❌',
-      });
-      // Navigate based on user role
-      const reviewPath = user?.role === 'faculty' ? '/faculty/review' : 
-                        user?.role === 'admin' ? '/admin/papers' : '/staff/review';
+      toast.success('Research rejected', { id: loadingToast, icon: '❌' });
+      const reviewPath = user?.role === 'faculty' ? '/faculty/review'
+        : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
+        : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
       navigate(reviewPath);
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to reject research', {
-        id: loadingToast,
-      });
+      toast.error(error.response?.data?.error || 'Failed to reject research', { id: loadingToast });
     } finally {
       setActionLoading(false);
       setShowRejectModal(false);
@@ -149,22 +147,14 @@ const ReviewDetail = () => {
       console.log('Revision notes:', revisionNotes);
       
       const response = await researchAPI.requestRevision(id, revisionNotes);
-      console.log('Revision request response:', response.data);
-      
-      toast.success('Revision requested successfully! 📝', {
-        id: loadingToast,
-        duration: 3000,
-      });
-      // Navigate based on user role
-      const reviewPath = user?.role === 'faculty' ? '/faculty/review' : 
-                        user?.role === 'admin' ? '/admin/papers' : '/staff/review';
+      toast.success('Revision requested successfully! 📝', { id: loadingToast, duration: 3000 });
+      const reviewPath = user?.role === 'faculty' ? '/faculty/review'
+        : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
+        : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
       navigate(reviewPath);
     } catch (error) {
       console.error('Failed to request revision:', error);
-      console.error('Error response:', error.response?.data);
-      toast.error(error.response?.data?.error || 'Failed to request revision', {
-        id: loadingToast,
-      });
+      toast.error(error.response?.data?.error || 'Failed to request revision', { id: loadingToast });
     } finally {
       setActionLoading(false);
       setShowRevisionModal(false);
@@ -187,7 +177,15 @@ const ReviewDetail = () => {
       },
       pending_faculty: {
         badgeColor: 'bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
-        icon: Clock, label: 'With Faculty'
+        icon: Clock, label: 'With Adviser'
+      },
+      pending_dean: {
+        badgeColor: 'bg-gradient-to-r from-violet-100 to-purple-50 text-violet-800 border-violet-200',
+        icon: Clock, label: 'With Dean'
+      },
+      pending_program_chair: {
+        badgeColor: 'bg-gradient-to-r from-teal-100 to-cyan-50 text-teal-800 border-teal-200',
+        icon: Clock, label: 'With Program Chair'
       },
       pending_editor: {
         badgeColor: 'bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-800 border-blue-200',
@@ -230,8 +228,9 @@ const ReviewDetail = () => {
   }
 
   if (!paper) {
-    const backPath = user?.role === 'faculty' ? '/faculty/review' : 
-                     user?.role === 'admin' ? '/admin/papers' : '/staff/review';
+    const backPath = user?.role === 'faculty' ? '/faculty/review'
+                   : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
+                   : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
     return (
       <div className="max-w-5xl mx-auto px-4 py-8">
         <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors mb-8">
@@ -248,38 +247,37 @@ const ReviewDetail = () => {
 
   const statusConfig = getStatusConfig(paper.status);
   const StatusIcon = statusConfig.icon;
-  const backPath = user?.role === 'faculty' ? '/faculty/review' : 
-                   user?.role === 'admin' ? '/admin/papers' : '/staff/review';
+  const backPath = user?.role === 'faculty' ? '/faculty/review'
+                 : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
+                 : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
 
   // Workflow progress tracker
   const getWorkflowStage = () => {
     const stages = [
-      { key: 'faculty', label: 'Faculty Review', status: 'pending_faculty', completed: false },
-      { key: 'editor', label: 'Editor Review', status: 'pending_editor', completed: false },
-      { key: 'admin', label: 'Admin Review', status: 'pending_admin', completed: false },
-      { key: 'published', label: 'Published', status: 'approved', completed: false }
-    ];
+      { key: 'adviser', label: 'Adviser Review', statuses: ['pending_faculty'] },
+      { key: 'dean_chair', label: 'Dean / Prog. Chair', statuses: ['pending_dean', 'pending_program_chair'] },
+      { key: 'editor', label: 'Research Editor', statuses: ['pending_editor'] },
+      { key: 'admin', label: 'Admin Review', statuses: ['pending_admin'] },
+      { key: 'published', label: 'Published', statuses: ['approved'] }
+    ].map(s => ({ ...s, completed: false }));
+
+    const paperStatus = paper.status;
+    const stageOrder = ['pending_faculty', 'pending_dean', 'pending_program_chair', 'pending_editor', 'pending_admin', 'approved'];
+    const currentIndex = stageOrder.indexOf(paperStatus);
+
+    // Mark advisers stage completed when past pending_faculty
+    if (currentIndex > stageOrder.indexOf('pending_faculty')) stages[0].completed = true;
+    // Mark dean/chair stage completed when past pending_dean / pending_program_chair
+    if (currentIndex > stageOrder.indexOf('pending_editor') - 1 && currentIndex >= stageOrder.indexOf('pending_editor')) stages[1].completed = true;
+    if (currentIndex >= stageOrder.indexOf('pending_admin')) stages[2].completed = true;
+    if (paperStatus === 'approved') { stages[3].completed = true; stages[4].completed = true; }
 
     let currentStageIndex = -1;
-    const paperStatus = paper.status;
-
-    // Mark completed stages
-    if (paperStatus === 'pending_editor' || paperStatus === 'pending_admin' || paperStatus === 'approved') {
-      stages[0].completed = true; // Faculty completed
-    }
-    if (paperStatus === 'pending_admin' || paperStatus === 'approved') {
-      stages[1].completed = true; // Editor completed
-    }
-    if (paperStatus === 'approved') {
-      stages[2].completed = true; // Admin completed
-      stages[3].completed = true; // Published
-    }
-
-    // Find current stage
     if (paperStatus === 'pending_faculty') currentStageIndex = 0;
-    else if (paperStatus === 'pending_editor') currentStageIndex = 1;
-    else if (paperStatus === 'pending_admin') currentStageIndex = 2;
-    else if (paperStatus === 'approved') currentStageIndex = 3;
+    else if (paperStatus === 'pending_dean' || paperStatus === 'pending_program_chair') currentStageIndex = 1;
+    else if (paperStatus === 'pending_editor') currentStageIndex = 2;
+    else if (paperStatus === 'pending_admin') currentStageIndex = 3;
+    else if (paperStatus === 'approved') currentStageIndex = 4;
 
     return { stages, currentStageIndex };
   };
@@ -500,6 +498,10 @@ const ReviewDetail = () => {
             // Faculty can act on pending_faculty
             if (userRole === 'faculty' && paperStatus === 'pending_faculty') return true;
             
+            // Dean / Program Chair can act on their respective pending status
+            if (userRole === 'dean' && paperStatus === 'pending_dean') return true;
+            if (userRole === 'program_chair' && paperStatus === 'pending_program_chair') return true;
+            
             // Staff can act on pending_editor, pending (legacy), under_review, revision_required
             if (userRole === 'staff' && (paperStatus === 'pending_editor' || paperStatus === 'pending' || paperStatus === 'under_review' || paperStatus === 'revision_required')) return true;
             
@@ -560,8 +562,38 @@ const ReviewDetail = () => {
               <CheckCircle size={20} className="text-emerald-600" />
               <h3 className="text-xl font-bold text-slate-900">Approve Research</h3>
             </div>
-            <div className="p-6">
-              <textarea value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Enter approval comments..." rows={4} className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none mb-4" />
+            <div className="p-6 space-y-4">
+              <textarea value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Enter approval comments..." rows={3} className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
+
+              {/* Dean / Program Chair picker — only shown for Adviser (faculty) role */}
+              {user?.role === 'faculty' && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Forward to Dean or Program Chair <span className="text-red-500">*</span>
+                  </label>
+                  {deanChairList.length === 0 ? (
+                    <p className="text-sm text-amber-600">No Dean or Program Chair accounts found. Ask your admin to create one.</p>
+                  ) : (
+                    <select
+                      value={selectedTargetId}
+                      onChange={(e) => {
+                        const selected = deanChairList.find(m => m.id === e.target.value);
+                        setSelectedTargetId(e.target.value);
+                        setSelectedTargetRole(selected?.role || '');
+                      }}
+                      className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900"
+                    >
+                      <option value="">-- Select reviewer --</option>
+                      {deanChairList.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.full_name} ({m.role === 'dean' ? 'Dean' : 'Program Chair'})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-3">
                 <button onClick={() => setShowApproveModal(false)} className="flex-1 py-3 border rounded-xl font-medium">Cancel</button>
                 <button onClick={handleApprove} disabled={actionLoading} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold">
