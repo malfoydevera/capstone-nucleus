@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const researchController = require('../controllers/research.controller');
-const { authenticate, authorize, isFaculty, isStaffOrAdmin } = require('../middleware/auth.middleware');
+const { authenticate, authorize, isFaculty, isStaffOrAdmin, isDean } = require('../middleware/auth.middleware');
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
@@ -29,6 +29,21 @@ router.get('/dean-chair/members', authenticate, authorize('faculty'), researchCo
 
 // Get faculty members (for student submission)
 router.get('/faculty/members', authenticate, researchController.getFacultyMembers);
+
+// ========== DEAN ONLY ROUTES (must precede /:id catch-all) ==========
+router.get(
+  '/dean/activity-monitor',
+  authenticate,
+  authorize('dean'),
+  researchController.getDeanActivityMonitor
+);
+
+router.get(
+  '/dean/audit-logs',
+  authenticate,
+  authorize('dean'),
+  researchController.getAuditLogs
+);
 
 // ========== AUTHENTICATED USER ROUTES ==========
 router.get('/:id', authenticate, researchController.getResearchById);
@@ -130,6 +145,14 @@ router.post(
   authenticate,
   authorize('admin'),
   researchController.adminUnpublishResearch
+);
+
+// ========== DEAN BYPASS (POST — no ordering issue with /:id) ==========
+router.post(
+  '/:id/dean-bypass',
+  authenticate,
+  authorize('dean'),
+  researchController.deanBypassApprove
 );
 
 module.exports = router;

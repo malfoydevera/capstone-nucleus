@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
+const { logAuditEvent } = require('../utils/audit');
 
 // ... (Keep existing register and login functions exactly as they are) ...
 
@@ -106,6 +107,17 @@ exports.login = async (req, res) => {
         fullName: user.full_name,
         role: user.role,
       },
+    });
+
+    // Audit log (fire-and-forget after response)
+    logAuditEvent({
+      userId: user.id,
+      userRole: user.role,
+      userName: user.full_name,
+      action: 'login',
+      targetType: 'system',
+      details: { email: user.email },
+      ipAddress: req.ip,
     });
   } catch (error) {
     console.error('Login error:', error);

@@ -17,6 +17,10 @@ import ReviewDetail from './pages/staff/ReviewDetail';
 import AdminReviewSubmissions from './pages/admin/AdminReviewSubmissions';
 import DeanChairDashboard from './pages/dean/DeanChairDashboard';
 import DeanChairReview from './pages/dean/DeanChairReview';
+import DeanDashboard from './pages/dean/DeanDashboard';
+import ProgramChairDashboard from './pages/dean/ProgramChairDashboard';
+import DeanActivityMonitor from './pages/dean/DeanActivityMonitor';
+import DeanAuditLogs from './pages/dean/DeanAuditLogs';
 
 // NEW IMPORTS
 import Landing from './pages/Landing'; 
@@ -69,8 +73,9 @@ const DashboardRouter = () => {
     case 'faculty':
       return <FacultyDashboard />;
     case 'dean':
+      return <DeanDashboard />;
     case 'program_chair':
-      return <DeanChairDashboard />;
+      return <ProgramChairDashboard />;
     case 'staff':
       return <StaffDashboard />;
     case 'admin':
@@ -173,6 +178,18 @@ function App() {
             <Route path="/dean/repository" element={
               <ProtectedRoute allowedRoles={['dean', 'program_chair']}>
                 <BrowseRepository />
+              </ProtectedRoute>
+            } />
+
+            {/* Dean Only Routes */}
+            <Route path="/dean/activity-monitor" element={
+              <ProtectedRoute allowedRoles={['dean']}>
+                <DeanActivityMonitor />
+              </ProtectedRoute>
+            } />
+            <Route path="/dean/audit-logs" element={
+              <ProtectedRoute allowedRoles={['dean']}>
+                <DeanAuditLogs />
               </ProtectedRoute>
             } />
 

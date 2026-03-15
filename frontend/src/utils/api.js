@@ -71,6 +71,11 @@ export const researchAPI = {
   adminDeleteResearch: (id) => api.delete(`/research/admin/${id}`),
   adminPublishResearch: (id) => api.post(`/research/admin/${id}/publish`),
   adminUnpublishResearch: (id) => api.post(`/research/admin/${id}/unpublish`),
+
+  // Dean-only endpoints
+  deanBypassApprove: (id, reason, targetStatus) => api.post(`/research/${id}/dean-bypass`, { reason, targetStatus }),
+  getDeanActivityMonitor: (inactivityDays) => api.get('/research/dean/activity-monitor', { params: { inactivityDays } }),
+  getAuditLogs: (filters) => api.get('/research/dean/audit-logs', { params: filters }),
 };
 
 // Analytics endpoints

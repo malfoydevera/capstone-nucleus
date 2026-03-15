@@ -44,6 +44,9 @@ const ReviewDetail = () => {
   const [deanChairList, setDeanChairList] = useState([]);
   const [selectedTargetId, setSelectedTargetId] = useState('');
   const [selectedTargetRole, setSelectedTargetRole] = useState('');
+  const [showBypassModal, setShowBypassModal] = useState(false);
+  const [bypassReason, setBypassReason] = useState('');
+  const [bypassTarget, setBypassTarget] = useState('approved');
 
   // Fetch Dean/Program Chair members when adviser is reviewing
   useEffect(() => {
@@ -525,6 +528,13 @@ const ReviewDetail = () => {
                 <button onClick={() => setShowRejectModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-bold shadow-lg">
                   <XCircle size={20} /> Reject Paper
                 </button>
+
+                {/* Dean Bypass Button — only shown for Dean role and when paper is NOT at pending_dean */}
+                {user?.role === 'dean' && paper.status !== 'pending_dean' && !['approved', 'published'].includes(paper.status) && (
+                  <button onClick={() => setShowBypassModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all font-bold shadow-lg mt-2">
+                    <Shield size={20} /> Bypass Approve
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -640,6 +650,76 @@ const ReviewDetail = () => {
                 <button onClick={() => setShowRevisionModal(false)} className="flex-1 py-3 border rounded-xl font-medium">Cancel</button>
                 <button onClick={handleRequestRevision} disabled={actionLoading} className="flex-1 py-3 bg-amber-600 text-white rounded-xl font-bold">
                   {actionLoading ? 'Processing...' : 'Request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dean Bypass Modal */}
+      {showBypassModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border">
+            <div className="px-6 py-4 bg-gradient-to-r from-violet-50 to-purple-50 border-b border-violet-100 flex items-center gap-3">
+              <Shield size={20} className="text-violet-600" />
+              <h3 className="text-xl font-bold text-slate-900">Bypass Approve (Dean)</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                <p className="text-sm text-amber-800 font-medium">⚠️ This action will bypass the normal approval workflow. A mandatory reason is required and will be permanently logged.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Bypass Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={bypassReason}
+                  onChange={(e) => setBypassReason(e.target.value)}
+                  placeholder="Enter the reason for bypass approval (e.g., Program Chair is on leave)..."
+                  rows={3}
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Advance To</label>
+                <select
+                  value={bypassTarget}
+                  onChange={(e) => setBypassTarget(e.target.value)}
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none text-slate-900"
+                >
+                  <option value="approved">Approved (Final)</option>
+                  <option value="pending_editor">Research Editor</option>
+                  <option value="pending_admin">Admin</option>
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => { setShowBypassModal(false); setBypassReason(''); }} className="flex-1 py-3 border rounded-xl font-medium">Cancel</button>
+                <button
+                  onClick={async () => {
+                    if (!bypassReason.trim()) {
+                      const toast = (await import('react-hot-toast')).default;
+                      toast.error('Bypass reason is required');
+                      return;
+                    }
+                    setActionLoading(true);
+                    const toast = (await import('react-hot-toast')).default;
+                    const loadingToast = toast.loading('Processing bypass approval...');
+                    try {
+                      await researchAPI.deanBypassApprove(id, bypassReason, bypassTarget);
+                      toast.success('Paper bypass-approved successfully! ✅', { id: loadingToast, duration: 3000 });
+                      navigate('/dean/review');
+                    } catch (error) {
+                      toast.error(error.response?.data?.error || 'Failed to bypass approve', { id: loadingToast });
+                    } finally {
+                      setActionLoading(false);
+                      setShowBypassModal(false);
+                    }
+                  }}
+                  disabled={actionLoading || !bypassReason.trim()}
+                  className="flex-1 py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-bold disabled:opacity-50"
+                >
+                  {actionLoading ? 'Processing...' : 'Bypass Approve'}
                 </button>
               </div>
             </div>

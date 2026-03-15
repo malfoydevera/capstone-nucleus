@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
+const { logAuditEvent } = require('../utils/audit');
 
 // Submit new research or update existing revision
 exports.submitResearch = async (req, res) => {
@@ -634,6 +635,16 @@ exports.approveResearch = async (req, res) => {
       console.log('Approval workflow table not available, skipping...', workflowError.message);
     }
 
+    // Audit log
+    await logAuditEvent({
+      userId: reviewerId,
+      userRole: reviewerRole,
+      action: 'approve',
+      targetType: 'research_paper',
+      targetId: id,
+      details: { previousStatus: paper.status, newStatus, paperTitle: paper.title },
+    });
+
     // Notify author (optional - skip if table doesn't exist)
     try {
       await supabase.from('notifications').insert([{
@@ -723,6 +734,16 @@ exports.rejectResearch = async (req, res) => {
     } catch (workflowError) {
       console.log('Approval workflow insert skipped:', workflowError.message);
     }
+
+    // Audit log
+    await logAuditEvent({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: 'reject',
+      targetType: 'research_paper',
+      targetId: id,
+      details: { paperTitle: paper.title, reason },
+    });
 
     res.json({ message: 'Research rejected successfully' });
   } catch (error) {
@@ -883,6 +904,16 @@ exports.requestRevision = async (req, res) => {
     } catch (workflowError) {
       console.log('Approval workflow insert skipped:', workflowError.message);
     }
+
+    // Audit log
+    await logAuditEvent({
+      userId: req.user.id,
+      userRole: reviewerRole,
+      action: 'revision',
+      targetType: 'research_paper',
+      targetId: id,
+      details: { previousStatus: paper.status, newStatus, paperTitle: paper.title, notes },
+    });
 
     res.json({ 
       message: 'Revision requested successfully', 
@@ -1140,6 +1171,230 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// ========== DEAN-ONLY FUNCTIONS ==========
+
+// Dean bypass approve — advance a paper from any stage
+exports.deanBypassApprove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason, targetStatus } = req.body;
+    const deanId = req.user.id;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'A reason is required for bypass approval' });
+    }
+
+    // Valid target statuses for bypass
+    const validTargets = ['pending_dean', 'pending_editor', 'pending_admin', 'approved'];
+    const target = targetStatus || 'approved';
+
+    if (!validTargets.includes(target)) {
+      return res.status(400).json({ error: `Invalid target status. Must be one of: ${validTargets.join(', ')}` });
+    }
+
+    // Get current paper
+    const { data: paper, error: fetchError } = await supabase
+      .from('research_papers')
+      .select('*, author:users!author_id(full_name, email)')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !paper) {
+      return res.status(404).json({ error: 'Research paper not found' });
+    }
+
+    // Cannot bypass a paper that is already approved/published or rejected
+    if (['approved', 'published'].includes(paper.status)) {
+      return res.status(400).json({ error: 'Paper is already approved/published' });
+    }
+
+    const previousStatus = paper.status;
+
+    // Update the paper
+    const updateData = {
+      status: target,
+      bypass_reason: reason,
+      bypassed_by: deanId,
+      bypassed_at: new Date().toISOString(),
+      ...(target === 'approved' ? { published_date: new Date().toISOString() } : {}),
+    };
+
+    const { data: updatedPaper, error: updateError } = await supabase
+      .from('research_papers')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Dean bypass update error:', updateError);
+      return res.status(500).json({ error: 'Failed to bypass approve paper' });
+    }
+
+    // Record in approval_workflow
+    try {
+      await supabase.from('approval_workflow').insert([{
+        research_id: id,
+        reviewer_id: deanId,
+        reviewer_role: 'dean',
+        status: 'bypassed',
+        comments: `BYPASS: ${reason}`
+      }]);
+    } catch (e) {
+      console.log('Approval workflow insert skipped:', e.message);
+    }
+
+    // Audit log with full details
+    await logAuditEvent({
+      userId: deanId,
+      userRole: 'dean',
+      action: 'bypass',
+      targetType: 'research_paper',
+      targetId: id,
+      details: {
+        previousStatus,
+        newStatus: target,
+        paperTitle: paper.title,
+        authorName: paper.author?.full_name,
+      },
+      reason,
+    });
+
+    // Notify the author
+    try {
+      await supabase.from('notifications').insert([{
+        user_id: paper.author_id,
+        research_id: id,
+        type: 'bypass_approval',
+        title: 'Research Bypass Approved by Dean',
+        message: `The Dean has bypass-approved your research "${paper.title}". Reason: ${reason}`,
+      }]);
+    } catch (e) {
+      console.log('Notification insert skipped:', e.message);
+    }
+
+    res.json({
+      message: 'Paper bypass-approved by Dean successfully',
+      previousStatus,
+      newStatus: target,
+      paper: updatedPaper,
+    });
+  } catch (error) {
+    console.error('Dean bypass error:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+};
+
+// Dean activity monitor — aggregated data for the Dean's monitoring dashboard
+exports.getDeanActivityMonitor = async (req, res) => {
+  try {
+    // 1. All papers with author info, ordered by most recent
+    const { data: allPapers, error: papersError } = await supabase
+      .from('research_papers')
+      .select('id, title, status, created_at, updated_at, submission_date, bypass_reason, bypassed_by, bypassed_at, dean_chair_id, faculty_id, author:users!author_id(id, full_name, email, role)')
+      .order('updated_at', { ascending: false })
+      .limit(200);
+
+    if (papersError) throw papersError;
+
+    // 2. Recent approval workflow entries
+    let recentActions = [];
+    try {
+      const { data, error } = await supabase
+        .from('approval_workflow')
+        .select('*, reviewer:users!approval_workflow_reviewer_id_fkey(full_name, role)')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (!error) recentActions = data || [];
+    } catch (e) {
+      console.log('approval_workflow query skipped:', e.message);
+    }
+
+    // 3. Recent audit logs
+    let auditLogs = [];
+    try {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (!error) auditLogs = data || [];
+    } catch (e) {
+      console.log('audit_logs query skipped:', e.message);
+    }
+
+    // 4. Summary statistics
+    const papers = allPapers || [];
+    const summary = {
+      total: papers.length,
+      pendingFaculty: papers.filter(p => p.status === 'pending_faculty').length,
+      pendingDean: papers.filter(p => p.status === 'pending_dean').length,
+      pendingProgramChair: papers.filter(p => p.status === 'pending_program_chair').length,
+      pendingEditor: papers.filter(p => p.status === 'pending_editor').length,
+      pendingAdmin: papers.filter(p => p.status === 'pending_admin').length,
+      approved: papers.filter(p => p.status === 'approved' || p.status === 'published').length,
+      rejected: papers.filter(p => p.status === 'rejected').length,
+      revisionRequired: papers.filter(p => p.status === 'revision_required').length,
+      bypassed: papers.filter(p => p.bypass_reason).length,
+    };
+
+    // 5. Program Chair inactivity check — papers assigned to a PC that have been
+    //    pending for more than 3 days (configurable via query param)
+    const inactivityThresholdDays = parseInt(req.query.inactivityDays) || 3;
+    const thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() - inactivityThresholdDays);
+
+    const stalePcPapers = papers.filter(p =>
+      p.status === 'pending_program_chair' &&
+      new Date(p.updated_at || p.created_at) < thresholdDate
+    );
+
+    res.json({
+      success: true,
+      summary,
+      papers: papers.map(p => ({ ...p, users: p.author })),
+      recentActions,
+      auditLogs,
+      inactivityAlerts: stalePcPapers.map(p => ({
+        ...p,
+        users: p.author,
+        daysStale: Math.ceil((Date.now() - new Date(p.updated_at || p.created_at)) / 86400000),
+      })),
+      inactivityThresholdDays,
+    });
+  } catch (error) {
+    console.error('Dean activity monitor error:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+};
+
+// Get audit logs — filterable by action, role, date range
+exports.getAuditLogs = async (req, res) => {
+  try {
+    const { action, role, from, to, limit: queryLimit } = req.query;
+    const maxLimit = Math.min(parseInt(queryLimit) || 100, 500);
+
+    let query = supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(maxLimit);
+
+    if (action) query = query.eq('action', action);
+    if (role) query = query.eq('user_role', role);
+    if (from) query = query.gte('created_at', from);
+    if (to) query = query.lte('created_at', to);
+
+    const { data: logs, error } = await query;
+    if (error) throw error;
+
+    res.json({ success: true, logs: logs || [] });
+  } catch (error) {
+    console.error('Get audit logs error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };

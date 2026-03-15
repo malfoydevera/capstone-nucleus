@@ -263,7 +263,7 @@ const Sidebar = () => {
         icon: LayoutDashboard, 
         path: '/dashboard',
         badge: null,
-        description: 'Overview'
+        description: 'Overview & Monitoring'
       },
       { 
         name: 'Review Submissions', 
@@ -271,6 +271,20 @@ const Sidebar = () => {
         path: '/dean/review',
         badge: stats.deanChairPending > 0 ? stats.deanChairPending : null,
         description: 'Review assigned papers'
+      },
+      { 
+        name: 'Activity Monitor', 
+        icon: Eye, 
+        path: '/dean/activity-monitor',
+        badge: null,
+        description: 'Monitor all accounts'
+      },
+      { 
+        name: 'Audit Logs', 
+        icon: Shield, 
+        path: '/dean/audit-logs',
+        badge: null,
+        description: 'System activity trail'
       },
       { 
         name: 'Browse Repository', 

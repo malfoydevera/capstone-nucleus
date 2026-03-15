@@ -47,3 +47,19 @@ exports.isStaffOrAdmin = (req, res, next) => {
   }
   next();
 };
+
+// Dean only check helper
+exports.isDean = (req, res, next) => {
+  if (!req.user || req.user.role !== 'dean') {
+    return res.status(403).json({ error: 'Dean access required' });
+  }
+  next();
+};
+
+// Dean or Program Chair check helper
+exports.isDeanOrProgramChair = (req, res, next) => {
+  if (!req.user || !['dean', 'program_chair'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Dean or Program Chair access required' });
+  }
+  next();
+};
