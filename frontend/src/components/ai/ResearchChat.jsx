@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Sparkles, ChevronRight, Paperclip } from 'lucide-react';
+import { aiAPI } from '../../utils/api';
 
 const TypingMessage = ({ content, onComplete }) => {
   const [displayedText, setDisplayedText] = useState('');
@@ -21,7 +22,7 @@ const TypingMessage = ({ content, onComplete }) => {
   return <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayedText}</p>;
 };
 
-const ResearchChat = ({ paperId, fileUrl }) => {
+const ResearchChat = ({ paperId }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -46,14 +47,7 @@ const ResearchChat = ({ paperId, fileUrl }) => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5001/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paperId, fileUrl, message: messageContent })
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to get response');
+      const data = await aiAPI.chatWithPaper(paperId, messageContent);
 
       setMessages(prev => [...prev, {
         id: Date.now() + 1,

@@ -13,7 +13,7 @@ import {
   RefreshCw,
   Sun,
   Moon,
-  Settings
+  User
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
 
@@ -460,16 +460,16 @@ const StaffDashboard = () => {
           </button>
 
           <button
-            onClick={() => navigate('/staff/settings')}
+            onClick={() => navigate('/profile')}
             className="group bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
           >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <Settings size={24} className="text-white" />
+                <User size={24} className="text-white" />
               </div>
               <div className="text-left">
-                <p className="font-semibold text-white">Settings</p>
-                <p className="text-sm text-emerald-100">Preferences</p>
+                <p className="font-semibold text-white">Profile</p>
+                <p className="text-sm text-emerald-100">Details and export</p>
               </div>
               <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
             </div>

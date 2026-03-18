@@ -46,6 +46,15 @@ router.get(
 );
 
 // ========== AUTHENTICATED USER ROUTES ==========
+router.get('/profile/data', authenticate, researchController.getProfileResearchData);
+router.get('/:id/annotations', authenticate, researchController.getPaperAnnotations);
+router.post(
+  '/:id/annotations',
+  authenticate,
+  authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'),
+  researchController.addPaperAnnotation
+);
+router.get('/:id/file', authenticate, researchController.getResearchFile);
 router.get('/:id', authenticate, researchController.getResearchById);
 router.post('/:id/view', authenticate, researchController.trackView);
 router.post('/:id/download', authenticate, researchController.trackDownload);

@@ -14,4 +14,23 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const defaultStorageBucket = process.env.SUPABASE_STORAGE_BUCKET || 'research-papers';
+
+supabase.createSignedFileUrl = async (path, expiresInSeconds = 3600, bucket = defaultStorageBucket) => {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, expiresInSeconds);
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.signedUrl || null;
+};
+
+supabase.getPublicFileUrl = (path, bucket = defaultStorageBucket) => {
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data?.publicUrl || null;
+};
+
 module.exports = supabase;

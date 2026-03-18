@@ -8,7 +8,12 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-const SecurePDFViewer = ({ fileUrl, watermarkText = "NU" }) => {
+const SecurePDFViewer = ({
+  fileUrl,
+  watermarkText = "NU",
+  enableAnnotationSelection = false,
+  onSelectionCapture,
+}) => {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.0);
@@ -39,13 +44,13 @@ const SecurePDFViewer = ({ fileUrl, watermarkText = "NU" }) => {
   // Prevent keyboard shortcuts for copying
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Prevent Ctrl+C, Ctrl+A, Ctrl+S, Ctrl+P
-      if (e.ctrlKey && ['c', 'a', 's', 'p'].includes(e.key.toLowerCase())) {
+      // Prevent Ctrl/Cmd shortcuts unless annotation selection is enabled.
+      if (!enableAnnotationSelection && e.ctrlKey && ['c', 'a', 's', 'p'].includes(e.key.toLowerCase())) {
         e.preventDefault();
         return false;
       }
       // Prevent Cmd+C, Cmd+A, Cmd+S, Cmd+P on Mac
-      if (e.metaKey && ['c', 'a', 's', 'p'].includes(e.key.toLowerCase())) {
+      if (!enableAnnotationSelection && e.metaKey && ['c', 'a', 's', 'p'].includes(e.key.toLowerCase())) {
         e.preventDefault();
         return false;
       }
@@ -61,7 +66,40 @@ const SecurePDFViewer = ({ fileUrl, watermarkText = "NU" }) => {
         container.removeEventListener('keydown', handleKeyDown);
       }
     };
-  }, []);
+  }, [enableAnnotationSelection]);
+
+  useEffect(() => {
+    if (!enableAnnotationSelection || typeof onSelectionCapture !== 'function') {
+      return undefined;
+    }
+
+    const handleMouseUp = () => {
+      const selection = window.getSelection();
+      const selectedText = selection?.toString()?.trim();
+
+      if (!selectedText || !containerRef.current || !selection?.anchorNode) {
+        return;
+      }
+
+      const anchorElement = selection.anchorNode.nodeType === Node.TEXT_NODE
+        ? selection.anchorNode.parentElement
+        : selection.anchorNode;
+
+      if (anchorElement && containerRef.current.contains(anchorElement)) {
+        onSelectionCapture({
+          selectedText,
+          pageNumber,
+        });
+      }
+    };
+
+    const container = containerRef.current;
+    container?.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      container?.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [enableAnnotationSelection, onSelectionCapture, pageNumber]);
 
   const onDocumentLoadSuccess = ({ numPages }) => {
     setNumPages(numPages);
@@ -146,10 +184,10 @@ const SecurePDFViewer = ({ fileUrl, watermarkText = "NU" }) => {
           : 'rounded-2xl border-2 border-slate-200'
       }`}
       style={{ 
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-        MozUserSelect: 'none',
-        msUserSelect: 'none'
+        userSelect: enableAnnotationSelection ? 'text' : 'none',
+        WebkitUserSelect: enableAnnotationSelection ? 'text' : 'none',
+        MozUserSelect: enableAnnotationSelection ? 'text' : 'none',
+        msUserSelect: enableAnnotationSelection ? 'text' : 'none'
       }}
       tabIndex={0}
     >
@@ -228,8 +266,12 @@ const SecurePDFViewer = ({ fileUrl, watermarkText = "NU" }) => {
       <div 
         className="relative overflow-auto bg-slate-700"
         style={{ height: isFullscreen ? 'calc(100vh - 100px)' : '550px' }}
-        onCopy={(e) => e.preventDefault()}
-        onCut={(e) => e.preventDefault()}
+        onCopy={(e) => {
+          if (!enableAnnotationSelection) e.preventDefault();
+        }}
+        onCut={(e) => {
+          if (!enableAnnotationSelection) e.preventDefault();
+        }}
         onDragStart={(e) => e.preventDefault()}
       >
         {/* Watermark Overlay */}
@@ -272,8 +314,8 @@ const SecurePDFViewer = ({ fileUrl, watermarkText = "NU" }) => {
             <Page
               pageNumber={pageNumber}
               scale={scale}
-              renderTextLayer={false}
-              renderAnnotationLayer={false}
+              renderTextLayer={enableAnnotationSelection}
+              renderAnnotationLayer={enableAnnotationSelection}
               className="shadow-2xl"
               loading={null}
             />
@@ -284,7 +326,8 @@ const SecurePDFViewer = ({ fileUrl, watermarkText = "NU" }) => {
       {/* Security Notice */}
       <div className="px-4 py-2 bg-gradient-to-r from-amber-900/50 to-orange-900/50 border-t border-amber-700/50">
         <p className="text-amber-200 text-xs text-center font-medium">
-          🔒 This document is protected. Downloading and copying are disabled.
+          🔒 This document is protected. Downloading is disabled.
+          {enableAnnotationSelection ? ' Text selection is enabled for reviewer annotations.' : ' Copying is disabled.'}
           {isFullscreen && ' Press ESC to exit fullscreen.'}
         </p>
       </div>

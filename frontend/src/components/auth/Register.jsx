@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { departmentAPI } from '../../utils/api';
 import { 
   BookOpen, 
   UserPlus, 
@@ -11,6 +12,7 @@ import {
   Eye, 
   EyeOff,
   GraduationCap,
+  Building,
   ArrowRight,
   Shield,
   Users,
@@ -26,8 +28,13 @@ const Register = () => {
     confirmPassword: '',
     fullName: '',
     role: 'student',
-    program: 'BSIT', // CHANGE 1: Initialize program with default
+    department: '',
+    departmentId: '',
+    program: '',
+    programId: '',
   });
+  const [departments, setDepartments] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
@@ -35,7 +42,59 @@ const Register = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const response = await departmentAPI.getAllDepartments();
+        const list = response.data.departments || [];
+        setDepartments(list);
+      } catch (apiError) {
+        console.error('Failed to fetch departments:', apiError);
+      }
+    };
+
+    fetchDepartments();
+  }, []);
+
+  const fetchPrograms = async (departmentId) => {
+    if (!departmentId) {
+      setPrograms([]);
+      return;
+    }
+
+    try {
+      const response = await departmentAPI.getProgramsByDepartment(departmentId);
+      setPrograms(response.data.programs || []);
+    } catch (apiError) {
+      console.error('Failed to fetch programs:', apiError);
+      setPrograms([]);
+    }
+  };
+
   const handleChange = (e) => {
+    if (e.target.name === 'departmentId') {
+      const selectedDepartment = departments.find((dept) => dept.id === e.target.value);
+      setFormData({
+        ...formData,
+        departmentId: e.target.value,
+        department: selectedDepartment?.name || '',
+        programId: '',
+        program: '',
+      });
+      fetchPrograms(e.target.value);
+      return;
+    }
+
+    if (e.target.name === 'programId') {
+      const selectedProgram = programs.find((prog) => prog.id === e.target.value);
+      setFormData({
+        ...formData,
+        programId: e.target.value,
+        program: selectedProgram?.name || '',
+      });
+      return;
+    }
+
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -65,13 +124,13 @@ const Register = () => {
     setLoading(true);
     const loadingToast = toast.loading('Creating your account...');
 
-    // CHANGE 2: Pass program to register function
     const result = await register(
       formData.email,
       formData.password,
       formData.fullName,
       formData.role,
-      formData.program 
+      formData.program,
+      formData.department
     );
 
     setLoading(false);
@@ -93,8 +152,6 @@ const Register = () => {
 
   const roleOptions = [
     { value: 'student', label: 'Student Researcher', icon: <GraduationCap size={16} /> },
-    { value: 'faculty', label: 'Faculty Member', icon: <Users size={16} /> },
-    { value: 'staff', label: 'Staff/Admin', icon: <Briefcase size={16} /> },
   ];
 
   const passwordStrength = formData.password.length > 0 ? 
@@ -295,48 +352,51 @@ const Register = () => {
                   />
                 </div>
 
-                {/* CHANGE 3: Program Selection (Visible only for Students) */}
+                {/* Department & Program Selection (Visible only for Students) */}
                 {formData.role === 'student' && (
                   <div className="space-y-1.5 animate-fadeIn transition-all duration-300">
                     <label className="block text-sm font-semibold text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Building size={14} className="text-indigo-600" />
+                        Department
+                      </div>
+                    </label>
+                    <select
+                      name="departmentId"
+                      value={formData.departmentId}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">Select department</option>
+                      {departments.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label className="block text-sm font-semibold text-slate-700 pt-2">
                       <div className="flex items-center gap-2">
                         <GraduationCap size={14} className="text-indigo-600" />
                         Program
                       </div>
                     </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className={`relative flex items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                        formData.program === 'BSIT' 
-                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' 
-                          : 'border-slate-200 hover:border-indigo-200'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="program"
-                          value="BSIT"
-                          checked={formData.program === 'BSIT'}
-                          onChange={handleChange}
-                          className="absolute opacity-0"
-                        />
-                        <span className="font-bold">BSIT</span>
-                      </label>
-                      
-                      <label className={`relative flex items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                        formData.program === 'BSCS' 
-                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' 
-                          : 'border-slate-200 hover:border-indigo-200'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="program"
-                          value="BSCS"
-                          checked={formData.program === 'BSCS'}
-                          onChange={handleChange}
-                          className="absolute opacity-0"
-                        />
-                        <span className="font-bold">BSCS</span>
-                      </label>
-                    </div>
+                    <select
+                      name="programId"
+                      value={formData.programId}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:bg-slate-100"
+                      required
+                      disabled={!formData.departmentId}
+                    >
+                      <option value="">Select program</option>
+                      {programs.map((program) => (
+                        <option key={program.id} value={program.id}>
+                          {program.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
 

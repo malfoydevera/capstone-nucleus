@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const supabase = require('../config/supabase');
 
 // ─── GET /api/departments ────────────────────────────────────────────────────
 // Public (no auth).  Returns active departments with nested programs array.

@@ -4,7 +4,6 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { researchAPI } from '../../utils/api';
 import { 
   LayoutDashboard, 
-  Settings, 
   BarChart3, 
   BookOpen, 
   LogOut, 
@@ -43,7 +42,6 @@ import {
   BellDot,
   ChevronRight,
   MoreVertical,
-  Settings2,
   GraduationCap
 } from 'lucide-react';
 
@@ -190,11 +188,11 @@ const Sidebar = () => {
         description: 'System insights'
       },
       { 
-        name: 'Settings', 
-        icon: Settings2, 
-        path: '/admin/settings',
+        name: 'Profile', 
+        icon: User, 
+        path: '/profile',
         badge: null,
-        description: 'System configuration'
+        description: 'Profile & exports'
       },
     ],
     staff: [
@@ -220,11 +218,11 @@ const Sidebar = () => {
         description: 'Browse research papers'
       },
       { 
-        name: 'Settings', 
-        icon: Settings, 
-        path: '/staff/settings',
+        name: 'Profile', 
+        icon: User, 
+        path: '/profile',
         badge: null,
-        description: 'Preferences'
+        description: 'Profile & exports'
       },
     ],
     faculty: [
@@ -252,7 +250,7 @@ const Sidebar = () => {
       { 
         name: 'Profile', 
         icon: User, 
-        path: '/faculty/profile',
+        path: '/profile',
         badge: null,
         description: 'Account settings'
       },
@@ -293,6 +291,13 @@ const Sidebar = () => {
         badge: null,
         description: 'Explore papers'
       },
+      {
+        name: 'Profile',
+        icon: User,
+        path: '/profile',
+        badge: null,
+        description: 'Profile & exports'
+      },
     ],
     program_chair: [
       { 
@@ -315,6 +320,13 @@ const Sidebar = () => {
         path: '/dean/repository',
         badge: null,
         description: 'Explore papers'
+      },
+      {
+        name: 'Profile',
+        icon: User,
+        path: '/profile',
+        badge: null,
+        description: 'Profile & exports'
       },
     ],
     student: [
@@ -349,7 +361,7 @@ const Sidebar = () => {
       { 
         name: 'Profile', 
         icon: User, 
-        path: '/student/profile',
+        path: '/profile',
         badge: null,
         description: 'Account settings'
       },

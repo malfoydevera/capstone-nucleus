@@ -24,9 +24,11 @@ import {
   BarChart3,
   ChevronRight,
   Eye,
-  Maximize2 // Added for the preview header
+  Maximize2,
+  MessageSquarePlus
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
 
 const ReviewDetail = () => {
   const { id } = useParams();
@@ -47,6 +49,14 @@ const ReviewDetail = () => {
   const [showBypassModal, setShowBypassModal] = useState(false);
   const [bypassReason, setBypassReason] = useState('');
   const [bypassTarget, setBypassTarget] = useState('approved');
+  const [annotations, setAnnotations] = useState([]);
+  const [annotationForm, setAnnotationForm] = useState({
+    note: '',
+    pageNumber: '',
+    sectionLabel: '',
+    selectedText: '',
+  });
+  const [annotationLoading, setAnnotationLoading] = useState(false);
 
   // Fetch Dean/Program Chair members when adviser is reviewing
   useEffect(() => {
@@ -72,10 +82,40 @@ const ReviewDetail = () => {
     try {
       const response = await researchAPI.getResearchById(id);
       setPaper(response.data.paper);
+      const annotationResponse = await researchAPI.getAnnotations(id);
+      setAnnotations(annotationResponse.data.annotations || []);
     } catch (error) {
       console.error('Failed to fetch paper:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const canAnnotate = ['faculty', 'dean', 'program_chair', 'staff', 'admin'].includes(user?.role);
+
+  const handleAddAnnotation = async () => {
+    if (!annotationForm.note.trim()) {
+      toast.error('Please add a note before saving annotation');
+      return;
+    }
+
+    setAnnotationLoading(true);
+    try {
+      await researchAPI.addAnnotation(id, {
+        note: annotationForm.note,
+        pageNumber: annotationForm.pageNumber ? Number(annotationForm.pageNumber) : null,
+        sectionLabel: annotationForm.sectionLabel,
+        selectedText: annotationForm.selectedText,
+      });
+
+      const annotationResponse = await researchAPI.getAnnotations(id);
+      setAnnotations(annotationResponse.data.annotations || []);
+      setAnnotationForm({ note: '', pageNumber: '', sectionLabel: '', selectedText: '' });
+      toast.success('Annotation added');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to add annotation');
+    } finally {
+      setAnnotationLoading(false);
     }
   };
 
@@ -92,10 +132,14 @@ const ReviewDetail = () => {
     setActionLoading(true);
     const loadingToast = toast.loading('Processing approval...');
     try {
+      const annotationSummary = annotations.length > 0
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
+        : '';
+
       const extra = user?.role === 'faculty' && selectedTargetId
         ? { targetUserId: selectedTargetId, targetRole: selectedTargetRole }
         : {};
-      const response = await researchAPI.approveResearch(id, comments, extra);
+      const response = await researchAPI.approveResearch(id, `${comments}${annotationSummary}`, extra);
       toast.success('Research approved successfully! 🎉', { id: loadingToast, duration: 3000 });
       const reviewPath = user?.role === 'faculty' ? '/faculty/review'
         : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
@@ -119,7 +163,10 @@ const ReviewDetail = () => {
     setActionLoading(true);
     const loadingToast = toast.loading('Processing rejection...');
     try {
-      await researchAPI.rejectResearch(id, rejectionReason);
+      const annotationSummary = annotations.length > 0
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
+        : '';
+      await researchAPI.rejectResearch(id, `${rejectionReason}${annotationSummary}`);
       toast.success('Research rejected', { id: loadingToast, icon: '❌' });
       const reviewPath = user?.role === 'faculty' ? '/faculty/review'
         : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
@@ -143,13 +190,17 @@ const ReviewDetail = () => {
     setActionLoading(true);
     const loadingToast = toast.loading('Requesting revision...');
     try {
+      const annotationSummary = annotations.length > 0
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
+        : '';
+
       console.log('=== Requesting Revision ===');
       console.log('Paper ID:', id);
       console.log('User role:', user?.role);
       console.log('Current paper status:', paper?.status);
       console.log('Revision notes:', revisionNotes);
       
-      const response = await researchAPI.requestRevision(id, revisionNotes);
+      const response = await researchAPI.requestRevision(id, `${revisionNotes}${annotationSummary}`);
       toast.success('Revision requested successfully! 📝', { id: loadingToast, duration: 3000 });
       const reviewPath = user?.role === 'faculty' ? '/faculty/review'
         : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
@@ -162,6 +213,14 @@ const ReviewDetail = () => {
       setActionLoading(false);
       setShowRevisionModal(false);
     }
+  };
+
+  const handlePdfSelection = ({ selectedText, pageNumber }) => {
+    setAnnotationForm((prev) => ({
+      ...prev,
+      selectedText,
+      pageNumber: pageNumber ? String(pageNumber) : prev.pageNumber,
+    }));
   };
 
   const formatDate = (dateString) => {
@@ -457,12 +516,11 @@ const ReviewDetail = () => {
                 </div>
                 <div className="rounded-2xl border-2 border-slate-200 overflow-hidden bg-slate-100 shadow-inner">
                   {paper.file_url ? (
-                    <iframe
-                      src={`${paper.file_url}#toolbar=0&navpanes=0`}
-                      width="100%"
-                      height="650px"
-                      title="Research PDF Preview"
-                      className="w-full border-none"
+                    <SecurePDFViewer
+                      fileUrl={paper.file_url}
+                      watermarkText="NU"
+                      enableAnnotationSelection={canAnnotate}
+                      onSelectionCapture={handlePdfSelection}
                     />
                   ) : (
                     <div className="h-[300px] flex flex-col items-center justify-center text-slate-400 gap-2">
@@ -487,6 +545,78 @@ const ReviewDetail = () => {
                   </div>
                 </div>
               )}
+
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-3">
+                  <MessageSquarePlus size={18} className="text-[#1C4D8D]" />
+                  <h4 className="text-lg font-bold text-slate-900">Targeted Review Notes</h4>
+                </div>
+
+                {canAnnotate && (
+                  <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-3 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Page number"
+                        value={annotationForm.pageNumber}
+                        onChange={(event) => setAnnotationForm((prev) => ({ ...prev, pageNumber: event.target.value }))}
+                        className="px-3 py-2.5 border border-slate-300 rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Section label"
+                        value={annotationForm.sectionLabel}
+                        onChange={(event) => setAnnotationForm((prev) => ({ ...prev, sectionLabel: event.target.value }))}
+                        className="px-3 py-2.5 border border-slate-300 rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Selected text"
+                        value={annotationForm.selectedText}
+                        onChange={(event) => setAnnotationForm((prev) => ({ ...prev, selectedText: event.target.value }))}
+                        className="px-3 py-2.5 border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <textarea
+                      rows={3}
+                      placeholder="Write the exact change request for the student"
+                      value={annotationForm.note}
+                      onChange={(event) => setAnnotationForm((prev) => ({ ...prev, note: event.target.value }))}
+                      className="w-full px-3 py-2.5 border border-slate-300 rounded-lg"
+                    />
+                    <p className="text-xs text-slate-500">
+                      Tip: select text in the document preview to auto-fill selected text and page.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAddAnnotation}
+                      disabled={annotationLoading}
+                      className="px-4 py-2 rounded-lg bg-[#1C4D8D] text-white hover:bg-[#163f73] disabled:opacity-60"
+                    >
+                      {annotationLoading ? 'Saving...' : 'Save Note'}
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {annotations.length === 0 ? (
+                    <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">No targeted notes yet.</div>
+                  ) : (
+                    annotations.map((annotation) => (
+                      <div key={annotation.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                        <div className="text-xs text-slate-500 mb-1">
+                          {annotation.reviewerName} {annotation.pageNumber ? `• Page ${annotation.pageNumber}` : ''} {annotation.sectionLabel ? `• ${annotation.sectionLabel}` : ''}
+                        </div>
+                        {annotation.selectedText && (
+                          <p className="text-xs text-slate-600 mb-1">Selected: "{annotation.selectedText}"</p>
+                        )}
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>

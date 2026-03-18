@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -12,8 +12,7 @@ const api = axios.create({
 // Add token to requests
 api.interceptors.request.use(
   (config) => {
-    // We switched to sessionStorage in the previous steps for multi-tab support
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -56,6 +55,8 @@ export const researchAPI = {
   // NEW: Tracking endpoints for view and download
   trackView: (id) => api.post(`/research/${id}/view`),
   trackDownload: (id) => api.post(`/research/${id}/download`),
+  getAnnotations: (id) => api.get(`/research/${id}/annotations`),
+  addAnnotation: (id, payload) => api.post(`/research/${id}/annotations`, payload),
   
   // NEW: Faculty endpoints
   getFacultyMembers: (department) => api.get('/research/faculty/members', { params: { department } }),
@@ -76,6 +77,14 @@ export const researchAPI = {
   deanBypassApprove: (id, reason, targetStatus) => api.post(`/research/${id}/dean-bypass`, { reason, targetStatus }),
   getDeanActivityMonitor: (inactivityDays) => api.get('/research/dean/activity-monitor', { params: { inactivityDays } }),
   getAuditLogs: (filters) => api.get('/research/dean/audit-logs', { params: filters }),
+
+  // Profile analytics/export source data for all roles
+  getProfileData: (filters = {}) => api.get('/research/profile/data', { params: filters }),
+};
+
+export const departmentAPI = {
+  getAllDepartments: () => api.get('/departments'),
+  getProgramsByDepartment: (departmentId) => api.get(`/departments/${departmentId}/programs`),
 };
 
 // Analytics endpoints
@@ -87,8 +96,8 @@ export const analyticsAPI = {
 };
 
 export const aiAPI = {
-  chatWithPaper: async (paperId, fileUrl, message) => {
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+  chatWithPaper: async (paperId, message) => {
+    const token = sessionStorage.getItem('token');
     const response = await fetch(`${API_BASE_URL}/ai/chat`, {
       method: 'POST',
       headers: {
@@ -97,21 +106,25 @@ export const aiAPI = {
       },
       body: JSON.stringify({
         paperId,
-        fileUrl,
         message
       })
     });
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to chat with paper');
+      const message =
+        (typeof error?.error === 'string' && error.error) ||
+        error?.error?.message ||
+        error?.message ||
+        'Failed to chat with paper';
+      throw new Error(message);
     }
 
     return response.json();
   },
 
   extractPdfMetadata: async (file) => {
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     const formData = new FormData();
     formData.append('file', file);
 
@@ -125,7 +138,12 @@ export const aiAPI = {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to extract PDF metadata');
+      const message =
+        (typeof error?.error === 'string' && error.error) ||
+        error?.error?.message ||
+        error?.message ||
+        'Failed to extract PDF metadata';
+      throw new Error(message);
     }
 
     return response.json();

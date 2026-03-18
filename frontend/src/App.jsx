@@ -26,13 +26,10 @@ import DeanAuditLogs from './pages/dean/DeanAuditLogs';
 import Landing from './pages/Landing'; 
 import UserManagement from './pages/admin/UserManagement';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
-import AdminSettings from './pages/admin/AdminSettings';
-import ManageSchedule from './pages/staff/ManageSchedule';
-import StaffSettings from './pages/staff/StaffSettings';
+import ProfileDashboard from './pages/shared/ProfileDashboard';
 
 // NEW IMPORT for Research Detail View
 import ResearchDetail from './pages/student/ResearchDetail';
-import StudentProfile from './pages/student/StudentProfile';
 // FacultyBrowseRepository removed — faculty now uses shared BrowseRepository
 import StaffBrowseRepository from './pages/staff/StaffBrowseRepository';
 
@@ -134,11 +131,13 @@ function App() {
                 <BrowseRepository />
               </ProtectedRoute>
             } />
-            <Route path="/student/profile" element={
-              <ProtectedRoute allowedRoles={['student']}>
-                <StudentProfile />
+            <Route path="/profile" element={
+              <ProtectedRoute allowedRoles={['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin']}>
+                <ProfileDashboard />
               </ProtectedRoute>
             } />
+            <Route path="/student/profile" element={<Navigate to="/profile" replace />} />
+            <Route path="/faculty/profile" element={<Navigate to="/profile" replace />} />
             
             {/* Research Detail View - Accessible to all authenticated users */}
             <Route path="/research/:id" element={
@@ -209,12 +208,6 @@ function App() {
                 <BrowseRepository />
               </ProtectedRoute>
             } />
-            <Route path="/staff/settings" element={
-              <ProtectedRoute allowedRoles={['staff']}>
-                <StaffSettings />
-              </ProtectedRoute>
-            } />
-
             {/* Admin Specific Routes */}
             <Route path="/admin/papers" element={
               <ProtectedRoute allowedRoles={['admin']}>
@@ -234,11 +227,6 @@ function App() {
             <Route path="/admin/analytics" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminAnalytics />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/settings" element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <AdminSettings />
               </ProtectedRoute>
             } />
           </Route>

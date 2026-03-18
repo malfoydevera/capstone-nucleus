@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
 const { logAuditEvent } = require('../utils/audit');
+const { sendSuccess, sendError } = require('../utils/response');
 
 // ... (Keep existing register and login functions exactly as they are) ...
 
@@ -9,25 +10,40 @@ const { logAuditEvent } = require('../utils/audit');
 exports.register = async (req, res) => {
   // ... (Keep existing code) ...
   try {
-    const { email, password, fullName, role } = req.body;
+    const { email, password, fullName, role, program, department } = req.body;
 
     if (!email || !password || !fullName || !role) {
-      return res.status(400).json({ error: 'All fields are required' });
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'All fields are required' });
     }
 
-    const validRoles = ['student', 'faculty', 'staff', 'admin', 'dean', 'program_chair'];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Invalid role' });
+    const normalizedRole = String(role).trim();
+    if (normalizedRole !== 'student') {
+      return sendError(res, {
+        status: 403,
+        code: 'REGISTRATION_ROLE_NOT_ALLOWED',
+        message: 'Public registration is only available for students'
+      });
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const normalizedFullName = String(fullName).trim();
+
+    if (normalizedFullName.length < 2) {
+      return sendError(res, { status: 400, code: 'INVALID_FULL_NAME', message: 'Full name is too short' });
+    }
+
+    if (String(password).length < 6) {
+      return sendError(res, { status: 400, code: 'WEAK_PASSWORD', message: 'Password must be at least 6 characters' });
     }
 
     const { data: existingUser } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .single();
 
     if (existingUser) {
-      return res.status(400).json({ error: 'User already exists' });
+      return sendError(res, { status: 400, code: 'USER_EXISTS', message: 'User already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -35,10 +51,12 @@ exports.register = async (req, res) => {
     const { data: newUser, error } = await supabase
       .from('users')
       .insert([{
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
-        full_name: fullName,
-        role,
+        full_name: normalizedFullName,
+        role: 'student',
+        program: program?.trim() || null,
+        department: department?.trim() || null,
       }])
       .select()
       .single();
@@ -51,19 +69,24 @@ exports.register = async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.status(201).json({
+    return sendSuccess(res, {
+      status: 201,
       message: 'User registered successfully',
-      token,
-      user: {
-        id: newUser.id,
-        email: newUser.email,
-        fullName: newUser.full_name,
-        role: newUser.role,
+      data: {
+        token,
+        user: {
+          id: newUser.id,
+          email: newUser.email,
+          fullName: newUser.full_name,
+          role: newUser.role,
+          department: newUser.department,
+          program: newUser.program,
+        },
       },
     });
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({ error: 'Server error' });
+    return sendError(res, { status: 500, code: 'REGISTER_FAILED', message: 'Server error' });
   }
 };
 
@@ -74,7 +97,11 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_INPUT',
+        message: 'Email and password are required'
+      });
     }
 
     const { data: user, error } = await supabase
@@ -84,12 +111,12 @@ exports.login = async (req, res) => {
       .single();
 
     if (error || !user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return sendError(res, { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' });
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return sendError(res, { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' });
     }
 
     const token = jwt.sign(
@@ -98,14 +125,18 @@ exports.login = async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.json({
+    sendSuccess(res, {
       message: 'Login successful',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.full_name,
-        role: user.role,
+      data: {
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.full_name,
+          role: user.role,
+          department: user.department,
+          program: user.program,
+        },
       },
     });
 
@@ -121,7 +152,7 @@ exports.login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Server error' });
+    return sendError(res, { status: 500, code: 'LOGIN_FAILED', message: 'Server error' });
   }
 };
 
@@ -130,26 +161,30 @@ exports.getCurrentUser = async (req, res) => {
   try {
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, email, full_name, role, created_at')
+      .select('id, email, full_name, role, department, program, created_at')
       .eq('id', req.user.id)
       .single();
 
     if (error || !user) {
-      return res.status(404).json({ error: 'User not found' });
+      return sendError(res, { status: 404, code: 'USER_NOT_FOUND', message: 'User not found' });
     }
 
-    res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.full_name,
-        role: user.role,
-        createdAt: user.created_at,
+    return sendSuccess(res, {
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.full_name,
+          role: user.role,
+          department: user.department,
+          program: user.program,
+          createdAt: user.created_at,
+        },
       },
     });
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    return sendError(res, { status: 500, code: 'GET_USER_FAILED', message: 'Server error' });
   }
 };
 
@@ -187,7 +222,7 @@ exports.searchStudents = async (req, res) => {
     const { query } = req.query;
 
     if (!query || query.length < 2) {
-      return res.json({ students: [] });
+      return sendSuccess(res, { data: { students: [] } });
     }
 
     const { data: students, error } = await supabase
@@ -199,10 +234,10 @@ exports.searchStudents = async (req, res) => {
 
     if (error) throw error;
 
-    res.json({ students: students || [] });
+    return sendSuccess(res, { data: { students: students || [] } });
   } catch (error) {
     console.error('Search students error:', error);
-    res.status(500).json({ error: 'Failed to search students' });
+    return sendError(res, { status: 500, code: 'SEARCH_STUDENTS_FAILED', message: 'Failed to search students' });
   }
 };
 
@@ -210,7 +245,7 @@ exports.searchStudents = async (req, res) => {
 // Creates faculty, staff, dean, program_chair, or admin accounts
 exports.createPrivilegedUser = async (req, res) => {
   try {
-    const { email, password, fullName, role, department } = req.body;
+    const { email, password, fullName, role, department, program } = req.body;
 
     const allowedRoles = ['faculty', 'staff', 'dean', 'program_chair', 'admin'];
     if (!allowedRoles.includes(role)) {
@@ -245,8 +280,9 @@ exports.createPrivilegedUser = async (req, res) => {
         full_name: fullName.trim(),
         role,
         department: department?.trim() || null,
+        program: program?.trim() || null,
       }])
-      .select('id, email, full_name, role, department, created_at')
+      .select('id, email, full_name, role, department, program, created_at')
       .single();
 
     if (error) throw error;
@@ -259,6 +295,7 @@ exports.createPrivilegedUser = async (req, res) => {
         fullName: newUser.full_name,
         role: newUser.role,
         department: newUser.department,
+        program: newUser.program,
         createdAt: newUser.created_at,
       },
     });

@@ -5,7 +5,10 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "backfill:storage-path": "node scripts/backfill-storage-path.js"
   },
   "keywords": [],
   "author": "",
@@ -27,6 +30,8 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "jest": "^30.0.5",
+    "nodemon": "^3.1.11",
+    "supertest": "^7.1.1"
   }
 }

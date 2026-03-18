@@ -20,9 +20,18 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
   }, []);
 
+  const getApiErrorMessage = (err, fallback) => {
+    const payload = err?.response?.data;
+    if (typeof payload?.error === 'string') return payload.error;
+    if (payload?.error?.message) return payload.error.message;
+    if (payload?.message) return payload.message;
+    return fallback;
+  };
+
   const checkAuth = async () => {
     // CHANGE: Use sessionStorage
     const token = sessionStorage.getItem('token');
+    localStorage.removeItem('token');
     if (token) {
       try {
         const response = await authAPI.getCurrentUser();
@@ -43,26 +52,28 @@ export const AuthProvider = ({ children }) => {
       const { token, user } = response.data;
       // CHANGE: Use sessionStorage
       sessionStorage.setItem('token', token);
+      localStorage.removeItem('token');
       setUser(user);
       return { success: true };
     } catch (err) {
-      const message = err.response?.data?.error || 'Login failed';
+      const message = getApiErrorMessage(err, 'Login failed');
       setError(message);
       return { success: false, error: message };
     }
   };
 
-  const register = async (email, password, fullName, role, program) => {
+  const register = async (email, password, fullName, role, program, department) => {
     try {
       setError(null);
       // Pass 'program' into the object sent to the API
-      const response = await authAPI.register({ email, password, fullName, role, program });
+      const response = await authAPI.register({ email, password, fullName, role, program, department });
       const { token, user } = response.data;
       sessionStorage.setItem('token', token);
+      localStorage.removeItem('token');
       setUser(user);
       return { success: true };
     } catch (err) {
-      const message = err.response?.data?.error || 'Registration failed';
+      const message = getApiErrorMessage(err, 'Registration failed');
       setError(message);
       return { success: false, error: message };
     }
@@ -71,6 +82,7 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     // CHANGE: Use sessionStorage
     sessionStorage.removeItem('token');
+    localStorage.removeItem('token');
     setUser(null);
   };
 

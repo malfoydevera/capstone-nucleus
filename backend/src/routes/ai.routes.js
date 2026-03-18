@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { chatWithPaper, extractPdfMetadata } = require('../controllers/ai.controller');
+const { authenticate } = require('../middleware/auth.middleware');
 
 // Configure multer for memory storage
 const upload = multer({
@@ -16,7 +17,29 @@ const upload = multer({
   }
 });
 
-router.post('/chat', chatWithPaper);
-router.post('/extract-pdf', upload.single('file'), extractPdfMetadata);
+const windowMs = Number(process.env.AI_RATE_LIMIT_WINDOW_MS || 60_000);
+const maxRequests = Number(process.env.AI_RATE_LIMIT_MAX || 30);
+const requestBuckets = new Map();
+
+const aiRateLimiter = (req, res, next) => {
+  const key = `${req.user?.id || 'anonymous'}:${req.ip}`;
+  const now = Date.now();
+  const bucket = requestBuckets.get(key);
+
+  if (!bucket || now > bucket.resetAt) {
+    requestBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return next();
+  }
+
+  if (bucket.count >= maxRequests) {
+    return res.status(429).json({ error: 'Too many AI requests. Please try again later.' });
+  }
+
+  bucket.count += 1;
+  return next();
+};
+
+router.post('/chat', authenticate, aiRateLimiter, chatWithPaper);
+router.post('/extract-pdf', authenticate, aiRateLimiter, upload.single('file'), extractPdfMetadata);
 
 module.exports = router;

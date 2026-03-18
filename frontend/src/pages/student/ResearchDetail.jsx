@@ -22,7 +22,8 @@ import {
   Lightbulb,
   Heart,
   ShieldCheck,
-  Maximize2
+  Maximize2,
+  MessageSquare
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
 import ResearchChat from '../../components/ai/ResearchChat';
@@ -37,6 +38,7 @@ const ResearchDetail = () => {
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [downloadCount, setDownloadCount] = useState(0);
   const [viewCount, setViewCount] = useState(0);
+  const [annotations, setAnnotations] = useState([]);
 
   useEffect(() => {
     fetchPaperDetail();
@@ -50,6 +52,8 @@ const ResearchDetail = () => {
       setPaper(response.data.paper);
       setDownloadCount(response.data.paper.download_count || 0);
       setViewCount(response.data.paper.view_count || 0);
+      const annotationResponse = await researchAPI.getAnnotations(id);
+      setAnnotations(annotationResponse.data.annotations || []);
     } catch (error) {
       console.error('Failed to fetch paper:', error);
     } finally {
@@ -99,6 +103,49 @@ const ResearchDetail = () => {
     if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
     if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
     return `${Math.floor(diffDays / 365)} years ago`;
+  };
+
+  const getCitationYear = () => {
+    const sourceDate = paper?.published_date || paper?.submission_date || paper?.created_at;
+    if (!sourceDate) return 'n.d.';
+    return String(new Date(sourceDate).getFullYear());
+  };
+
+  const getAuthors = () => {
+    const authors = [];
+    if (paper?.users?.full_name) {
+      authors.push(paper.users.full_name);
+    }
+    if (paper?.co_authors) {
+      String(paper.co_authors)
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .forEach((entry) => authors.push(entry));
+    }
+    return Array.from(new Set(authors));
+  };
+
+  const formatApaCitation = () => {
+    const authors = getAuthors();
+    const authorText = authors.length > 0 ? authors.join(', ') : 'Unknown Author';
+    const year = getCitationYear();
+    return `${authorText} (${year}). ${paper?.title || 'Untitled research paper'}. NUCLEUS Research Repository.`;
+  };
+
+  const formatIeeeCitation = () => {
+    const authors = getAuthors();
+    const authorText = authors.length > 0 ? authors.join(', ') : 'Unknown Author';
+    const year = getCitationYear();
+    return `${authorText}, "${paper?.title || 'Untitled research paper'}," NUCLEUS Research Repository, ${year}.`;
+  };
+
+  const copyCitation = async (content) => {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch (error) {
+      console.error('Failed to copy citation:', error);
+    }
   };
 
   if (loading) {
@@ -325,6 +372,66 @@ const ResearchDetail = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Citation Generation */}
+                <div className="mt-8 p-4 rounded-xl bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200">
+                  <h4 className="text-lg font-bold text-slate-900 mb-3">Cite This Paper</h4>
+                  <div className="space-y-3">
+                    <div className="bg-white border border-slate-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <p className="text-sm font-semibold text-slate-700">APA</p>
+                        <button
+                          type="button"
+                          onClick={() => copyCitation(formatApaCitation())}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        >
+                          <Copy size={12} /> Copy
+                        </button>
+                      </div>
+                      <p className="text-sm text-slate-700">{formatApaCitation()}</p>
+                    </div>
+
+                    <div className="bg-white border border-slate-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <p className="text-sm font-semibold text-slate-700">IEEE</p>
+                        <button
+                          type="button"
+                          onClick={() => copyCitation(formatIeeeCitation())}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        >
+                          <Copy size={12} /> Copy
+                        </button>
+                      </div>
+                      <p className="text-sm text-slate-700">{formatIeeeCitation()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 p-4 rounded-xl bg-white border border-slate-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <MessageSquare size={18} className="text-indigo-600" />
+                    <h4 className="text-lg font-bold text-slate-900">Reviewer Targeted Notes</h4>
+                  </div>
+                  {annotations.length === 0 ? (
+                    <p className="text-sm text-slate-500">No targeted review notes have been added yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {annotations.map((annotation) => (
+                        <div key={annotation.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs text-slate-500 mb-1">
+                            {annotation.reviewerName}
+                            {annotation.pageNumber ? ` • Page ${annotation.pageNumber}` : ''}
+                            {annotation.sectionLabel ? ` • ${annotation.sectionLabel}` : ''}
+                          </p>
+                          {annotation.selectedText && (
+                            <p className="text-xs text-slate-600 mb-1">Selected: "{annotation.selectedText}"</p>
+                          )}
+                          <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

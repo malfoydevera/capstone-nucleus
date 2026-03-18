@@ -1,5 +1,8 @@
 const { getModel } = require('../config/gemini');
 const axios = require('axios');
+const supabase = require('../config/supabase');
+const { canAccessPaper, resolvePaperFileUrl } = require('../utils/fileAccess');
+const { sendSuccess, sendError } = require('../utils/response');
 
 // Import pdf-parse with fallback
 let pdfParse;
@@ -13,19 +16,37 @@ try {
 const chatWithPaper = async (req, res) => {
   try {
     console.log('=== Chat Request Started ===');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
-
-    const { paperId, message, fileUrl } = req.body;
+    const { paperId, message } = req.body;
+    const requester = req.user;
 
     // Validate inputs
     if (!message) {
       console.error('Error: Message is missing');
-      return res.status(400).json({ error: 'Message is required' });
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Message is required' });
     }
 
+    if (!paperId) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Paper ID is required' });
+    }
+
+    const { data: paper, error: paperError } = await supabase
+      .from('research_papers')
+      .select('*')
+      .eq('id', paperId)
+      .single();
+
+    if (paperError || !paper) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+
+    if (!canAccessPaper(requester, paper)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'You do not have access to this paper' });
+    }
+
+    const fileUrl = await resolvePaperFileUrl(paper);
+
     if (!fileUrl) {
-      console.error('Error: File URL is missing');
-      return res.status(400).json({ error: 'File URL is required' });
+      return sendError(res, { status: 400, code: 'FILE_UNAVAILABLE', message: 'Paper file is not available' });
     }
 
     console.log('Fetching PDF from:', fileUrl);
@@ -34,7 +55,9 @@ const chatWithPaper = async (req, res) => {
     const response = await axios({
       method: 'get',
       url: fileUrl,
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      maxContentLength: 15 * 1024 * 1024,
     });
 
     console.log('PDF fetched successfully');
@@ -48,8 +71,10 @@ const chatWithPaper = async (req, res) => {
     
     if (typeof pdfParse !== 'function') {
       console.error('pdf-parse is not a function! Type:', typeof pdfParse);
-      return res.status(500).json({ 
-        error: 'PDF parser not properly initialized',
+      return sendError(res, {
+        status: 500,
+        code: 'PDF_PARSER_INIT_FAILED',
+        message: 'PDF parser not properly initialized',
         details: 'pdf-parse module failed to load correctly'
       });
     }
@@ -59,8 +84,10 @@ const chatWithPaper = async (req, res) => {
       pdfData = await pdfParse(buffer);
     } catch (pdfError) {
       console.error('PDF parsing error:', pdfError);
-      return res.status(400).json({ 
-        error: 'Failed to parse PDF. The file may be corrupted or protected.',
+      return sendError(res, {
+        status: 400,
+        code: 'PDF_PARSE_FAILED',
+        message: 'Failed to parse PDF. The file may be corrupted or protected.',
         details: pdfError.message
       });
     }
@@ -72,8 +99,10 @@ const chatWithPaper = async (req, res) => {
 
     if (!extractedText || extractedText.trim().length === 0) {
       console.error('No text could be extracted from PDF');
-      return res.status(400).json({ 
-        error: 'Could not extract text from PDF. The file may be image-based or corrupted.' 
+      return sendError(res, {
+        status: 400,
+        code: 'PDF_TEXT_EXTRACTION_FAILED',
+        message: 'Could not extract text from PDF. The file may be image-based or corrupted.'
       });
     }
 
@@ -108,10 +137,11 @@ Answer:`;
     console.log('Gemini response received, length:', aiResponse.length);
     console.log('=== Chat Request Completed Successfully ===');
 
-    res.json({
-      success: true,
-      response: aiResponse,
-      paperId
+    return sendSuccess(res, {
+      data: {
+        response: aiResponse,
+        paperId,
+      },
     });
 
   } catch (error) {
@@ -135,9 +165,11 @@ Answer:`;
       statusCode = 503;
     }
 
-    res.status(statusCode).json({ 
-      error: errorMessage, 
-      details: error.message 
+    return sendError(res, {
+      status: statusCode,
+      code: 'AI_CHAT_FAILED',
+      message: errorMessage,
+      details: error.message,
     });
   }
 };
@@ -148,7 +180,7 @@ const extractPdfMetadata = async (req, res) => {
     console.log('=== PDF Metadata Extraction Started ===');
     
     if (!req.file) {
-      return res.status(400).json({ error: 'No PDF file uploaded' });
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'No PDF file uploaded' });
     }
 
     const buffer = req.file.buffer;
@@ -156,9 +188,11 @@ const extractPdfMetadata = async (req, res) => {
 
     if (typeof pdfParse !== 'function') {
       console.error('pdf-parse is not a function!');
-      return res.status(500).json({ 
-        error: 'PDF parser not properly initialized',
-        details: 'pdf-parse module failed to load correctly'
+      return sendError(res, {
+        status: 500,
+        code: 'PDF_PARSER_INIT_FAILED',
+        message: 'PDF parser not properly initialized',
+        details: 'pdf-parse module failed to load correctly',
       });
     }
 
@@ -167,9 +201,11 @@ const extractPdfMetadata = async (req, res) => {
       pdfData = await pdfParse(buffer);
     } catch (pdfError) {
       console.error('PDF parsing error:', pdfError);
-      return res.status(400).json({ 
-        error: 'Failed to parse PDF. The file may be corrupted or protected.',
-        details: pdfError.message
+      return sendError(res, {
+        status: 400,
+        code: 'PDF_PARSE_FAILED',
+        message: 'Failed to parse PDF. The file may be corrupted or protected.',
+        details: pdfError.message,
       });
     }
 
@@ -177,8 +213,10 @@ const extractPdfMetadata = async (req, res) => {
     console.log('Text extracted, length:', extractedText.length, 'characters');
 
     if (!extractedText || extractedText.trim().length === 0) {
-      return res.status(400).json({ 
-        error: 'Could not extract text from PDF. The file may be image-based or corrupted.' 
+      return sendError(res, {
+        status: 400,
+        code: 'PDF_TEXT_EXTRACTION_FAILED',
+        message: 'Could not extract text from PDF. The file may be image-based or corrupted.'
       });
     }
 
@@ -246,10 +284,11 @@ IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text 
     console.log('Title:', metadata.title?.substring(0, 50) + '...');
     console.log('Abstract length:', metadata.abstract?.length);
 
-    res.json({
-      success: true,
-      title: metadata.title || '',
-      abstract: metadata.abstract || ''
+    return sendSuccess(res, {
+      data: {
+        title: metadata.title || '',
+        abstract: metadata.abstract || '',
+      },
     });
 
   } catch (error) {
@@ -257,9 +296,11 @@ IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text 
     console.error('Error:', error.message);
     console.error('Stack:', error.stack);
 
-    res.status(500).json({ 
-      error: 'Failed to extract PDF metadata', 
-      details: error.message 
+    return sendError(res, {
+      status: 500,
+      code: 'AI_METADATA_EXTRACTION_FAILED',
+      message: 'Failed to extract PDF metadata',
+      details: error.message,
     });
   }
 };
