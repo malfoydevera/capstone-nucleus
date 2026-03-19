@@ -1,0 +1,47 @@
+/**
+ * cache.js — P-001 Server-side caching utility
+ * Uses node-cache (in-process, zero infra required).
+ * TTLs are chosen based on how frequently the data changes:
+ *   categories    — 10 min (static, rarely updated)
+ *   faculty/dean  — 5 min  (added/removed occasionally)
+ *   departments   — 10 min (static)
+ */
+const NodeCache = require('node-cache');
+
+// stdTTL: default TTL in seconds.  checkperiod: scan every 60s for expired keys.
+const cache = new NodeCache({ stdTTL: 0, checkperiod: 60, useClones: false });
+
+const TTL = {
+  CATEGORIES:   600,  // 10 min
+  FACULTY:      300,  //  5 min
+  DEAN_CHAIR:   300,  //  5 min
+  DEPARTMENTS:  600,  // 10 min
+};
+
+/**
+ * Fetch from cache, or call `fetcher()` and store the result.
+ * @param {string}   key
+ * @param {number}   ttl  — seconds
+ * @param {Function} fetcher — async function that returns the data
+ */
+async function getOrSet(key, ttl, fetcher) {
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+
+  const data = await fetcher();
+  cache.set(key, data, ttl);
+  return data;
+}
+
+/** Invalidate one or more cache keys */
+function invalidate(...keys) {
+  cache.del(keys);
+}
+
+/** Invalidate all keys matching a prefix */
+function invalidatePrefix(prefix) {
+  const keys = cache.keys().filter(k => k.startsWith(prefix));
+  if (keys.length) cache.del(keys);
+}
+
+module.exports = { cache, TTL, getOrSet, invalidate, invalidatePrefix };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -25,7 +25,11 @@ import {
   ChevronRight,
   Eye,
   Maximize2,
-  MessageSquarePlus
+  MessageSquarePlus,
+  Trash2,
+  Highlighter,
+  StickyNote,
+  MessageSquare
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
@@ -50,13 +54,6 @@ const ReviewDetail = () => {
   const [bypassReason, setBypassReason] = useState('');
   const [bypassTarget, setBypassTarget] = useState('approved');
   const [annotations, setAnnotations] = useState([]);
-  const [annotationForm, setAnnotationForm] = useState({
-    note: '',
-    pageNumber: '',
-    sectionLabel: '',
-    selectedText: '',
-  });
-  const [annotationLoading, setAnnotationLoading] = useState(false);
 
   // Fetch Dean/Program Chair members when adviser is reviewing
   useEffect(() => {
@@ -93,29 +90,31 @@ const ReviewDetail = () => {
 
   const canAnnotate = ['faculty', 'dean', 'program_chair', 'staff', 'admin'].includes(user?.role);
 
-  const handleAddAnnotation = async () => {
-    if (!annotationForm.note.trim()) {
-      toast.error('Please add a note before saving annotation');
-      return;
-    }
-
-    setAnnotationLoading(true);
+  // Called by the SecurePDFViewer editor toolbar (highlight or sticky note)
+  const handleAddAnnotationFromViewer = useCallback(async ({ annotationType, selectedText, pageNumber: pg, highlightColor: color, note }) => {
     try {
       await researchAPI.addAnnotation(id, {
-        note: annotationForm.note,
-        pageNumber: annotationForm.pageNumber ? Number(annotationForm.pageNumber) : null,
-        sectionLabel: annotationForm.sectionLabel,
-        selectedText: annotationForm.selectedText,
+        note: note || (annotationType === 'highlight' ? 'Highlighted text' : ''),
+        pageNumber: pg || null,
+        selectedText: selectedText || '',
+        annotationType,
+        highlightColor: annotationType === 'highlight' ? (color || 'yellow') : null,
       });
-
       const annotationResponse = await researchAPI.getAnnotations(id);
       setAnnotations(annotationResponse.data.annotations || []);
-      setAnnotationForm({ note: '', pageNumber: '', sectionLabel: '', selectedText: '' });
-      toast.success('Annotation added');
+      toast.success(annotationType === 'highlight' ? 'Highlight added ✨' : 'Note added 📝');
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to add annotation');
-    } finally {
-      setAnnotationLoading(false);
+    }
+  }, [id]);
+
+  const handleDeleteAnnotation = async (annotationId) => {
+    try {
+      await researchAPI.deleteAnnotation(id, annotationId);
+      setAnnotations(prev => prev.filter(a => a.id !== annotationId));
+      toast.success('Annotation removed');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to delete annotation');
     }
   };
 
@@ -133,7 +132,7 @@ const ReviewDetail = () => {
     const loadingToast = toast.loading('Processing approval...');
     try {
       const annotationSummary = annotations.length > 0
-        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. [${(item.annotationType || 'comment').toUpperCase()}]${item.pageNumber ? ` Page ${item.pageNumber}:` : ''} ${item.note}${item.selectedText ? ` (re: "${item.selectedText}")` : ''}`).join('\n')}`
         : '';
 
       const extra = user?.role === 'faculty' && selectedTargetId
@@ -164,7 +163,7 @@ const ReviewDetail = () => {
     const loadingToast = toast.loading('Processing rejection...');
     try {
       const annotationSummary = annotations.length > 0
-        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. [${(item.annotationType || 'comment').toUpperCase()}]${item.pageNumber ? ` Page ${item.pageNumber}:` : ''} ${item.note}${item.selectedText ? ` (re: "${item.selectedText}")` : ''}`).join('\n')}`
         : '';
       await researchAPI.rejectResearch(id, `${rejectionReason}${annotationSummary}`);
       toast.success('Research rejected', { id: loadingToast, icon: '❌' });
@@ -191,7 +190,7 @@ const ReviewDetail = () => {
     const loadingToast = toast.loading('Requesting revision...');
     try {
       const annotationSummary = annotations.length > 0
-        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. [${(item.annotationType || 'comment').toUpperCase()}]${item.pageNumber ? ` Page ${item.pageNumber}:` : ''} ${item.note}${item.selectedText ? ` (re: "${item.selectedText}")` : ''}`).join('\n')}`
         : '';
 
       console.log('=== Requesting Revision ===');
@@ -215,12 +214,15 @@ const ReviewDetail = () => {
     }
   };
 
-  const handlePdfSelection = ({ selectedText, pageNumber }) => {
-    setAnnotationForm((prev) => ({
-      ...prev,
-      selectedText,
-      pageNumber: pageNumber ? String(pageNumber) : prev.pageNumber,
-    }));
+  // Annotation type config for rendering in the list
+  const ANNOTATION_TYPES = {
+    highlight: { icon: Highlighter, label: 'Highlight', color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200' },
+    note: { icon: StickyNote, label: 'Note', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
+    comment: { icon: MessageSquare, label: 'Comment', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+  };
+
+  const HIGHLIGHT_COLORS = {
+    yellow: { bg: 'bg-yellow-300' }, red: { bg: 'bg-red-300' }, blue: { bg: 'bg-blue-300' }, green: { bg: 'bg-green-300' },
   };
 
   const formatDate = (dateString) => {
@@ -508,11 +510,9 @@ const ReviewDetail = () => {
                     <Maximize2 size={18} className="text-[#1C4D8D]" />
                     <h4 className="text-lg font-bold text-slate-900">Document Preview</h4>
                   </div>
-                  <div className="flex gap-3">
-                    <a href={paper.file_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-[#1C4D8D] hover:text-[#163a6b] flex items-center gap-1">
-                      <ExternalLink size={14} /> Full Screen
-                    </a>
-                  </div>
+                  <span className="text-xs font-medium text-slate-500 flex items-center gap-1">
+                    🔒 Secure Viewer &bull; Use fullscreen button in viewer
+                  </span>
                 </div>
                 <div className="rounded-2xl border-2 border-slate-200 overflow-hidden bg-slate-100 shadow-inner">
                   {paper.file_url ? (
@@ -520,7 +520,9 @@ const ReviewDetail = () => {
                       fileUrl={paper.file_url}
                       watermarkText="NU"
                       enableAnnotationSelection={canAnnotate}
-                      onSelectionCapture={handlePdfSelection}
+                      annotations={annotations}
+                      onAddAnnotation={canAnnotate ? handleAddAnnotationFromViewer : undefined}
+                      onDeleteAnnotation={canAnnotate ? handleDeleteAnnotation : undefined}
                     />
                   ) : (
                     <div className="h-[300px] flex flex-col items-center justify-center text-slate-400 gap-2">
@@ -546,74 +548,87 @@ const ReviewDetail = () => {
                 </div>
               )}
 
+              {/* Review Annotations List */}
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-3">
                   <MessageSquarePlus size={18} className="text-[#1C4D8D]" />
-                  <h4 className="text-lg font-bold text-slate-900">Targeted Review Notes</h4>
+                  <h4 className="text-lg font-bold text-slate-900">Review Annotations</h4>
+                  {annotations.length > 0 && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#1C4D8D]/10 text-[#1C4D8D] text-xs font-bold">{annotations.length}</span>
+                  )}
                 </div>
 
-                {canAnnotate && (
-                  <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-3 mb-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <input
-                        type="number"
-                        min="1"
-                        placeholder="Page number"
-                        value={annotationForm.pageNumber}
-                        onChange={(event) => setAnnotationForm((prev) => ({ ...prev, pageNumber: event.target.value }))}
-                        className="px-3 py-2.5 border border-slate-300 rounded-lg"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Section label"
-                        value={annotationForm.sectionLabel}
-                        onChange={(event) => setAnnotationForm((prev) => ({ ...prev, sectionLabel: event.target.value }))}
-                        className="px-3 py-2.5 border border-slate-300 rounded-lg"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Selected text"
-                        value={annotationForm.selectedText}
-                        onChange={(event) => setAnnotationForm((prev) => ({ ...prev, selectedText: event.target.value }))}
-                        className="px-3 py-2.5 border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <textarea
-                      rows={3}
-                      placeholder="Write the exact change request for the student"
-                      value={annotationForm.note}
-                      onChange={(event) => setAnnotationForm((prev) => ({ ...prev, note: event.target.value }))}
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-lg"
-                    />
-                    <p className="text-xs text-slate-500">
-                      Tip: select text in the document preview to auto-fill selected text and page.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleAddAnnotation}
-                      disabled={annotationLoading}
-                      className="px-4 py-2 rounded-lg bg-[#1C4D8D] text-white hover:bg-[#163f73] disabled:opacity-60"
-                    >
-                      {annotationLoading ? 'Saving...' : 'Save Note'}
-                    </button>
+                {canAnnotate && annotations.length === 0 && (
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 mb-4">
+                    <p className="text-sm text-blue-800 font-medium">💡 Use the toolbar above the document to add annotations directly:</p>
+                    <ul className="mt-2 text-xs text-blue-700 space-y-1">
+                      <li className="flex items-center gap-2"><Highlighter size={12} /> <strong>Highlight</strong> — Select text in the document to highlight it</li>
+                      <li className="flex items-center gap-2"><StickyNote size={12} /> <strong>Sticky</strong> — Click on the document to place a note</li>
+                    </ul>
                   </div>
                 )}
 
                 <div className="space-y-3">
                   {annotations.length === 0 ? (
-                    <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">No targeted notes yet.</div>
+                    <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-6 text-center">
+                      <MessageSquarePlus size={24} className="text-slate-300 mx-auto mb-2" />
+                      No annotations yet. Use the document toolbar above to highlight text or add sticky notes.
+                    </div>
                   ) : (
-                    annotations.map((annotation) => (
-                      <div key={annotation.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                        <div className="text-xs text-slate-500 mb-1">
-                          {annotation.reviewerName} {annotation.pageNumber ? `• Page ${annotation.pageNumber}` : ''} {annotation.sectionLabel ? `• ${annotation.sectionLabel}` : ''}
+                    (() => {
+                      const grouped = {};
+                      annotations.forEach(a => {
+                        const key = a.pageNumber ? `Page ${a.pageNumber}` : 'General';
+                        if (!grouped[key]) grouped[key] = [];
+                        grouped[key].push(a);
+                      });
+
+                      return Object.entries(grouped).map(([pageLabel, pageAnnotations]) => (
+                        <div key={pageLabel}>
+                          <div className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">{pageLabel}</div>
+                          <div className="space-y-2">
+                            {pageAnnotations.map((annotation) => {
+                              const typeConfig = ANNOTATION_TYPES[annotation.annotationType] || ANNOTATION_TYPES.note;
+                              const TypeIcon = typeConfig.icon;
+                              const highlightColorClass = annotation.highlightColor && HIGHLIGHT_COLORS[annotation.highlightColor]
+                                ? HIGHLIGHT_COLORS[annotation.highlightColor].bg : '';
+
+                              return (
+                                <div key={annotation.id} className={`${typeConfig.bg} border ${typeConfig.border} rounded-lg p-3 group`}>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-start gap-2 flex-1">
+                                      <TypeIcon size={14} className={`${typeConfig.color} mt-0.5 flex-shrink-0`} />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className={`text-xs font-bold ${typeConfig.color}`}>{typeConfig.label}</span>
+                                          {annotation.highlightColor && (
+                                            <span className={`w-3 h-3 rounded-full ${highlightColorClass} inline-block`} />
+                                          )}
+                                          <span className="text-xs text-slate-400">• {annotation.reviewerName}</span>
+                                        </div>
+                                        {annotation.selectedText && (
+                                          <p className="text-xs text-slate-500 mb-1 italic">"{annotation.selectedText}"</p>
+                                        )}
+                                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                                      </div>
+                                    </div>
+                                    {(annotation.userId === user?.id || user?.role === 'admin') && (
+                                      <button
+                                        onClick={() => handleDeleteAnnotation(annotation.id)}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                                        title="Delete annotation"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                        {annotation.selectedText && (
-                          <p className="text-xs text-slate-600 mb-1">Selected: "{annotation.selectedText}"</p>
-                        )}
-                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
-                      </div>
-                    ))
+                      ));
+                    })()
                   )}
                 </div>
               </div>

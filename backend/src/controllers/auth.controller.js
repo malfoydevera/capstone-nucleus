@@ -1,8 +1,43 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const supabase = require('../config/supabase');
 const { logAuditEvent } = require('../utils/audit');
 const { sendSuccess, sendError } = require('../utils/response');
+
+// ─── S-005: Token helpers ─────────────────────────────────────────────────────
+const ACCESS_TOKEN_TTL  = '2h';
+const REFRESH_TOKEN_TTL_DAYS = 7;
+
+function issueAccessToken(user) {
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: ACCESS_TOKEN_TTL }
+  );
+}
+
+async function issueRefreshToken(userId) {
+  try {
+    const token = crypto.randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_TTL_DAYS);
+
+    const { error } = await supabase
+      .from('refresh_tokens')
+      .insert({ token, user_id: userId, expires_at: expiresAt.toISOString() });
+
+    if (error) {
+      // Table may not exist yet — log warning but don't crash login
+      console.warn('[S-005] refresh_tokens table unavailable. Run add_refresh_tokens.sql migration. Error:', error.message);
+      return null;
+    }
+    return token;
+  } catch (err) {
+    console.warn('[S-005] issueRefreshToken failed:', err.message);
+    return null;
+  }
+}
 
 // ... (Keep existing register and login functions exactly as they are) ...
 
@@ -32,8 +67,8 @@ exports.register = async (req, res) => {
       return sendError(res, { status: 400, code: 'INVALID_FULL_NAME', message: 'Full name is too short' });
     }
 
-    if (String(password).length < 6) {
-      return sendError(res, { status: 400, code: 'WEAK_PASSWORD', message: 'Password must be at least 6 characters' });
+    if (String(password).length < 8) {
+      return sendError(res, { status: 400, code: 'WEAK_PASSWORD', message: 'Password must be at least 8 characters' });
     }
 
     const { data: existingUser } = await supabase
@@ -63,17 +98,15 @@ exports.register = async (req, res) => {
 
     if (error) throw error;
 
-    const token = jwt.sign(
-      { id: newUser.id, email: newUser.email, role: newUser.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = issueAccessToken(newUser);
+    const refreshToken = await issueRefreshToken(newUser.id);
 
     return sendSuccess(res, {
       status: 201,
       message: 'User registered successfully',
       data: {
         token,
+        refreshToken,
         user: {
           id: newUser.id,
           email: newUser.email,
@@ -87,6 +120,72 @@ exports.register = async (req, res) => {
   } catch (error) {
     console.error('Register error:', error);
     return sendError(res, { status: 500, code: 'REGISTER_FAILED', message: 'Server error' });
+  }
+};
+
+// ─── S-005: Refresh token endpoint ──────────────────────────────────────────
+exports.refresh = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Refresh token is required' });
+    }
+
+    // Look up the token in DB
+    const { data: tokenRecord, error: tokenError } = await supabase
+      .from('refresh_tokens')
+      .select('*, user:users!refresh_tokens_user_id_fkey(id, email, role, full_name, department, program)')
+      .eq('token', refreshToken)
+      .single();
+
+    if (tokenError || !tokenRecord) {
+      return sendError(res, { status: 401, code: 'INVALID_REFRESH_TOKEN', message: 'Invalid or expired refresh token' });
+    }
+
+    if (new Date(tokenRecord.expires_at) < new Date()) {
+      await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
+      return sendError(res, { status: 401, code: 'REFRESH_TOKEN_EXPIRED', message: 'Refresh token has expired, please log in again' });
+    }
+
+    const user = tokenRecord.user;
+
+    // Rotate: delete old token, issue new pair
+    await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
+    const newAccessToken = issueAccessToken(user);
+    const newRefreshToken = await issueRefreshToken(user.id);
+
+    return sendSuccess(res, {
+      message: 'Token refreshed successfully',
+      data: {
+        token: newAccessToken,
+        refreshToken: newRefreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.full_name,
+          role: user.role,
+          department: user.department,
+          program: user.program,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    return sendError(res, { status: 500, code: 'REFRESH_FAILED', message: 'Server error' });
+  }
+};
+
+// ─── S-005: Logout (revoke refresh token) ─────────────────────────────────────
+exports.logout = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
+    }
+    return sendSuccess(res, { message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    return sendError(res, { status: 500, code: 'LOGOUT_FAILED', message: 'Server error' });
   }
 };
 
@@ -104,10 +203,13 @@ exports.login = async (req, res) => {
       });
     }
 
+    // F-001: Normalize email to lowercase (matching registration normalization)
+    const normalizedEmail = String(email).toLowerCase().trim();
+
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .single();
 
     if (error || !user) {
@@ -119,16 +221,14 @@ exports.login = async (req, res) => {
       return sendError(res, { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = issueAccessToken(user);
+    const refreshToken = await issueRefreshToken(user.id);
 
     sendSuccess(res, {
       message: 'Login successful',
       data: {
         token,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -256,8 +356,8 @@ exports.createPrivilegedUser = async (req, res) => {
       return res.status(400).json({ error: 'Email, password, full name, and role are required.' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     }
 
     const { data: existingUser } = await supabase

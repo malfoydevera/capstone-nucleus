@@ -501,7 +501,10 @@ exports.getPaperAnnotations = async (req, res) => {
 
         return {
           id: item.id,
+          userId: item.user_id,
           note: body,
+          annotationType: metadata.annotationType || 'comment',
+          highlightColor: metadata.highlightColor || null,
           pageNumber: metadata.pageNumber || null,
           sectionLabel: metadata.sectionLabel || null,
           selectedText: metadata.selectedText || null,
@@ -521,9 +524,13 @@ exports.getPaperAnnotations = async (req, res) => {
 exports.addPaperAnnotation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { note, pageNumber, sectionLabel, selectedText } = req.body;
+    const { note, pageNumber, sectionLabel, selectedText, annotationType, highlightColor } = req.body;
 
-    if (!note || !String(note).trim()) {
+    const validTypes = ['highlight', 'comment', 'note'];
+    const type = validTypes.includes(annotationType) ? annotationType : 'comment';
+
+    // Highlights may have an empty note (just the highlighted text), but comments/notes require one
+    if (type !== 'highlight' && (!note || !String(note).trim())) {
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Annotation note is required' });
     }
 
@@ -542,12 +549,15 @@ exports.addPaperAnnotation = async (req, res) => {
     }
 
     const metadata = {
+      annotationType: type,
+      highlightColor: highlightColor || null,
       pageNumber: pageNumber || null,
       sectionLabel: sectionLabel || null,
       selectedText: selectedText || null,
     };
 
-    const payloadComment = `[[meta]]${JSON.stringify(metadata)}[[/meta]]\n${String(note).trim()}`;
+    const noteText = note ? String(note).trim() : '';
+    const payloadComment = `[[meta]]${JSON.stringify(metadata)}[[/meta]]\n${noteText}`;
 
     const { data, error } = await supabase
       .from('research_comments')
@@ -568,7 +578,9 @@ exports.addPaperAnnotation = async (req, res) => {
       data: {
         annotation: {
           id: data.id,
-          note: String(note).trim(),
+          note: noteText,
+          annotationType: type,
+          highlightColor: metadata.highlightColor,
           pageNumber: metadata.pageNumber,
           sectionLabel: metadata.sectionLabel,
           selectedText: metadata.selectedText,
@@ -579,6 +591,55 @@ exports.addPaperAnnotation = async (req, res) => {
   } catch (error) {
     console.error('Add paper annotation error:', error);
     return sendError(res, { status: 500, code: 'ADD_ANNOTATION_FAILED', message: 'Failed to add annotation' });
+  }
+};
+
+exports.deletePaperAnnotation = async (req, res) => {
+  try {
+    const { id, annotationId } = req.params;
+
+    const { data: paper, error: paperError } = await supabase
+      .from('research_papers')
+      .select('id, status, author_id, faculty_id, dean_chair_id')
+      .eq('id', id)
+      .single();
+
+    if (paperError || !paper) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+
+    if (!canAccessPaper(req.user, paper)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied for this research paper' });
+    }
+
+    // Verify the annotation exists and belongs to the requesting user
+    const { data: annotation, error: annoError } = await supabase
+      .from('research_comments')
+      .select('id, user_id')
+      .eq('id', annotationId)
+      .eq('research_id', id)
+      .single();
+
+    if (annoError || !annotation) {
+      return sendError(res, { status: 404, code: 'ANNOTATION_NOT_FOUND', message: 'Annotation not found' });
+    }
+
+    // Only the creator or an admin can delete
+    if (annotation.user_id !== req.user.id && req.user.role !== 'admin') {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'You can only delete your own annotations' });
+    }
+
+    const { error: deleteError } = await supabase
+      .from('research_comments')
+      .delete()
+      .eq('id', annotationId);
+
+    if (deleteError) throw deleteError;
+
+    return sendSuccess(res, { message: 'Annotation deleted successfully' });
+  } catch (error) {
+    console.error('Delete paper annotation error:', error);
+    return sendError(res, { status: 500, code: 'DELETE_ANNOTATION_FAILED', message: 'Failed to delete annotation' });
   }
 };
 
