@@ -23,13 +23,13 @@
 
 ## Executive Summary
 
-This capstone project is a **sophisticated academic research repository management system** featuring a four-tier approval workflow, AI-powered document analysis, and comprehensive role-based access control. The system demonstrates production-ready architecture with modern technologies and advanced security implementations.
+This capstone project is a **sophisticated academic research repository management system** featuring a multi-stage approval workflow, AI-powered document analysis, and comprehensive role-based access control. The system demonstrates production-ready architecture with modern technologies and advanced security implementations.
 
 ### Key Highlights
-- **Multi-tier Review Process**: Student → Faculty → Staff → Admin workflow
+- **Multi-tier Review Process**: Student → Faculty → Dean/Program Chair → Staff → Admin workflow
 - **AI Integration**: Google Gemini AI for intelligent research paper analysis
 - **Secure Document Management**: Copy-protected PDF viewer with watermarking
-- **Role-Based Access Control**: Four distinct user roles with granular permissions
+- **Role-Based Access Control**: Six distinct user roles with granular permissions
 - **Modern Tech Stack**: React 19 + Node.js + Supabase + AI integration
 
 ---
@@ -55,17 +55,20 @@ graph TD
     A[User Login] --> B{Role Check}
     B -->|Student| C[Student Dashboard]
     B -->|Faculty| D[Faculty Dashboard]
-    B -->|Staff| E[Staff Dashboard]
-    B -->|Admin| F[Admin Dashboard]
+    B -->|Program Chair| E[Program Chair Dashboard]
+    B -->|Dean| F[Dean Dashboard]
+    B -->|Staff| G[Staff Dashboard]
+    B -->|Admin| H[Admin Dashboard]
     
-    C --> G[Submit Research]
-    G --> H[Faculty Review]
-    H --> I[Staff Review]
-    I --> J[Admin Review]
-    J --> K[Published Research]
+    C --> I[Submit Research]
+    I --> J[Faculty Review]
+    J --> K[Dean/Program Chair Review]
+    K --> L[Staff Review]
+    L --> M[Admin Review]
+    M --> N[Published Research]
     
-    K --> L[AI Chat Analysis]
-    K --> M[Secure PDF Viewer]
+    N --> O[AI Chat Analysis]
+    N --> P[Secure PDF Viewer]
 ```
 
 ---
@@ -111,6 +114,8 @@ Admin (Super User)
   ↓
 Staff (Editor)
   ↓
+Dean / Program Chair (Oversight)
+    ↓
 Faculty (Reviewer)
   ↓
 Student (Submitter)
@@ -157,11 +162,49 @@ Student (Submitter)
 - Review history tracking
 - Faculty-specific analytics
 
+#### **Program Chair Role**
+**Core Functions:**
+- Review faculty-endorsed submissions
+- Approve/reject papers in department oversight stage
+- Coordinate quality checks before editorial review
+- Provide decision notes and revision directions
+- Monitor department-level submission progress
+
+**Review Capabilities:**
+- Department-level approval authority
+- Decision routing to staff/editorial stage
+- Revision request management
+- Cross-check with faculty recommendations
+
+**Dashboard Features:**
+- Program chair review queue
+- Department pipeline visibility
+- Review turnaround monitoring
+
+#### **Dean Role**
+**Core Functions:**
+- Review submissions requiring dean-level oversight
+- Intervene in pending program chair reviews when needed
+- Approve/reject papers in dean oversight stage
+- Enforce department and policy compliance
+- Escalate eligible papers to staff/editorial stage
+
+**Review Capabilities:**
+- Oversight approval authority
+- Dean intervention on stalled workflows
+- Policy and compliance verification
+- Priority decision handling
+
+**Dashboard Features:**
+- Dean oversight queue
+- Intervention and activity tracking
+- Departmental review analytics
+
 #### **Staff Role (Editors)**
 **Core Functions:**
-- Second-tier review authority
+- Editorial-tier review authority
 - Advanced submission management
-- Review papers approved by faculty
+- Review papers approved by dean or program chair
 - Schedule and workflow management
 - System configuration access
 
@@ -218,33 +261,41 @@ Student (Submitter)
 
 4. **Initial Processing**
    - Automatic faculty assignment based on department
-   - Initial status setting (pending_faculty_review)
+    - Initial status setting (pending_faculty)
    - Notification system activation
    - Database record creation
 
 ### Review Workflow System
 
-#### **Four-Tier Approval Process**
+#### **Five-Stage Approval Process**
 
 **Stage 1: Faculty Review**
 ```
-Status: pending_faculty_review
+Status: pending_faculty
 Reviewer: Assigned Faculty Member
 Actions: Approve/Reject/Request Revision
 Timeline: Configurable (default 7 days)
 ```
 
-**Stage 2: Staff Review**
+**Stage 2: Dean / Program Chair Review**
 ```
-Status: pending_staff_review
-Reviewer: Editorial Staff
-Actions: Format validation, Approve/Reject/Request Revision
+Status: pending_dean / pending_program_chair
+Reviewer: Dean or Program Chair
+Actions: Oversight validation, Approve/Reject/Request Revision
 Timeline: Configurable (default 5 days)
 ```
 
-**Stage 3: Admin Review**
+**Stage 3: Staff Editorial Review**
 ```
-Status: pending_admin_review
+Status: pending_editor
+Reviewer: Editorial Staff
+Actions: Format validation, Approve/Reject/Request Revision
+Timeline: Configurable (default 3 days)
+```
+
+**Stage 4: Admin Review**
+```
+Status: pending_admin
 Reviewer: System Administrator
 Actions: Final approval/rejection
 Timeline: Configurable (default 3 days)
@@ -259,7 +310,7 @@ Features: AI chat enabled, download tracking
 ```
 
 #### **Status Management**
-- **Pending States**: Faculty, Staff, Admin review stages
+- **Pending States**: Faculty, Dean, Program Chair, Staff, Admin review stages
 - **Action States**: Approved, Rejected, Revision Required
 - **Final States**: Published, Permanently Rejected
 - **Transition Logic**: Sequential progression with rollback capability
@@ -327,24 +378,29 @@ graph TD
     E --> F[Submit Research]
     F --> G[Backend Validation]
     G --> H[Store in Supabase Database]
-    H --> I[Status: pending_faculty_review]
+    H --> I[Status: pending_faculty]
     I --> J[Faculty Notification]
     J --> K[Faculty Review Process]
     K --> L{Faculty Decision}
-    L -->|Approve| M[Status: pending_staff_review]
+    L -->|Approve| M[Status: pending_program_chair or pending_dean]
     L -->|Reject| N[Status: rejected_faculty]
     L -->|Revise| O[Status: revision_required]
-    M --> P[Staff Review Process]
-    P --> Q{Staff Decision}
-    Q -->|Approve| R[Status: pending_admin_review]
-    Q -->|Reject| S[Status: rejected_staff]
+    M --> P[Dean/Program Chair Review Process]
+    P --> Q{Dean/Program Chair Decision}
+    Q -->|Approve| R[Status: pending_editor]
+    Q -->|Reject| S[Status: rejected_dean_or_program_chair]
     Q -->|Revise| T[Status: revision_required]
-    R --> U[Admin Final Review]
-    U --> V{Admin Decision}
-    V -->|Approve| W[Status: approved/published]
-    V -->|Reject| X[Status: rejected_admin]
-    W --> Y[Research Available in Repository]
-    Y --> Z[AI Chat Enabled]
+    R --> U[Staff Review Process]
+    U --> V{Staff Decision}
+    V -->|Approve| W[Status: pending_admin]
+    V -->|Reject| X[Status: rejected_staff]
+    V -->|Revise| Y[Status: revision_required]
+    W --> Z[Admin Final Review]
+    Z --> ZA{Admin Decision}
+    ZA -->|Approve| ZB[Status: approved/published]
+    ZA -->|Reject| ZC[Status: rejected_admin]
+    ZB --> ZD[Research Available in Repository]
+    ZD --> ZE[AI Chat Enabled]
 ```
 
 ### User Authentication Flow
@@ -365,8 +421,10 @@ graph TD
     K --> L{User Role}
     L -->|Student| M[Student Dashboard]
     L -->|Faculty| N[Faculty Dashboard]
-    L -->|Staff| O[Staff Dashboard]
-    L -->|Admin| P[Admin Dashboard]
+    L -->|Program Chair| O[Program Chair Dashboard]
+    L -->|Dean| P[Dean Dashboard]
+    L -->|Staff| Q[Staff Dashboard]
+    L -->|Admin| R[Admin Dashboard]
 ```
 
 ### AI Chat Analysis Flow
@@ -558,14 +616,15 @@ const hashedPassword = await bcrypt.hash(password, saltRounds);
 #### **Role-Based Access Control (RBAC)**
 
 **Route Protection Matrix:**
-| Endpoint | Student | Faculty | Staff | Admin |
-|----------|---------|---------|-------|-------|
-| `/api/research/submit` | ✅ | ❌ | ❌ | ❌ |
-| `/api/research/faculty-review` | ❌ | ✅ | ❌ | ❌ |
-| `/api/research/staff-review` | ❌ | ❌ | ✅ | ❌ |
-| `/api/research/admin-review` | ❌ | ❌ | ❌ | ✅ |
-| `/api/users/manage` | ❌ | ❌ | ❌ | ✅ |
-| `/api/ai/chat` | ✅ | ✅ | ✅ | ✅ |
+| Endpoint | Student | Faculty | Program Chair | Dean | Staff | Admin |
+|----------|---------|---------|---------------|------|-------|-------|
+| `/api/research/submit` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/api/research/faculty-review` | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `/api/research/chair-review` | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| `/api/research/staff-review` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| `/api/research/admin-review` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `/api/users/manage` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `/api/ai/chat` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### File Security
 

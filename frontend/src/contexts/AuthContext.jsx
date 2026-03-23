@@ -29,16 +29,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const checkAuth = async () => {
+    // CHANGE: Use sessionStorage
     const token = sessionStorage.getItem('token');
     localStorage.removeItem('token');
     if (token) {
       try {
         const response = await authAPI.getCurrentUser();
         setUser(response.data.user);
-      } catch {
-        // Access token expired — the 401 interceptor in api.js will attempt
-        // a silent refresh using the stored refreshToken automatically.
-        // If that also fails, it redirects to /login (handled in api.js).
+      } catch (err) {
+        // CHANGE: Use sessionStorage
         sessionStorage.removeItem('token');
         setUser(null);
       }
@@ -46,25 +45,14 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   };
 
-  // S-005 helpers — store/clear both tokens together
-  const storeTokens = (token, refreshToken) => {
-    sessionStorage.setItem('token', token);
-    if (refreshToken) sessionStorage.setItem('refreshToken', refreshToken);
-    localStorage.removeItem('token');
-  };
-
-  const clearTokens = () => {
-    sessionStorage.removeItem('token');
-    sessionStorage.removeItem('refreshToken');
-    localStorage.removeItem('token');
-  };
-
   const login = async (email, password) => {
     try {
       setError(null);
       const response = await authAPI.login({ email, password });
-      const { token, refreshToken, user } = response.data;
-      storeTokens(token, refreshToken);
+      const { token, user } = response.data;
+      // CHANGE: Use sessionStorage
+      sessionStorage.setItem('token', token);
+      localStorage.removeItem('token');
       setUser(user);
       return { success: true };
     } catch (err) {
@@ -77,9 +65,11 @@ export const AuthProvider = ({ children }) => {
   const register = async (email, password, fullName, role, program, department) => {
     try {
       setError(null);
+      // Pass 'program' into the object sent to the API
       const response = await authAPI.register({ email, password, fullName, role, program, department });
-      const { token, refreshToken, user } = response.data;
-      storeTokens(token, refreshToken);
+      const { token, user } = response.data;
+      sessionStorage.setItem('token', token);
+      localStorage.removeItem('token');
       setUser(user);
       return { success: true };
     } catch (err) {
@@ -89,17 +79,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = async () => {
-    try {
-      // S-005: revoke refresh token on server before clearing locally
-      const refreshToken = sessionStorage.getItem('refreshToken');
-      if (refreshToken) {
-        await authAPI.logout(refreshToken).catch(() => {/* fire-and-forget */});
-      }
-    } finally {
-      clearTokens();
-      setUser(null);
-    }
+  const logout = () => {
+    // CHANGE: Use sessionStorage
+    sessionStorage.removeItem('token');
+    localStorage.removeItem('token');
+    setUser(null);
   };
 
   const value = {

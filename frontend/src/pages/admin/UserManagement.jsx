@@ -19,7 +19,7 @@ import {
   RefreshCw,
   Download
 } from 'lucide-react';
-import { authAPI, departmentAPI } from '../../utils/api';
+import { authAPI } from '../../utils/api';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
@@ -34,47 +34,13 @@ const UserManagement = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-  const [departments, setDepartments] = useState([]);
-  const [programs, setPrograms] = useState([]);
   const [createForm, setCreateForm] = useState({
-    email: '', password: '', fullName: '', role: 'faculty', department: '', departmentId: '', program: '', programId: ''
+    email: '', password: '', fullName: '', role: 'faculty', department: ''
   });
 
   useEffect(() => {
     fetchUsers();
   }, []);
-
-  useEffect(() => {
-    const fetchDepartments = async () => {
-      try {
-        const response = await departmentAPI.getAllDepartments();
-        setDepartments(response.data.departments || []);
-      } catch (apiError) {
-        console.error('Failed to fetch departments:', apiError);
-      }
-    };
-
-    fetchDepartments();
-  }, []);
-
-  useEffect(() => {
-    const fetchPrograms = async () => {
-      if (!createForm.departmentId) {
-        setPrograms([]);
-        return;
-      }
-
-      try {
-        const response = await departmentAPI.getProgramsByDepartment(createForm.departmentId);
-        setPrograms(response.data.programs || []);
-      } catch (apiError) {
-        console.error('Failed to fetch programs:', apiError);
-        setPrograms([]);
-      }
-    };
-
-    fetchPrograms();
-  }, [createForm.departmentId]);
 
   useEffect(() => {
     filterAndSortUsers();
@@ -151,7 +117,7 @@ const UserManagement = () => {
       toast.success(`${response.data.user.role.replace('_', ' ')} account created!`, {
         id: loadingToast, icon: '✅', duration: 3000
       });
-      setCreateForm({ email: '', password: '', fullName: '', role: 'faculty', department: '', departmentId: '', program: '', programId: '' });
+      setCreateForm({ email: '', password: '', fullName: '', role: 'faculty', department: '' });
       setShowCreateModal(false);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to create user', { id: loadingToast });
@@ -713,48 +679,13 @@ const UserManagement = () => {
               {/* Department (optional) */}
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">Department <span className="text-slate-400 font-normal">(optional)</span></label>
-                <select
-                  value={createForm.departmentId}
-                  onChange={e => {
-                    const selectedDepartment = departments.find((item) => item.id === e.target.value);
-                    setCreateForm({
-                      ...createForm,
-                      departmentId: e.target.value,
-                      department: selectedDepartment?.name || '',
-                      programId: '',
-                      program: '',
-                    });
-                  }}
-                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all bg-white"
-                >
-                  <option value="">Select department</option>
-                  {departments.map((department) => (
-                    <option key={department.id} value={department.id}>{department.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Program (optional) */}
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Program <span className="text-slate-400 font-normal">(optional)</span></label>
-                <select
-                  value={createForm.programId}
-                  onChange={e => {
-                    const selectedProgram = programs.find((item) => item.id === e.target.value);
-                    setCreateForm({
-                      ...createForm,
-                      programId: e.target.value,
-                      program: selectedProgram?.name || '',
-                    });
-                  }}
-                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all bg-white disabled:bg-slate-100"
-                  disabled={!createForm.departmentId}
-                >
-                  <option value="">Select program</option>
-                  {programs.map((program) => (
-                    <option key={program.id} value={program.id}>{program.name}</option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  placeholder="e.g. College of Engineering"
+                  value={createForm.department}
+                  onChange={e => setCreateForm({ ...createForm, department: e.target.value })}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
+                />
               </div>
 
               {/* Actions */}

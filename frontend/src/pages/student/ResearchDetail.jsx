@@ -24,9 +24,7 @@ import {
   Heart,
   ShieldCheck,
   Maximize2,
-  MessageSquare,
-  Highlighter,
-  StickyNote
+  MessageSquare
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
 import ResearchChat from '../../components/ai/ResearchChat';
@@ -289,17 +287,12 @@ const ResearchDetail = () => {
                   </div>
                 </div>
 
-                {/* PDF PREVIEW SECTION - Secure Viewer with Watermark + Annotations */}
+                {/* PDF PREVIEW SECTION - Secure Viewer with Watermark */}
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <Maximize2 size={18} className="text-indigo-600" />
                       <h4 className="text-lg font-bold text-slate-900">Document Preview</h4>
-                      {annotations.length > 0 && (
-                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">
-                          {annotations.length} reviewer note{annotations.length !== 1 ? 's' : ''}
-                        </span>
-                      )}
                     </div>
                     <span className="text-xs font-medium text-slate-500 flex items-center gap-1">
                       🔒 View Only
@@ -309,7 +302,6 @@ const ResearchDetail = () => {
                     <SecurePDFViewer 
                       fileUrl={paper.file_url} 
                       watermarkText="NU"
-                      annotations={annotations}
                     />
                   ) : (
                     <div className="h-[300px] flex items-center justify-center text-slate-400 rounded-2xl border-2 border-slate-200 bg-slate-100">
@@ -317,69 +309,6 @@ const ResearchDetail = () => {
                     </div>
                   )}
                 </div>
-
-                {/* Reviewer Notes — directly below PDF for context */}
-                {annotations.length > 0 && (
-                  <div className="mb-8 p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200">
-                    <div className="flex items-center gap-2 mb-4">
-                      <MessageSquare size={18} className="text-amber-700" />
-                      <h4 className="text-lg font-bold text-slate-900">Reviewer Annotations</h4>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-800 text-xs font-bold">{annotations.length}</span>
-                    </div>
-                    <p className="text-xs text-amber-700 mb-4">These annotations were added by reviewers during the review process. The original document is unchanged.</p>
-                    {(() => {
-                      const TYPES = {
-                        highlight: { icon: Highlighter, label: 'Highlight', bg: 'bg-yellow-100', border: 'border-yellow-300', text: 'text-yellow-800' },
-                        note: { icon: StickyNote, label: 'Note', bg: 'bg-amber-100', border: 'border-amber-300', text: 'text-amber-800' },
-                        comment: { icon: MessageSquare, label: 'Comment', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700' },
-                      };
-                      const COLORS = { yellow: 'bg-yellow-300', red: 'bg-red-300', blue: 'bg-blue-300', green: 'bg-green-300' };
-
-                      const grouped = {};
-                      annotations.forEach(a => {
-                        const key = a.pageNumber ? `Page ${a.pageNumber}` : 'General';
-                        if (!grouped[key]) grouped[key] = [];
-                        grouped[key].push(a);
-                      });
-
-                      return (
-                        <div className="space-y-4">
-                          {Object.entries(grouped).map(([pageLabel, pageAnnotations]) => (
-                            <div key={pageLabel}>
-                              <div className="text-xs font-bold text-amber-600 uppercase tracking-wide mb-2">{pageLabel}</div>
-                              <div className="space-y-2">
-                                {pageAnnotations.map((annotation) => {
-                                  const typeConfig = TYPES[annotation.annotationType] || TYPES.comment;
-                                  const TypeIcon = typeConfig.icon;
-                                  return (
-                                    <div key={annotation.id} className={`rounded-lg border ${typeConfig.border} ${typeConfig.bg} p-3`}>
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <TypeIcon size={13} className={typeConfig.text} />
-                                        <span className={`text-xs font-bold ${typeConfig.text}`}>{typeConfig.label}</span>
-                                        {annotation.highlightColor && COLORS[annotation.highlightColor] && (
-                                          <span className={`w-3 h-3 rounded-full ${COLORS[annotation.highlightColor]} inline-block`} />
-                                        )}
-                                        <span className="text-xs text-slate-500">
-                                          • {annotation.reviewerName}
-                                        </span>
-                                      </div>
-                                      {annotation.selectedText && (
-                                        <p className="text-xs text-slate-500 mb-1 italic">"{annotation.selectedText}"</p>
-                                      )}
-                                      {annotation.note && (
-                                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
 
                 {/* Author Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -479,7 +408,31 @@ const ResearchDetail = () => {
                   </div>
                 </div>
 
-
+                <div className="mt-8 p-4 rounded-xl bg-white border border-slate-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <MessageSquare size={18} className="text-indigo-600" />
+                    <h4 className="text-lg font-bold text-slate-900">Reviewer Targeted Notes</h4>
+                  </div>
+                  {annotations.length === 0 ? (
+                    <p className="text-sm text-slate-500">No targeted review notes have been added yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {annotations.map((annotation) => (
+                        <div key={annotation.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs text-slate-500 mb-1">
+                            {annotation.reviewerName}
+                            {annotation.pageNumber ? ` • Page ${annotation.pageNumber}` : ''}
+                            {annotation.sectionLabel ? ` • ${annotation.sectionLabel}` : ''}
+                          </p>
+                          {annotation.selectedText && (
+                            <p className="text-xs text-slate-600 mb-1">Selected: "{annotation.selectedText}"</p>
+                          )}
+                          <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

@@ -8,62 +8,23 @@ const { sendSuccess, sendError } = require('../utils/response');
 let pdfParse;
 try {
   pdfParse = require('pdf-parse');
+  console.log('pdf-parse loaded:', typeof pdfParse);
 } catch (err) {
-  console.error('[ai.controller] Failed to load pdf-parse:', err.message);
-}
-
-// ─── S-003: Production-safe logger ────────────────────────────────────────────
-const isProduction = process.env.NODE_ENV === 'production';
-const log = {
-  debug: (...args) => { if (!isProduction) console.log(...args); },
-  info: (...args) => { if (!isProduction) console.log(...args); },
-  warn: (...args) => console.warn(...args),
-  error: (...args) => console.error(...args),
-};
-
-// ─── P-004: In-memory PDF text cache (keyed by paperId, 30-min TTL) ──────────
-const pdfTextCache = new Map();
-const PDF_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-
-function getCachedText(paperId) {
-  const entry = pdfTextCache.get(paperId);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > PDF_CACHE_TTL_MS) {
-    pdfTextCache.delete(paperId);
-    return null;
-  }
-  return entry.text;
-}
-
-function setCachedText(paperId, text) {
-  pdfTextCache.set(paperId, { text, timestamp: Date.now() });
-}
-
-// ─── SSRF (A10): Validate URL is within the expected Supabase storage domain ──
-function isAllowedStorageUrl(url) {
-  try {
-    const parsed = new URL(url);
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseHost = supabaseUrl ? new URL(supabaseUrl).hostname : null;
-    // Allow *.supabase.co or the configured Supabase host
-    return (
-      parsed.hostname.endsWith('.supabase.co') ||
-      (supabaseHost && parsed.hostname === supabaseHost)
-    );
-  } catch {
-    return false;
-  }
+  console.error('Failed to load pdf-parse:', err);
 }
 
 const chatWithPaper = async (req, res) => {
   try {
-    log.info('=== Chat Request Started ===');
+    console.log('=== Chat Request Started ===');
     const { paperId, message } = req.body;
     const requester = req.user;
 
+    // Validate inputs
     if (!message) {
+      console.error('Error: Message is missing');
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Message is required' });
     }
+
     if (!paperId) {
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Paper ID is required' });
     }
@@ -82,79 +43,78 @@ const chatWithPaper = async (req, res) => {
       return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'You do not have access to this paper' });
     }
 
-    // ── P-004: Check cache before downloading PDF ──
-    let extractedText = getCachedText(paperId);
+    const fileUrl = await resolvePaperFileUrl(paper);
 
-    if (!extractedText) {
-      const fileUrl = await resolvePaperFileUrl(paper);
-      if (!fileUrl) {
-        return sendError(res, { status: 400, code: 'FILE_UNAVAILABLE', message: 'Paper file is not available' });
-      }
+    if (!fileUrl) {
+      return sendError(res, { status: 400, code: 'FILE_UNAVAILABLE', message: 'Paper file is not available' });
+    }
 
-      // ── SSRF guard ──
-      if (!isAllowedStorageUrl(fileUrl)) {
-        log.error('[ai.controller] SSRF guard: blocked URL:', fileUrl);
-        return sendError(res, { status: 400, code: 'INVALID_FILE_URL', message: 'Paper file URL is not permitted' });
-      }
+    console.log('Fetching PDF from:', fileUrl);
 
-      log.debug('[ai.controller] Fetching PDF for paperId:', paperId);
+    // Fetch the PDF using axios
+    const response = await axios({
+      method: 'get',
+      url: fileUrl,
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      maxContentLength: 15 * 1024 * 1024,
+    });
 
-      const response = await axios({
-        method: 'get',
-        url: fileUrl,
-        responseType: 'arraybuffer',
-        timeout: 15000,
-        maxContentLength: 15 * 1024 * 1024,
+    console.log('PDF fetched successfully');
+
+    const buffer = Buffer.from(response.data);
+    console.log('Buffer size:', buffer.length, 'bytes');
+
+    // Extract text from PDF
+    console.log('Starting PDF text extraction...');
+    console.log('pdfParse function type:', typeof pdfParse);
+    
+    if (typeof pdfParse !== 'function') {
+      console.error('pdf-parse is not a function! Type:', typeof pdfParse);
+      return sendError(res, {
+        status: 500,
+        code: 'PDF_PARSER_INIT_FAILED',
+        message: 'PDF parser not properly initialized',
+        details: 'pdf-parse module failed to load correctly'
       });
+    }
 
-      const buffer = Buffer.from(response.data);
-      log.debug('[ai.controller] PDF fetched, buffer size:', buffer.length, 'bytes');
+    let pdfData;
+    try {
+      pdfData = await pdfParse(buffer);
+    } catch (pdfError) {
+      console.error('PDF parsing error:', pdfError);
+      return sendError(res, {
+        status: 400,
+        code: 'PDF_PARSE_FAILED',
+        message: 'Failed to parse PDF. The file may be corrupted or protected.',
+        details: pdfError.message
+      });
+    }
 
-      if (typeof pdfParse !== 'function') {
-        log.error('[ai.controller] pdf-parse not loaded correctly');
-        return sendError(res, {
-          status: 500,
-          code: 'PDF_PARSER_INIT_FAILED',
-          message: 'PDF parser not properly initialized',
-        });
-      }
+    const extractedText = pdfData.text;
 
-      let pdfData;
-      try {
-        pdfData = await pdfParse(buffer);
-      } catch (pdfError) {
-        log.error('[ai.controller] PDF parsing error:', pdfError.message);
-        return sendError(res, {
-          status: 400,
-          code: 'PDF_PARSE_FAILED',
-          message: 'Failed to parse PDF. The file may be corrupted or protected.',
-        });
-      }
+    console.log('Text extracted, length:', extractedText.length, 'characters');
+    console.log('First 200 chars:', extractedText.substring(0, 200));
 
-      extractedText = pdfData.text;
-      log.debug('[ai.controller] Text extracted, length:', extractedText.length);
-
-      if (!extractedText || extractedText.trim().length === 0) {
-        return sendError(res, {
-          status: 400,
-          code: 'PDF_TEXT_EXTRACTION_FAILED',
-          message: 'Could not extract text from PDF. The file may be image-based or corrupted.',
-        });
-      }
-
-      // Store in cache for subsequent messages
-      setCachedText(paperId, extractedText);
-      log.debug('[ai.controller] PDF text cached for paperId:', paperId);
-    } else {
-      log.debug('[ai.controller] PDF text served from cache for paperId:', paperId);
+    if (!extractedText || extractedText.trim().length === 0) {
+      console.error('No text could be extracted from PDF');
+      return sendError(res, {
+        status: 400,
+        code: 'PDF_TEXT_EXTRACTION_FAILED',
+        message: 'Could not extract text from PDF. The file may be image-based or corrupted.'
+      });
     }
 
     // Truncate text if too long (Gemini has token limits)
     const maxChars = 30000;
-    const truncatedText = extractedText.length > maxChars
+    const truncatedText = extractedText.length > maxChars 
       ? extractedText.substring(0, maxChars) + '\n\n[Text truncated due to length...]'
       : extractedText;
 
+    console.log('Preparing prompt for Gemini...');
+
+    // Prepare the context-aware prompt
     const prompt = `You are an AI assistant helping a student understand a research paper. Here is the full text of the paper:
 
 ---
@@ -167,11 +127,15 @@ Question: ${message}
 
 Answer:`;
 
+    console.log('Sending request to Gemini API...');
+
+    // Send to Gemini
     const model = getModel();
     const result = await model.generateContent(prompt);
     const aiResponse = result.response.text();
 
-    log.info('[ai.controller] Chat request completed for paperId:', paperId);
+    console.log('Gemini response received, length:', aiResponse.length);
+    console.log('=== Chat Request Completed Successfully ===');
 
     return sendSuccess(res, {
       data: {
@@ -181,13 +145,18 @@ Answer:`;
     });
 
   } catch (error) {
-    log.error('[ai.controller] Error in chatWithPaper:', error.message);
-
+    console.error('=== ERROR in chatWithPaper ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    
+    // Send more specific error messages
     let errorMessage = 'Failed to process request';
     let statusCode = 500;
 
     if (error.message && error.message.includes('API key')) {
       errorMessage = 'Invalid or missing Google API key';
+      statusCode = 500;
     } else if (error.response) {
       errorMessage = 'Failed to download PDF file';
       statusCode = 400;
@@ -200,8 +169,7 @@ Answer:`;
       status: statusCode,
       code: 'AI_CHAT_FAILED',
       message: errorMessage,
-      // S-007: Only expose details in development
-      ...(isProduction ? {} : { details: error.message }),
+      details: error.message,
     });
   }
 };
@@ -209,21 +177,22 @@ Answer:`;
 // Extract title and abstract from uploaded PDF
 const extractPdfMetadata = async (req, res) => {
   try {
-    log.info('[ai.controller] PDF Metadata Extraction Started');
-
+    console.log('=== PDF Metadata Extraction Started ===');
+    
     if (!req.file) {
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'No PDF file uploaded' });
     }
 
     const buffer = req.file.buffer;
-    log.debug('[ai.controller] PDF buffer size:', buffer.length, 'bytes');
+    console.log('PDF buffer size:', buffer.length, 'bytes');
 
     if (typeof pdfParse !== 'function') {
-      log.error('[ai.controller] pdf-parse not loaded correctly');
+      console.error('pdf-parse is not a function!');
       return sendError(res, {
         status: 500,
         code: 'PDF_PARSER_INIT_FAILED',
         message: 'PDF parser not properly initialized',
+        details: 'pdf-parse module failed to load correctly',
       });
     }
 
@@ -231,30 +200,35 @@ const extractPdfMetadata = async (req, res) => {
     try {
       pdfData = await pdfParse(buffer);
     } catch (pdfError) {
-      log.error('[ai.controller] PDF parsing error:', pdfError.message);
+      console.error('PDF parsing error:', pdfError);
       return sendError(res, {
         status: 400,
         code: 'PDF_PARSE_FAILED',
         message: 'Failed to parse PDF. The file may be corrupted or protected.',
+        details: pdfError.message,
       });
     }
 
     const extractedText = pdfData.text;
-    log.debug('[ai.controller] Text extracted, length:', extractedText.length);
+    console.log('Text extracted, length:', extractedText.length, 'characters');
 
     if (!extractedText || extractedText.trim().length === 0) {
       return sendError(res, {
         status: 400,
         code: 'PDF_TEXT_EXTRACTION_FAILED',
-        message: 'Could not extract text from PDF. The file may be image-based or corrupted.',
+        message: 'Could not extract text from PDF. The file may be image-based or corrupted.'
       });
     }
 
+    // Truncate text if too long
     const maxChars = 15000;
-    const truncatedText = extractedText.length > maxChars
+    const truncatedText = extractedText.length > maxChars 
       ? extractedText.substring(0, maxChars)
       : extractedText;
 
+    console.log('Preparing extraction prompt for Gemini...');
+
+    // Prompt for extracting title and abstract
     const prompt = `You are an expert at analyzing academic research papers. I need you to extract the title and abstract from the following research paper text.
 
 Research Paper Text:
@@ -276,25 +250,39 @@ IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text 
     const result = await model.generateContent(prompt);
     const aiResponse = result.response.text();
 
+    console.log('Gemini response:', aiResponse);
+
+    // Parse the JSON response
     let metadata;
     try {
+      // Clean the response - remove markdown code blocks if present
       let cleanResponse = aiResponse.trim();
       if (cleanResponse.startsWith('```json')) {
         cleanResponse = cleanResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
       } else if (cleanResponse.startsWith('```')) {
         cleanResponse = cleanResponse.replace(/^```\s*/, '').replace(/\s*```$/, '');
       }
+      
       metadata = JSON.parse(cleanResponse);
     } catch (parseError) {
-      log.warn('[ai.controller] Failed to parse AI JSON response, attempting manual extraction');
-      metadata = { title: '', abstract: '' };
+      console.error('Failed to parse AI response as JSON:', parseError);
+      // Try to extract manually if JSON parsing fails
+      metadata = {
+        title: '',
+        abstract: ''
+      };
+      
+      // Attempt basic extraction
       const titleMatch = aiResponse.match(/"title"\s*:\s*"([^"]+)"/);
       const abstractMatch = aiResponse.match(/"abstract"\s*:\s*"([^"]+)"/);
+      
       if (titleMatch) metadata.title = titleMatch[1];
       if (abstractMatch) metadata.abstract = abstractMatch[1];
     }
 
-    log.info('[ai.controller] PDF Metadata Extraction Completed');
+    console.log('=== PDF Metadata Extraction Completed ===');
+    console.log('Title:', metadata.title?.substring(0, 50) + '...');
+    console.log('Abstract length:', metadata.abstract?.length);
 
     return sendSuccess(res, {
       data: {
@@ -304,17 +292,20 @@ IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text 
     });
 
   } catch (error) {
-    log.error('[ai.controller] Error in extractPdfMetadata:', error.message);
+    console.error('=== ERROR in extractPdfMetadata ===');
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
+
     return sendError(res, {
       status: 500,
       code: 'AI_METADATA_EXTRACTION_FAILED',
       message: 'Failed to extract PDF metadata',
-      ...(isProduction ? {} : { details: error.message }),
+      details: error.message,
     });
   }
 };
 
 module.exports = {
   chatWithPaper,
-  extractPdfMetadata,
+  extractPdfMetadata
 };

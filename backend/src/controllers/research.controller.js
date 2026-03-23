@@ -1,17 +1,86 @@
 const supabase = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
-const { logAuditEvent } = require('../utils/audit');
-const {
-  canAccessPaper,
-  extractStoragePathFromUrl,
-  isPublicPaperStatus,
-  resolvePaperFileUrl,
-} = require('../utils/fileAccess');
-const {
-  WORKFLOW_POLICY,
-  validateWorkflowAction,
-} = require('../utils/workflowPolicy');
-const { sendSuccess, sendError } = require('../utils/response');
+
+const getRoleMemberForPaper = async (role, paper, allowFallback = true) => {
+  let query = supabase
+    .from('users')
+    .select('id, full_name, email, role, department, department_id')
+    .eq('role', role)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (paper.department_id) {
+    query = query.eq('department_id', paper.department_id);
+  } else if (paper.department) {
+    query = query.eq('department', paper.department);
+  }
+
+  let { data: members, error } = await query;
+  if (error) throw error;
+
+  if ((!members || members.length === 0) && allowFallback && (paper.department_id || paper.department)) {
+    const fallbackResult = await supabase
+      .from('users')
+      .select('id, full_name, email, role, department, department_id')
+      .eq('role', role)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (fallbackResult.error) throw fallbackResult.error;
+    members = fallbackResult.data;
+  }
+
+  return members?.[0] || null;
+};
+
+const getUserProfile = async (userId) => {
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('id, full_name, email, role, department, department_id')
+    .eq('id', userId)
+    .single();
+
+  if (error) throw error;
+  return user;
+};
+
+const recordWorkflowEvent = async ({
+  researchId,
+  reviewerId,
+  reviewerRole,
+  status,
+  comments,
+  previousStatus = null,
+  newStatus = null,
+  actionType = 'review_action',
+  metadata = {},
+}) => {
+  try {
+    await supabase.from('approval_workflow').insert([{
+      research_id: researchId,
+      reviewer_id: reviewerId,
+      reviewer_role: reviewerRole,
+      status,
+      comments: comments || null,
+      previous_status: previousStatus,
+      new_status: newStatus,
+      action_type: actionType,
+      metadata,
+    }]);
+  } catch (detailedError) {
+    try {
+      await supabase.from('approval_workflow').insert([{
+        research_id: researchId,
+        reviewer_id: reviewerId,
+        reviewer_role: reviewerRole,
+        status,
+        comments: comments || null,
+      }]);
+    } catch (fallbackError) {
+      console.log('Approval workflow insert skipped:', fallbackError.message || detailedError.message);
+    }
+  }
+};
 
 // Submit new research or update existing revision
 exports.submitResearch = async (req, res) => {
@@ -21,11 +90,11 @@ exports.submitResearch = async (req, res) => {
     const userId = req.user.id;
 
     if (!id && !file) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Research file is required' });
+      return res.status(400).json({ error: 'Research file is required' });
     }
 
     if (!title || !abstract || !category) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'All required fields must be filled' });
+      return res.status(400).json({ error: 'All required fields must be filled' });
     }
 
     let fileData = {};
@@ -43,57 +112,41 @@ exports.submitResearch = async (req, res) => {
 
       if (uploadError) {
         console.error('Upload error:', uploadError);
-        return sendError(res, { status: 500, code: 'FILE_UPLOAD_FAILED', message: 'Failed to upload file' });
+        return res.status(500).json({ error: 'Failed to upload file' });
       }
 
-      const publicUrl = supabase.getPublicFileUrl(fileName);
+      const { data: { publicUrl } } = supabase.storage
+        .from('research-papers')
+        .getPublicUrl(fileName);
 
       fileData = {
         file_url: publicUrl,
-        file_storage_path: fileName,
         file_name: file.originalname,
         file_size: file.size
       };
     }
 
-    const basePayload = {
-      ...(id && { id }),
-      title,
-      abstract,
-      keywords: keywords ? keywords.split(',').map(k => k.trim()) : [],
-      co_authors: coAuthors || null,
-      category,
-      author_id: userId,
-      faculty_id: facultyId || null,
-      department: department || null,
-      // Status logic:
-      // - New submission with faculty: pending_faculty
-      // - New submission without faculty: pending
-      // - Resubmission: return to the stage that requested revision
-      status: id ? undefined : (facultyId ? 'pending_faculty' : 'pending'),
-      ...fileData
-    };
-
-    let { data: research, error: dbError } = await supabase
+    const { data: research, error: dbError } = await supabase
       .from('research_papers')
-      .upsert(basePayload)
+      .upsert({
+        ...(id && { id }), 
+        title,
+        abstract,
+        keywords: keywords ? keywords.split(',').map(k => k.trim()) : [],
+        co_authors: coAuthors || null,
+        category,
+        author_id: userId,
+        faculty_id: facultyId || null,
+        department: department || null,
+        // Status logic:
+        // - New submission with faculty: pending_faculty
+        // - New submission without faculty: pending
+        // - Resubmission: return to the stage that requested revision
+        status: id ? undefined : (facultyId ? 'pending_faculty' : 'pending'),
+        ...fileData 
+      })
       .select()
       .single();
-
-    // Backward compatibility for databases where migration for file_storage_path is not applied yet.
-    if (dbError?.message?.includes('file_storage_path')) {
-      const fallbackPayload = { ...basePayload };
-      delete fallbackPayload.file_storage_path;
-
-      const fallbackResult = await supabase
-        .from('research_papers')
-        .upsert(fallbackPayload)
-        .select()
-        .single();
-
-      research = fallbackResult.data;
-      dbError = fallbackResult.error;
-    }
 
     if (dbError) {
       console.error('=== DATABASE ERROR DETAILS ===');
@@ -102,11 +155,9 @@ exports.submitResearch = async (req, res) => {
       console.error('Error details:', dbError.details);
       console.error('Error hint:', dbError.hint);
       console.error('Full error:', JSON.stringify(dbError, null, 2));
-      return sendError(res, {
-        status: 500,
-        code: 'SAVE_RESEARCH_FAILED',
-        message: 'Failed to save research data',
-        details: dbError.message,
+      return res.status(500).json({ 
+        error: 'Failed to save research data',
+        details: dbError.message 
       });
     }
 
@@ -279,21 +330,13 @@ exports.submitResearch = async (req, res) => {
       }
     }
 
-    const researchWithAccessUrl = {
-      ...research,
-      file_url: await resolvePaperFileUrl(research),
-    };
-
-    return sendSuccess(res, {
-      status: id ? 200 : 201,
+    res.status(id ? 200 : 201).json({
       message: id ? 'Research updated successfully' : 'Research submitted successfully',
-      data: {
-        research: researchWithAccessUrl,
-      },
+      research
     });
   } catch (error) {
     console.error('Submit research error:', error);
-    return sendError(res, { status: 500, code: 'SUBMIT_RESEARCH_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -308,338 +351,10 @@ exports.getMyResearch = async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-
-    const papersWithAccessUrls = await Promise.all(
-      (papers || []).map(async (paper) => ({
-        ...paper,
-        file_url: await resolvePaperFileUrl(paper),
-      }))
-    );
-
-    return sendSuccess(res, { data: { papers: papersWithAccessUrls } });
+    res.json({ papers });
   } catch (error) {
     console.error('Get my research error:', error);
-    return sendError(res, { status: 500, code: 'GET_MY_RESEARCH_FAILED', message: 'Server error' });
-  }
-};
-
-// Get profile records and stats for any account type
-exports.getProfileResearchData = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const role = req.user.role;
-    const {
-      title,
-      startDate,
-      endDate,
-      department,
-      program,
-      details,
-      status,
-    } = req.query;
-
-    let query = supabase
-      .from('research_papers')
-      .select(`
-        id,
-        title,
-        abstract,
-        category,
-        status,
-        department,
-        keywords,
-        co_authors,
-        author_id,
-        faculty_id,
-        dean_chair_id,
-        created_at,
-        submission_date,
-        published_date,
-        author:users!author_id (id, full_name, email, program, department)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (role === 'student') {
-      query = query.eq('author_id', userId);
-    } else if (role === 'faculty') {
-      query = query.eq('faculty_id', userId);
-    } else if (role === 'dean' || role === 'program_chair') {
-      query = query.eq('dean_chair_id', userId);
-    }
-
-    if (title) {
-      query = query.ilike('title', `%${title}%`);
-    }
-
-    if (status) {
-      query = query.eq('status', status);
-    }
-
-    if (department) {
-      query = query.eq('department', department);
-    }
-
-    if (startDate) {
-      query = query.gte('submission_date', startDate);
-    }
-
-    if (endDate) {
-      query = query.lte('submission_date', endDate);
-    }
-
-    if (details) {
-      const safe = String(details).replace(/,/g, ' ');
-      query = query.or(
-        `title.ilike.%${safe}%,abstract.ilike.%${safe}%,category.ilike.%${safe}%,co_authors.ilike.%${safe}%`
-      );
-    }
-
-    const { data: papers, error } = await query;
-    if (error) throw error;
-
-    let filtered = papers || [];
-
-    if (program) {
-      const normalizedProgram = String(program).toLowerCase();
-      filtered = filtered.filter((paper) =>
-        String(paper.author?.program || '').toLowerCase() === normalizedProgram
-      );
-    }
-
-    const uploadedCount = filtered.filter((paper) => paper.author_id === userId).length;
-    const publishedCount = filtered.filter(
-      (paper) =>
-        paper.author_id === userId && ['approved', 'published'].includes(paper.status)
-    ).length;
-
-    const records = filtered.map((paper) => ({
-      id: paper.id,
-      title: paper.title,
-      category: paper.category,
-      status: paper.status,
-      department: paper.department || paper.author?.department || null,
-      program: paper.author?.program || null,
-      submissionDate: paper.submission_date || paper.created_at,
-      publishedDate: paper.published_date,
-      authorName: paper.author?.full_name || null,
-      authorEmail: paper.author?.email || null,
-      details: {
-        abstract: paper.abstract,
-        keywords: paper.keywords || [],
-        coAuthors: paper.co_authors || null,
-      },
-    }));
-
-    return sendSuccess(res, {
-      data: {
-        profile: {
-          userId,
-          role,
-        },
-        stats: {
-          totalRecords: records.length,
-          uploadedCount,
-          publishedCount,
-        },
-        records,
-      },
-    });
-  } catch (error) {
-    console.error('Get profile research data error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'GET_PROFILE_DATA_FAILED',
-      message: 'Failed to fetch profile data',
-    });
-  }
-};
-
-exports.getPaperAnnotations = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const { data: paper, error: paperError } = await supabase
-      .from('research_papers')
-      .select('id, status, author_id, faculty_id, dean_chair_id')
-      .eq('id', id)
-      .single();
-
-    if (paperError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
-    }
-
-    if (!canAccessPaper(req.user, paper)) {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied for this research paper' });
-    }
-
-    const { data: annotations, error } = await supabase
-      .from('research_comments')
-      .select('id, comment, created_at, user_id, is_internal, user:users!research_comments_user_id_fkey (full_name, role)')
-      .eq('research_id', id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    const result = (annotations || [])
-      .filter((item) => !item.is_internal || ['faculty', 'dean', 'program_chair', 'staff', 'admin'].includes(req.user.role))
-      .map((item) => {
-        const commentText = String(item.comment || '');
-        const metaStart = commentText.indexOf('[[meta]]');
-        const metaEnd = commentText.indexOf('[[/meta]]');
-        let metadata = {};
-        let body = commentText;
-
-        if (metaStart === 0 && metaEnd > 8) {
-          const rawMeta = commentText.slice(8, metaEnd);
-          try {
-            metadata = JSON.parse(rawMeta);
-          } catch (_err) {
-            metadata = {};
-          }
-          body = commentText.slice(metaEnd + 9).trim();
-        }
-
-        return {
-          id: item.id,
-          userId: item.user_id,
-          note: body,
-          annotationType: metadata.annotationType || 'comment',
-          highlightColor: metadata.highlightColor || null,
-          pageNumber: metadata.pageNumber || null,
-          sectionLabel: metadata.sectionLabel || null,
-          selectedText: metadata.selectedText || null,
-          createdAt: item.created_at,
-          reviewerName: item.user?.full_name || 'Reviewer',
-          reviewerRole: item.user?.role || null,
-        };
-      });
-
-    return sendSuccess(res, { data: { annotations: result } });
-  } catch (error) {
-    console.error('Get paper annotations error:', error);
-    return sendError(res, { status: 500, code: 'GET_ANNOTATIONS_FAILED', message: 'Failed to fetch annotations' });
-  }
-};
-
-exports.addPaperAnnotation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { note, pageNumber, sectionLabel, selectedText, annotationType, highlightColor } = req.body;
-
-    const validTypes = ['highlight', 'comment', 'note'];
-    const type = validTypes.includes(annotationType) ? annotationType : 'comment';
-
-    // Highlights may have an empty note (just the highlighted text), but comments/notes require one
-    if (type !== 'highlight' && (!note || !String(note).trim())) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Annotation note is required' });
-    }
-
-    const { data: paper, error: paperError } = await supabase
-      .from('research_papers')
-      .select('id, status, author_id, faculty_id, dean_chair_id')
-      .eq('id', id)
-      .single();
-
-    if (paperError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
-    }
-
-    if (!canAccessPaper(req.user, paper)) {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied for this research paper' });
-    }
-
-    const metadata = {
-      annotationType: type,
-      highlightColor: highlightColor || null,
-      pageNumber: pageNumber || null,
-      sectionLabel: sectionLabel || null,
-      selectedText: selectedText || null,
-    };
-
-    const noteText = note ? String(note).trim() : '';
-    const payloadComment = `[[meta]]${JSON.stringify(metadata)}[[/meta]]\n${noteText}`;
-
-    const { data, error } = await supabase
-      .from('research_comments')
-      .insert({
-        research_id: id,
-        user_id: req.user.id,
-        comment: payloadComment,
-        is_internal: false,
-      })
-      .select('id, comment, created_at')
-      .single();
-
-    if (error) throw error;
-
-    return sendSuccess(res, {
-      status: 201,
-      message: 'Annotation added successfully',
-      data: {
-        annotation: {
-          id: data.id,
-          note: noteText,
-          annotationType: type,
-          highlightColor: metadata.highlightColor,
-          pageNumber: metadata.pageNumber,
-          sectionLabel: metadata.sectionLabel,
-          selectedText: metadata.selectedText,
-          createdAt: data.created_at,
-        },
-      },
-    });
-  } catch (error) {
-    console.error('Add paper annotation error:', error);
-    return sendError(res, { status: 500, code: 'ADD_ANNOTATION_FAILED', message: 'Failed to add annotation' });
-  }
-};
-
-exports.deletePaperAnnotation = async (req, res) => {
-  try {
-    const { id, annotationId } = req.params;
-
-    const { data: paper, error: paperError } = await supabase
-      .from('research_papers')
-      .select('id, status, author_id, faculty_id, dean_chair_id')
-      .eq('id', id)
-      .single();
-
-    if (paperError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
-    }
-
-    if (!canAccessPaper(req.user, paper)) {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied for this research paper' });
-    }
-
-    // Verify the annotation exists and belongs to the requesting user
-    const { data: annotation, error: annoError } = await supabase
-      .from('research_comments')
-      .select('id, user_id')
-      .eq('id', annotationId)
-      .eq('research_id', id)
-      .single();
-
-    if (annoError || !annotation) {
-      return sendError(res, { status: 404, code: 'ANNOTATION_NOT_FOUND', message: 'Annotation not found' });
-    }
-
-    // Only the creator or an admin can delete
-    if (annotation.user_id !== req.user.id && req.user.role !== 'admin') {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'You can only delete your own annotations' });
-    }
-
-    const { error: deleteError } = await supabase
-      .from('research_comments')
-      .delete()
-      .eq('id', annotationId);
-
-    if (deleteError) throw deleteError;
-
-    return sendSuccess(res, { message: 'Annotation deleted successfully' });
-  } catch (error) {
-    console.error('Delete paper annotation error:', error);
-    return sendError(res, { status: 500, code: 'DELETE_ANNOTATION_FAILED', message: 'Failed to delete annotation' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -657,17 +372,11 @@ exports.getAllResearch = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    const transformedPapers = await Promise.all(
-      (papers || []).map(async (paper) => ({
-        ...paper,
-        users: paper.author,
-        file_url: await resolvePaperFileUrl(paper),
-      }))
-    );
-    return sendSuccess(res, { data: { papers: transformedPapers } });
+    const transformedPapers = papers.map(paper => ({ ...paper, users: paper.author }));
+    res.json({ papers: transformedPapers });
   } catch (error) {
     console.error('Get all research error:', error);
-    return sendError(res, { status: 500, code: 'GET_ALL_RESEARCH_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -682,61 +391,22 @@ exports.getResearchById = async (req, res) => {
       .single();
 
     if (error || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+      return res.status(404).json({ error: 'Research paper not found' });
     }
 
-    if (!canAccessPaper(req.user, paper)) {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied for this research paper' });
-    }
+    // FIXED: Treat the RPC call as a Promise properly before chaining
+    supabase.rpc('increment_view_count', { row_id: id })
+      .then(({ error: rpcError }) => {
+        if (rpcError) console.error('Auto-track view error:', rpcError);
+        else console.log(`View count incremented for paper ${id}`);
+      })
+      .catch(err => console.error('Unexpected error during view tracking:', err));
 
-    const transformedPaper = {
-      ...paper,
-      users: paper.author,
-      file_url: await resolvePaperFileUrl(paper),
-    };
-    return sendSuccess(res, { data: { paper: transformedPaper } });
+    const transformedPaper = { ...paper, users: paper.author };
+    res.json({ paper: transformedPaper });
   } catch (error) {
     console.error('Get research error:', error);
-    return sendError(res, { status: 500, code: 'GET_RESEARCH_BY_ID_FAILED', message: 'Server error' });
-  }
-};
-
-// Resolve a paper file URL for authorized users.
-exports.getResearchFile = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const { data: paper, error } = await supabase
-      .from('research_papers')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
-    }
-
-    if (!canAccessPaper(req.user, paper)) {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied for this research paper' });
-    }
-
-    const fileUrl = await resolvePaperFileUrl(paper);
-
-    if (!fileUrl) {
-      return sendError(res, { status: 400, code: 'FILE_UNAVAILABLE', message: 'Paper file is not available' });
-    }
-
-    return sendSuccess(res, {
-      data: {
-        fileUrl,
-        isSigned: !isPublicPaperStatus(paper.status),
-        source: paper.file_storage_path ? 'storage_path' : 'file_url',
-        storagePath: paper.file_storage_path || extractStoragePathFromUrl(paper.file_url),
-      },
-    });
-  } catch (error) {
-    console.error('Get research file error:', error);
-    return sendError(res, { status: 500, code: 'GET_RESEARCH_FILE_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -745,20 +415,6 @@ exports.trackView = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-
-    const { data: paper, error: paperError } = await supabase
-      .from('research_papers')
-      .select('id, status, author_id, faculty_id, dean_chair_id')
-      .eq('id', id)
-      .single();
-
-    if (paperError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
-    }
-
-    if (!canAccessPaper(req.user, paper)) {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied for this research paper' });
-    }
 
     // Use await to ensure the RPC call completes before moving forward
     const { error: updateError } = await supabase.rpc('increment_view_count', { row_id: id });
@@ -773,10 +429,10 @@ exports.trackView = async (req, res) => {
         viewed_at: new Date().toISOString()
       });
 
-    return sendSuccess(res, { message: 'View tracked successfully', data: {} });
+    res.json({ success: true, message: 'View tracked successfully' });
   } catch (error) {
     console.error('Error tracking view:', error);
-    return sendError(res, { status: 500, code: 'TRACK_VIEW_FAILED', message: 'Failed to track view' });
+    res.status(500).json({ error: 'Failed to track view' });
   }
 };
 
@@ -785,20 +441,6 @@ exports.trackDownload = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-
-    const { data: paper, error: paperError } = await supabase
-      .from('research_papers')
-      .select('id, status, author_id, faculty_id, dean_chair_id')
-      .eq('id', id)
-      .single();
-
-    if (paperError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
-    }
-
-    if (!canAccessPaper(req.user, paper)) {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied for this research paper' });
-    }
 
     // Use await for incrementing
     const { error: updateError } = await supabase.rpc('increment_download_count', { row_id: id });
@@ -813,10 +455,10 @@ exports.trackDownload = async (req, res) => {
         downloaded_at: new Date().toISOString()
       });
 
-    return sendSuccess(res, { message: 'Download tracked successfully', data: {} });
+    res.json({ success: true, message: 'Download tracked successfully' });
   } catch (error) {
     console.error('Error tracking download:', error);
-    return sendError(res, { status: 500, code: 'TRACK_DOWNLOAD_FAILED', message: 'Failed to track download' });
+    res.status(500).json({ error: 'Failed to track download' });
   }
 };
 
@@ -831,10 +473,10 @@ exports.adminGetAllResearch = async (req, res) => {
     if (error) throw error;
 
     const transformedPapers = papers.map(paper => ({ ...paper, users: paper.author }));
-    return sendSuccess(res, { data: { papers: transformedPapers } });
+    res.json({ success: true, papers: transformedPapers });
   } catch (error) {
     console.error('Admin fetch error:', error);
-    return sendError(res, { status: 500, code: 'ADMIN_GET_ALL_RESEARCH_FAILED', message: 'Failed to fetch research data' });
+    res.status(500).json({ error: 'Failed to fetch research data' });
   }
 };
 
@@ -853,15 +495,14 @@ exports.adminUpdateResearch = async (req, res) => {
 
     if (updateError) throw updateError;
 
-    return sendSuccess(res, {
-      message: 'Research updated successfully',
-      data: {
-        paper: { ...updatedPaper, users: updatedPaper.author },
-      },
+    res.json({ 
+      success: true, 
+      paper: { ...updatedPaper, users: updatedPaper.author },
+      message: 'Research updated successfully' 
     });
   } catch (error) {
     console.error('Admin update error:', error);
-    return sendError(res, { status: 500, code: 'ADMIN_UPDATE_RESEARCH_FAILED', message: 'Failed to update research' });
+    res.status(500).json({ error: 'Failed to update research' });
   }
 };
 
@@ -878,10 +519,10 @@ exports.adminDeleteResearch = async (req, res) => {
 
     if (deleteError) throw deleteError;
 
-    return sendSuccess(res, { message: 'Research deleted successfully', data: {} });
+    res.json({ success: true, message: 'Research deleted successfully' });
   } catch (error) {
     console.error('Admin delete error:', error);
-    return sendError(res, { status: 500, code: 'ADMIN_DELETE_RESEARCH_FAILED', message: 'Failed to delete research' });
+    res.status(500).json({ error: 'Failed to delete research' });
   }
 };
 
@@ -910,10 +551,10 @@ exports.adminPublishResearch = async (req, res) => {
       message: `Congratulations! Your research "${publishedPaper.title}" is now available.`
     }]);
 
-    return sendSuccess(res, { data: { paper: { ...publishedPaper, users: publishedPaper.author } } });
+    res.json({ success: true, paper: { ...publishedPaper, users: publishedPaper.author } });
   } catch (error) {
     console.error('Publish error:', error);
-    return sendError(res, { status: 500, code: 'ADMIN_PUBLISH_RESEARCH_FAILED', message: 'Failed to publish research' });
+    res.status(500).json({ error: 'Failed to publish research' });
   }
 };
 
@@ -934,10 +575,10 @@ exports.adminUnpublishResearch = async (req, res) => {
 
     if (updateError) throw updateError;
 
-    return sendSuccess(res, { data: { paper: { ...unpublishedPaper, users: unpublishedPaper.author } } });
+    res.json({ success: true, paper: { ...unpublishedPaper, users: unpublishedPaper.author } });
   } catch (error) {
     console.error('Unpublish error:', error);
-    return sendError(res, { status: 500, code: 'ADMIN_UNPUBLISH_RESEARCH_FAILED', message: 'Failed to unpublish research' });
+    res.status(500).json({ error: 'Failed to unpublish research' });
   }
 };
 
@@ -955,19 +596,7 @@ exports.approveResearch = async (req, res) => {
       .eq('id', id)
       .single();
 
-    if (fetchError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
-    }
-
-    const approveValidation = validateWorkflowAction('approve', req.user, paper);
-    if (!approveValidation.ok) {
-      return sendError(res, {
-        status: approveValidation.code,
-        code: 'INVALID_WORKFLOW_TRANSITION',
-        message: approveValidation.error,
-        details: JSON.stringify({ currentStatus: paper.status, yourRole: reviewerRole }),
-      });
-    }
+    if (fetchError || !paper) return res.status(404).json({ error: 'Research paper not found' });
 
     let newStatus;
     let notificationMessage;
@@ -975,50 +604,24 @@ exports.approveResearch = async (req, res) => {
     let extraUpdate = {}; // additional fields to write on update
 
     // Sequential approval workflow:
-    // Adviser (faculty) → Dean OR Program Chair → Research Editor (staff) → Admin
+    // Adviser (faculty) → Program Chair → Research Editor (staff) → Admin
     if (reviewerRole === 'faculty' && paper.status === 'pending_faculty') {
-      // Adviser approves: must specify which Dean or Program Chair to forward to
-      const { targetUserId, targetRole } = req.body;
-
-      if (!targetUserId || !targetRole) {
-        return sendError(res, {
-          status: 400,
-          code: 'INVALID_INPUT',
-          message: 'targetUserId and targetRole are required when adviser approves a paper.'
-        });
-      }
-      if (!['dean', 'program_chair'].includes(targetRole)) {
-        return sendError(res, {
-          status: 400,
-          code: 'INVALID_TARGET_ROLE',
-          message: 'targetRole must be either "dean" or "program_chair".'
-        });
-      }
-
-      // Verify the target user actually has the claimed role
-      const { data: targetUser } = await supabase
-        .from('users')
-        .select('id, full_name, role')
-        .eq('id', targetUserId)
-        .eq('role', targetRole)
-        .single();
-
+      const targetUser = await getRoleMemberForPaper('program_chair', paper, false);
       if (!targetUser) {
-        return sendError(res, {
-          status: 400,
-          code: 'INVALID_TARGET_REVIEWER',
-          message: 'Target reviewer not found or does not have the specified role.'
-        });
+        return res.status(400).json({ error: 'No Program Chair account is assigned to this department. Ask an admin to create or assign one before approving.' });
       }
 
-      newStatus = targetRole === 'dean' ? 'pending_dean' : 'pending_program_chair';
-      extraUpdate.dean_chair_id = targetUserId;
-      notificationMessage = 'Your research has been approved by your adviser and is now pending Dean/Program Chair review';
-
-      nextReviewers = [targetUserId];
+      newStatus = 'pending_program_chair';
+      extraUpdate.dean_chair_id = targetUser.id;
+      extraUpdate.last_reviewer_role = reviewerRole;
+      extraUpdate.updated_at = new Date().toISOString();
+      notificationMessage = 'Your research has been approved by your adviser and is now pending Program Chair review';
+      nextReviewers = [targetUser.id];
     } else if (reviewerRole === 'dean' && paper.status === 'pending_dean') {
       // Dean approves: move to Research Editor
       newStatus = 'pending_editor';
+      extraUpdate.last_reviewer_role = reviewerRole;
+      extraUpdate.updated_at = new Date().toISOString();
       notificationMessage = 'Your research has been approved by the Dean and is now under Research Editor review';
 
       const { data: staffUsers } = await supabase
@@ -1030,6 +633,8 @@ exports.approveResearch = async (req, res) => {
     } else if (reviewerRole === 'program_chair' && paper.status === 'pending_program_chair') {
       // Program Chair approves: move to Research Editor
       newStatus = 'pending_editor';
+      extraUpdate.last_reviewer_role = reviewerRole;
+      extraUpdate.updated_at = new Date().toISOString();
       notificationMessage = 'Your research has been approved by the Program Chair and is now under Research Editor review';
 
       const { data: staffUsers } = await supabase
@@ -1041,6 +646,8 @@ exports.approveResearch = async (req, res) => {
     } else if (reviewerRole === 'staff' && paper.status === 'pending_editor') {
       // Research Editor approves: move to Admin review
       newStatus = 'pending_admin';
+      extraUpdate.last_reviewer_role = reviewerRole;
+      extraUpdate.updated_at = new Date().toISOString();
       notificationMessage = 'Your research has been approved by the Research Editor and is awaiting final Admin approval';
 
       const { data: adminUsers } = await supabase
@@ -1052,7 +659,15 @@ exports.approveResearch = async (req, res) => {
     } else if (reviewerRole === 'admin' && (paper.status === 'pending_admin' || paper.status === 'under_review')) {
       // Admin final approval
       newStatus = 'approved';
+      extraUpdate.last_reviewer_role = reviewerRole;
+      extraUpdate.updated_at = new Date().toISOString();
       notificationMessage = 'Congratulations! Your research has been approved and published';
+    } else {
+      return res.status(400).json({ 
+        error: 'Invalid approval workflow. Please check the paper status and your role.',
+        currentStatus: paper.status,
+        yourRole: reviewerRole 
+      });
     }
 
     console.log('=== BACKEND: Approval Process ===');
@@ -1074,37 +689,21 @@ exports.approveResearch = async (req, res) => {
 
     if (updateError) {
       console.error('Database update error:', updateError);
-      return sendError(res, {
-        status: 500,
-        code: 'UPDATE_PAPER_STATUS_FAILED',
-        message: 'Failed to update paper status',
-        details: updateError.message,
-      });
+      return res.status(500).json({ error: 'Failed to update paper status', details: updateError });
     }
 
     console.log('Update successful. Updated paper:', updateData);
 
-    // Record approval in workflow (optional - skip if table doesn't exist)
-    try {
-      await supabase.from('approval_workflow').insert([{
-        research_id: id, 
-        reviewer_id: reviewerId, 
-        reviewer_role: reviewerRole, 
-        status: 'approved', 
-        comments: comments || null
-      }]);
-    } catch (workflowError) {
-      console.log('Approval workflow table not available, skipping...', workflowError.message);
-    }
-
-    // Audit log
-    await logAuditEvent({
-      userId: reviewerId,
-      userRole: reviewerRole,
-      action: 'approve',
-      targetType: 'research_paper',
-      targetId: id,
-      details: { previousStatus: paper.status, newStatus, paperTitle: paper.title },
+    await recordWorkflowEvent({
+      researchId: id,
+      reviewerId,
+      reviewerRole,
+      status: 'approved',
+      comments,
+      previousStatus: paper.status,
+      newStatus,
+      actionType: reviewerRole === 'faculty' ? 'forward_to_program_chair' : 'approve',
+      metadata: reviewerRole === 'faculty' ? { assignedProgramChairId: extraUpdate.dean_chair_id } : {},
     });
 
     // Notify author (optional - skip if table doesn't exist)
@@ -1137,26 +736,171 @@ exports.approveResearch = async (req, res) => {
       }
     }
 
-    return sendSuccess(res, {
-      message: 'Research approved successfully',
-      data: {
-        status: newStatus,
-        nextStage: newStatus === 'approved' ? 'Published' :
-          newStatus === 'pending_editor' ? 'Editor Review' :
-            newStatus === 'pending_admin' ? 'Admin Review' : 'Unknown',
-      },
+    res.json({ 
+      message: 'Research approved successfully', 
+      status: newStatus,
+      nextStage: newStatus === 'approved' ? 'Published' : 
+                 newStatus === 'pending_editor' ? 'Editor Review' :
+                 newStatus === 'pending_admin' ? 'Admin Review' : 'Unknown'
     });
   } catch (error) {
     console.error('=== APPROVE ERROR ===');
     console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
     console.error('Full error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'APPROVE_RESEARCH_FAILED',
-      message: 'Server error',
+    res.status(500).json({ 
+      error: 'Server error',
       details: error.message,
+      type: error.name
     });
+  }
+};
+
+exports.deanInterveneResearch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { decision, reason, comments } = req.body;
+    const reviewerId = req.user.id;
+
+    if (!['approve', 'reject', 'revision'].includes(decision)) {
+      return res.status(400).json({ error: 'decision must be one of: approve, reject, revision' });
+    }
+
+    if (!reason?.trim()) {
+      return res.status(400).json({ error: 'Dean intervention reason is required' });
+    }
+
+    const [paperResult, deanProfile] = await Promise.all([
+      supabase
+        .from('research_papers')
+        .select('*, author:users!author_id(full_name, email)')
+        .eq('id', id)
+        .single(),
+      getUserProfile(reviewerId),
+    ]);
+
+    const { data: paper, error: fetchError } = paperResult;
+    if (fetchError || !paper) {
+      return res.status(404).json({ error: 'Research paper not found' });
+    }
+
+    const departmentMatches = paper.department_id && deanProfile.department_id
+      ? paper.department_id === deanProfile.department_id
+      : paper.department && deanProfile.department
+        ? paper.department === deanProfile.department
+        : true;
+
+    if (paper.status !== 'pending_program_chair' && !(paper.status === 'pending_dean' && paper.dean_chair_id === reviewerId)) {
+      return res.status(400).json({ error: 'Dean intervention is only allowed on Program Chair items or papers already escalated to the Dean.' });
+    }
+
+    if (!departmentMatches && paper.status !== 'pending_dean') {
+      return res.status(403).json({ error: 'This paper is outside your assigned department.' });
+    }
+
+    let newStatus;
+    let notificationTitle;
+    let notificationMessage;
+    let workflowStatus;
+
+    if (decision === 'approve') {
+      newStatus = 'pending_editor';
+      workflowStatus = 'approved';
+      notificationTitle = 'Dean Override Approval';
+      notificationMessage = 'Your research has been approved by the Dean and forwarded to the Research Editor.';
+    } else if (decision === 'reject') {
+      newStatus = 'rejected';
+      workflowStatus = 'rejected';
+      notificationTitle = 'Dean Rejection';
+      notificationMessage = `Your research was rejected by the Dean. Reason: ${comments || reason}`;
+    } else {
+      newStatus = 'revision_required';
+      workflowStatus = 'revision_required';
+      notificationTitle = 'Dean Requested Revision';
+      notificationMessage = `The Dean requested revisions. Notes: ${comments || reason}`;
+    }
+
+    const updatePayload = {
+      status: newStatus,
+      dean_chair_id: reviewerId,
+      last_reviewer_role: 'dean',
+      updated_at: new Date().toISOString(),
+      ...(decision === 'reject' ? { rejection_reason: comments || reason } : {}),
+      ...(decision === 'revision'
+        ? { revision_notes: comments || reason, previous_status: paper.status }
+        : {}),
+    };
+
+    const { data: updatedPaper, error: updateError } = await supabase
+      .from('research_papers')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({ error: 'Failed to update paper status', details: updateError.message });
+    }
+
+    await recordWorkflowEvent({
+      researchId: id,
+      reviewerId,
+      reviewerRole: 'dean',
+      status: workflowStatus,
+      comments: comments || null,
+      previousStatus: paper.status,
+      newStatus,
+      actionType: 'dean_intervention',
+      metadata: {
+        reason,
+        originalAssigneeId: paper.dean_chair_id,
+        department: paper.department || null,
+      },
+    });
+
+    try {
+      await supabase.from('notifications').insert([{
+        user_id: paper.author_id,
+        research_id: id,
+        type: decision === 'approve' ? 'approval' : workflowStatus,
+        title: notificationTitle,
+        message: notificationMessage,
+      }]);
+    } catch (notifError) {
+      console.log('Dean intervention notification skipped:', notifError.message);
+    }
+
+    if (newStatus === 'pending_editor') {
+      try {
+        const { data: staffUsers } = await supabase
+          .from('users')
+          .select('id')
+          .eq('role', 'staff');
+
+        if (staffUsers?.length) {
+          await supabase.from('notifications').insert(
+            staffUsers.map((staffUser) => ({
+              user_id: staffUser.id,
+              research_id: id,
+              type: 'review_request',
+              title: 'Dean Forwarded Research for Review',
+              message: `Research "${paper.title}" was forwarded by the Dean for Research Editor review.`,
+            }))
+          );
+        }
+      } catch (notifError) {
+        console.log('Dean intervention editor notifications skipped:', notifError.message);
+      }
+    }
+
+    res.json({
+      message: `Dean intervention completed successfully via ${decision}`,
+      status: newStatus,
+      paper: updatedPaper,
+    });
+  } catch (error) {
+    console.error('Dean intervention error:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
 
@@ -1165,67 +909,48 @@ exports.rejectResearch = async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    if (!reason?.trim()) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Rejection reason is required' });
-    }
+    if (!reason) return res.status(400).json({ error: 'Rejection reason is required' });
 
     const { data: paper, error: fetchError } = await supabase
       .from('research_papers')
-      .select('author_id, title, status, faculty_id, dean_chair_id')
+      .select('author_id, title, status')
       .eq('id', id)
       .single();
     
     if (fetchError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Paper not found' });
-    }
-
-    const rejectValidation = validateWorkflowAction('reject', req.user, paper);
-    if (!rejectValidation.ok) {
-      return sendError(res, {
-        status: rejectValidation.code,
-        code: 'INVALID_WORKFLOW_TRANSITION',
-        message: rejectValidation.error,
-        details: JSON.stringify({ currentStatus: paper.status, yourRole: req.user.role }),
-      });
+      return res.status(404).json({ error: 'Paper not found' });
     }
     
     const { error: updateError } = await supabase
       .from('research_papers')
-      .update({ status: 'rejected', rejection_reason: reason.trim() })
+      .update({
+        status: 'rejected',
+        rejection_reason: reason,
+        last_reviewer_role: req.user.role,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id);
     
     if (updateError) {
       console.error('Reject update error:', updateError);
-      return sendError(res, { status: 500, code: 'REJECT_RESEARCH_FAILED', message: 'Failed to reject paper' });
+      return res.status(500).json({ error: 'Failed to reject paper' });
     }
     
-    // Try to insert into approval_workflow if table exists
-    try {
-      await supabase.from('approval_workflow').insert([{
-        research_id: id, 
-        reviewer_id: req.user.id, 
-        reviewer_role: req.user.role, 
-        status: 'rejected', 
-        comments: reason
-      }]);
-    } catch (workflowError) {
-      console.log('Approval workflow insert skipped:', workflowError.message);
-    }
-
-    // Audit log
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: 'reject',
-      targetType: 'research_paper',
-      targetId: id,
-      details: { paperTitle: paper.title, reason },
+    await recordWorkflowEvent({
+      researchId: id,
+      reviewerId: req.user.id,
+      reviewerRole: req.user.role,
+      status: 'rejected',
+      comments: reason,
+      previousStatus: paper.status,
+      newStatus: 'rejected',
+      actionType: 'reject',
     });
 
-    return sendSuccess(res, { message: 'Research rejected successfully', data: {} });
+    res.json({ message: 'Research rejected successfully' });
   } catch (error) {
     console.error('Reject research error:', error);
-    return sendError(res, { status: 500, code: 'REJECT_RESEARCH_FAILED', message: 'Server error', details: error.message });
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
 
@@ -1241,9 +966,7 @@ exports.requestRevision = async (req, res) => {
     console.log('Reviewer role:', reviewerRole);
     console.log('Revision notes:', notes);
     
-    if (!notes) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Revision notes are required' });
-    }
+    if (!notes) return res.status(400).json({ error: 'Revision notes are required' });
 
     // Get current paper to check its status
     const { data: paper, error: fetchError } = await supabase
@@ -1254,22 +977,7 @@ exports.requestRevision = async (req, res) => {
 
     if (fetchError || !paper) {
       console.error('Paper not found:', fetchError);
-      return sendError(res, {
-        status: 404,
-        code: 'PAPER_NOT_FOUND',
-        message: 'Paper not found',
-        details: fetchError?.message,
-      });
-    }
-
-    const revisionValidation = validateWorkflowAction('revision', req.user, paper);
-    if (!revisionValidation.ok) {
-      return sendError(res, {
-        status: revisionValidation.code,
-        code: 'INVALID_WORKFLOW_TRANSITION',
-        message: revisionValidation.error,
-        details: JSON.stringify({ currentStatus: paper.status, yourRole: reviewerRole }),
-      });
+      return res.status(404).json({ error: 'Paper not found', details: fetchError?.message });
     }
 
     console.log('Current paper status:', paper.status);
@@ -1328,10 +1036,8 @@ exports.requestRevision = async (req, res) => {
       console.log('Flow: Admin → Research Editor (returned with notes)');
     }
     else {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_WORKFLOW_TRANSITION',
-        message: `Cannot request revision from status "${paper.status}" as role "${reviewerRole}"`
+      return res.status(400).json({ 
+        error: `Cannot request revision from status "${paper.status}" as role "${reviewerRole}"` 
       });
     }
 
@@ -1353,12 +1059,7 @@ exports.requestRevision = async (req, res) => {
 
     if (updateError) {
       console.error('Update error:', updateError);
-      return sendError(res, {
-        status: 500,
-        code: 'UPDATE_PAPER_STATUS_FAILED',
-        message: 'Failed to update paper status',
-        details: updateError.message,
-      });
+      return res.status(500).json({ error: 'Failed to update paper status', details: updateError.message });
     }
 
     console.log('Paper updated successfully. New status:', updatedPaper.status);
@@ -1393,41 +1094,27 @@ exports.requestRevision = async (req, res) => {
       }
     }
     
-    // Try to insert into approval_workflow if table exists
-    try {
-      await supabase.from('approval_workflow').insert([{
-        research_id: id, 
-        reviewer_id: req.user.id, 
-        reviewer_role: reviewerRole, 
-        status: newStatus === 'revision_required' ? 'revision_required' : 'returned', 
-        comments: notes
-      }]);
-    } catch (workflowError) {
-      console.log('Approval workflow insert skipped:', workflowError.message);
-    }
-
-    // Audit log
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: reviewerRole,
-      action: 'revision',
-      targetType: 'research_paper',
-      targetId: id,
-      details: { previousStatus: paper.status, newStatus, paperTitle: paper.title, notes },
+    await recordWorkflowEvent({
+      researchId: id,
+      reviewerId: req.user.id,
+      reviewerRole,
+      status: 'revision_required',
+      comments: notes,
+      previousStatus: paper.status,
+      newStatus,
+      actionType: 'request_revision',
     });
 
-    return sendSuccess(res, {
-      message: 'Revision requested successfully',
-      data: {
-        newStatus,
-        paper: updatedPaper,
-      },
+    res.json({ 
+      message: 'Revision requested successfully', 
+      newStatus: newStatus,
+      paper: updatedPaper 
     });
   } catch (error) {
     console.error('=== REQUEST REVISION ERROR ===');
     console.error('Error message:', error.message);
     console.error('Full error:', error);
-    return sendError(res, { status: 500, code: 'REQUEST_REVISION_FAILED', message: 'Server error', details: error.message });
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
 
@@ -1464,14 +1151,11 @@ exports.getPublishedResearch = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    let transformedPapers = await Promise.all(
-      (papers || []).map(async (paper) => ({
-        ...paper,
-        users: paper.author,
-        co_authors: paper.research_authors || [],
-        file_url: await resolvePaperFileUrl(paper),
-      }))
-    );
+    let transformedPapers = papers.map(paper => ({ 
+      ...paper, 
+      users: paper.author,
+      co_authors: paper.research_authors || []
+    }));
 
     // Author filter (search across all authors)
     if (author) {
@@ -1491,10 +1175,10 @@ exports.getPublishedResearch = async (req, res) => {
       });
     }
 
-    return sendSuccess(res, { data: { papers: transformedPapers } });
+    res.json({ papers: transformedPapers });
   } catch (error) {
     console.error('Get published research error:', error);
-    return sendError(res, { status: 500, code: 'GET_PUBLISHED_RESEARCH_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -1503,9 +1187,9 @@ exports.getCategories = async (req, res) => {
   try {
     const { data: categories, error } = await supabase.from('research_categories').select('*').order('name');
     if (error) throw error;
-    return sendSuccess(res, { data: { categories } });
+    res.json({ categories });
   } catch (error) {
-    return sendError(res, { status: 500, code: 'GET_CATEGORIES_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -1527,28 +1211,50 @@ exports.getFacultyMembers = async (req, res) => {
     const { data: facultyMembers, error } = await query;
     if (error) throw error;
     
-    return sendSuccess(res, { data: { facultyMembers } });
+    res.json({ facultyMembers });
   } catch (error) {
     console.error('Get faculty members error:', error);
-    return sendError(res, { status: 500, code: 'GET_FACULTY_MEMBERS_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
-// Get Dean and Program Chair members (for adviser to pick a target when approving)
+// Get Program Chair members for default adviser forwarding.
+// Set ?includeDean=true when a screen needs both roles for monitoring views.
 exports.getDeanChairMembers = async (req, res) => {
   try {
-    const { data: members, error } = await supabase
+    const { department, includeDean } = req.query;
+    const roles = includeDean === 'true' ? ['dean', 'program_chair'] : ['program_chair'];
+
+    let query = supabase
       .from('users')
       .select('id, full_name, email, role, department')
-      .in('role', ['dean', 'program_chair'])
+      .in('role', roles)
       .order('role')
       .order('full_name');
 
+    if (department) {
+      query = query.eq('department', department);
+    }
+
+    const { data: members, error } = await query;
     if (error) throw error;
-    return sendSuccess(res, { data: { members } });
+
+    // Fallback: if filtering by department returned nothing, return everyone
+    if (department && (!members || members.length === 0)) {
+      const { data: allMembers, error: err2 } = await supabase
+        .from('users')
+        .select('id, full_name, email, role, department')
+        .in('role', roles)
+        .order('role')
+        .order('full_name');
+      if (err2) throw err2;
+      return res.json({ members: allMembers, fallback: true });
+    }
+
+    res.json({ members, fallback: false });
   } catch (error) {
     console.error('Get dean/chair members error:', error);
-    return sendError(res, { status: 500, code: 'GET_DEAN_CHAIR_MEMBERS_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -1560,6 +1266,43 @@ exports.getDeanChairAssignedPapers = async (req, res) => {
     const { status } = req.query;
 
     const pendingStatus = userRole === 'dean' ? 'pending_dean' : 'pending_program_chair';
+
+    if (userRole === 'dean') {
+      const deanProfile = await getUserProfile(userId);
+
+      const assignedResult = await supabase
+        .from('research_papers')
+        .select(`*, author:users!author_id (id, full_name, email)`)
+        .eq('dean_chair_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (assignedResult.error) throw assignedResult.error;
+
+      let oversightQuery = supabase
+        .from('research_papers')
+        .select(`*, author:users!author_id (id, full_name, email)`)
+        .eq('status', 'pending_program_chair')
+        .order('created_at', { ascending: false });
+
+      if (deanProfile.department_id) {
+        oversightQuery = oversightQuery.eq('department_id', deanProfile.department_id);
+      } else if (deanProfile.department) {
+        oversightQuery = oversightQuery.eq('department', deanProfile.department);
+      }
+
+      const oversightResult = await oversightQuery;
+      if (oversightResult.error) throw oversightResult.error;
+
+      let papers = [...(assignedResult.data || []), ...(oversightResult.data || [])];
+      papers = papers.filter((paper, index, self) => self.findIndex((item) => item.id === paper.id) === index);
+
+      if (status) {
+        papers = papers.filter((paper) => paper.status === status);
+      }
+
+      const transformedPapers = papers.map((paper) => ({ ...paper, users: paper.author }));
+      return res.json({ papers: transformedPapers, pendingStatus, monitoringEnabled: true });
+    }
 
     let query = supabase
       .from('research_papers')
@@ -1574,17 +1317,11 @@ exports.getDeanChairAssignedPapers = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    const transformedPapers = await Promise.all(
-      (papers || []).map(async (paper) => ({
-        ...paper,
-        users: paper.author,
-        file_url: await resolvePaperFileUrl(paper),
-      }))
-    );
-    return sendSuccess(res, { data: { papers: transformedPapers, pendingStatus } });
+    const transformedPapers = papers.map((paper) => ({ ...paper, users: paper.author }));
+    res.json({ papers: transformedPapers, pendingStatus, monitoringEnabled: false });
   } catch (error) {
     console.error('Get dean/chair papers error:', error);
-    return sendError(res, { status: 500, code: 'GET_DEAN_CHAIR_PAPERS_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -1607,251 +1344,82 @@ exports.getFacultyAssignedPapers = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    const transformedPapers = await Promise.all(
-      (papers || []).map(async (paper) => ({
-        ...paper,
-        users: paper.author,
-        file_url: await resolvePaperFileUrl(paper),
-      }))
-    );
-    return sendSuccess(res, { data: { papers: transformedPapers } });
+    const transformedPapers = papers.map(paper => ({ ...paper, users: paper.author }));
+    res.json({ papers: transformedPapers });
   } catch (error) {
     console.error('Get faculty papers error:', error);
-    return sendError(res, { status: 500, code: 'GET_FACULTY_PAPERS_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
-// ========== DEAN-ONLY FUNCTIONS ==========
-
-// Dean bypass approve — advance a paper from any stage
-exports.deanBypassApprove = async (req, res) => {
+exports.register = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { reason, targetStatus } = req.body;
-    const deanId = req.user.id;
+    // 1. Accept 'program' from the request body
+    const { email, password, fullName, role, program } = req.body;
 
-    if (!reason || !reason.trim()) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'A reason is required for bypass approval' });
+    if (!email || !password || !fullName || !role) {
+      return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Valid target statuses for bypass
-    const validTargets = WORKFLOW_POLICY.deanBypass.validTargets;
-    const target = targetStatus || 'approved';
-
-    if (!validTargets.includes(target)) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_TARGET_STATUS',
-        message: `Invalid target status. Must be one of: ${validTargets.join(', ')}`
-      });
+    const validRoles = ['student', 'faculty', 'staff', 'admin', 'dean', 'program_chair'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
     }
 
-    // Get current paper
-    const { data: paper, error: fetchError } = await supabase
-      .from('research_papers')
-      .select('*, author:users!author_id(full_name, email)')
-      .eq('id', id)
+    // 2. Validate Program if the user is a Student
+    if (role === 'student') {
+        const validPrograms = ['BSIT', 'BSCS'];
+        if (!program || !validPrograms.includes(program)) {
+            return res.status(400).json({ error: 'Valid program (BSIT or BSCS) is required for students' });
+        }
+    }
+
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
       .single();
 
-    if (fetchError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    if (existingUser) {
+      return res.status(400).json({ error: 'User already exists' });
     }
 
-    // Cannot bypass a paper that is already approved/published/rejected
-    if (WORKFLOW_POLICY.deanBypass.blockedStatuses.includes(paper.status)) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_WORKFLOW_TRANSITION',
-        message: 'Paper is already finalized and cannot be bypassed'
-      });
-    }
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    const previousStatus = paper.status;
-
-    // Update the paper
-    const updateData = {
-      status: target,
-      bypass_reason: reason,
-      bypassed_by: deanId,
-      bypassed_at: new Date().toISOString(),
-      ...(target === 'approved' ? { published_date: new Date().toISOString() } : {}),
-    };
-
-    const { data: updatedPaper, error: updateError } = await supabase
-      .from('research_papers')
-      .update(updateData)
-      .eq('id', id)
+    // 3. Save the 'program' to the database
+    const { data: newUser, error } = await supabase
+      .from('users')
+      .insert([{
+        email,
+        password: hashedPassword,
+        full_name: fullName,
+        role,
+        program: role === 'student' ? program : null // Only students need a program
+      }])
       .select()
       .single();
 
-    if (updateError) {
-      console.error('Dean bypass update error:', updateError);
-      return sendError(res, { status: 500, code: 'DEAN_BYPASS_FAILED', message: 'Failed to bypass approve paper' });
-    }
-
-    // Record in approval_workflow
-    try {
-      await supabase.from('approval_workflow').insert([{
-        research_id: id,
-        reviewer_id: deanId,
-        reviewer_role: 'dean',
-        status: 'bypassed',
-        comments: `BYPASS: ${reason}`
-      }]);
-    } catch (e) {
-      console.log('Approval workflow insert skipped:', e.message);
-    }
-
-    // Audit log with full details
-    await logAuditEvent({
-      userId: deanId,
-      userRole: 'dean',
-      action: 'bypass',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        previousStatus,
-        newStatus: target,
-        paperTitle: paper.title,
-        authorName: paper.author?.full_name,
-      },
-      reason,
-    });
-
-    // Notify the author
-    try {
-      await supabase.from('notifications').insert([{
-        user_id: paper.author_id,
-        research_id: id,
-        type: 'bypass_approval',
-        title: 'Research Bypass Approved by Dean',
-        message: `The Dean has bypass-approved your research "${paper.title}". Reason: ${reason}`,
-      }]);
-    } catch (e) {
-      console.log('Notification insert skipped:', e.message);
-    }
-
-    return sendSuccess(res, {
-      message: 'Paper bypass-approved by Dean successfully',
-      data: {
-        previousStatus,
-        newStatus: target,
-        paper: updatedPaper,
-      },
-    });
-  } catch (error) {
-    console.error('Dean bypass error:', error);
-    return sendError(res, { status: 500, code: 'DEAN_BYPASS_FAILED', message: 'Server error', details: error.message });
-  }
-};
-
-// Dean activity monitor — aggregated data for the Dean's monitoring dashboard
-exports.getDeanActivityMonitor = async (req, res) => {
-  try {
-    // 1. All papers with author info, ordered by most recent
-    const { data: allPapers, error: papersError } = await supabase
-      .from('research_papers')
-      .select('id, title, status, created_at, updated_at, submission_date, bypass_reason, bypassed_by, bypassed_at, dean_chair_id, faculty_id, author:users!author_id(id, full_name, email, role)')
-      .order('updated_at', { ascending: false })
-      .limit(200);
-
-    if (papersError) throw papersError;
-
-    // 2. Recent approval workflow entries
-    let recentActions = [];
-    try {
-      const { data, error } = await supabase
-        .from('approval_workflow')
-        .select('*, reviewer:users!approval_workflow_reviewer_id_fkey(full_name, role)')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (!error) recentActions = data || [];
-    } catch (e) {
-      console.log('approval_workflow query skipped:', e.message);
-    }
-
-    // 3. Recent audit logs
-    let auditLogs = [];
-    try {
-      const { data, error } = await supabase
-        .from('audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (!error) auditLogs = data || [];
-    } catch (e) {
-      console.log('audit_logs query skipped:', e.message);
-    }
-
-    // 4. Summary statistics
-    const papers = allPapers || [];
-    const summary = {
-      total: papers.length,
-      pendingFaculty: papers.filter(p => p.status === 'pending_faculty').length,
-      pendingDean: papers.filter(p => p.status === 'pending_dean').length,
-      pendingProgramChair: papers.filter(p => p.status === 'pending_program_chair').length,
-      pendingEditor: papers.filter(p => p.status === 'pending_editor').length,
-      pendingAdmin: papers.filter(p => p.status === 'pending_admin').length,
-      approved: papers.filter(p => p.status === 'approved' || p.status === 'published').length,
-      rejected: papers.filter(p => p.status === 'rejected').length,
-      revisionRequired: papers.filter(p => p.status === 'revision_required').length,
-      bypassed: papers.filter(p => p.bypass_reason).length,
-    };
-
-    // 5. Program Chair inactivity check — papers assigned to a PC that have been
-    //    pending for more than 3 days (configurable via query param)
-    const inactivityThresholdDays = parseInt(req.query.inactivityDays) || 3;
-    const thresholdDate = new Date();
-    thresholdDate.setDate(thresholdDate.getDate() - inactivityThresholdDays);
-
-    const stalePcPapers = papers.filter(p =>
-      p.status === 'pending_program_chair' &&
-      new Date(p.updated_at || p.created_at) < thresholdDate
-    );
-
-    return sendSuccess(res, {
-      data: {
-        summary,
-        papers: papers.map(p => ({ ...p, users: p.author })),
-        recentActions,
-        auditLogs,
-        inactivityAlerts: stalePcPapers.map(p => ({
-          ...p,
-          users: p.author,
-          daysStale: Math.ceil((Date.now() - new Date(p.updated_at || p.created_at)) / 86400000),
-        })),
-        inactivityThresholdDays,
-      },
-    });
-  } catch (error) {
-    console.error('Dean activity monitor error:', error);
-    return sendError(res, { status: 500, code: 'GET_DEAN_ACTIVITY_MONITOR_FAILED', message: 'Server error', details: error.message });
-  }
-};
-
-// Get audit logs — filterable by action, role, date range
-exports.getAuditLogs = async (req, res) => {
-  try {
-    const { action, role, from, to, limit: queryLimit } = req.query;
-    const maxLimit = Math.min(parseInt(queryLimit) || 100, 500);
-
-    let query = supabase
-      .from('audit_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(maxLimit);
-
-    if (action) query = query.eq('action', action);
-    if (role) query = query.eq('user_role', role);
-    if (from) query = query.gte('created_at', from);
-    if (to) query = query.lte('created_at', to);
-
-    const { data: logs, error } = await query;
     if (error) throw error;
 
-    return sendSuccess(res, { data: { logs: logs || [] } });
+    const token = jwt.sign(
+      { id: newUser.id, email: newUser.email, role: newUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      message: 'User registered successfully',
+      token,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        fullName: newUser.full_name,
+        role: newUser.role,
+        program: newUser.program, // Return the program info
+      },
+    });
   } catch (error) {
-    console.error('Get audit logs error:', error);
-    return sendError(res, { status: 500, code: 'GET_AUDIT_LOGS_FAILED', message: 'Server error' });
+    console.error('Register error:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 };

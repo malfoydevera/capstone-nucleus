@@ -28,9 +28,6 @@ export const authAPI = {
   createUser: (data) => api.post('/auth/users/create', data),
   deleteUser: (id) => api.delete(`/auth/users/${id}`),
   searchStudents: (query) => api.get('/auth/students/search', { params: { query } }),
-  // S-005: token rotation
-  refresh: (refreshToken) => api.post('/auth/refresh', { refreshToken }),
-  logout: (refreshToken) => api.post('/auth/logout', { refreshToken }),
 };
 
 export const researchAPI = {
@@ -62,7 +59,8 @@ export const researchAPI = {
   getProfileData: (params) => api.get('/research/profile/data', { params }),
   getAnnotations: (id) => api.get(`/research/${id}/annotations`),
   addAnnotation: (id, data) => api.post(`/research/${id}/annotations`, data),
-  deleteAnnotation: (paperId, annotationId) => api.delete(`/research/${paperId}/annotations/${annotationId}`),
+  deleteAnnotation: (id, annotationId) => api.delete(`/research/${id}/annotations/${annotationId}`),
+  deanBypassApprove: (id, bypassReason, target) => api.post(`/research/${id}/dean-bypass`, { bypassReason, target }),
   getDeanActivityMonitor: (params) => api.get('/research/dean/activity-monitor', { params }),
   getAuditLogs: (params) => api.get('/research/dean/audit-logs', { params }),
 };
@@ -148,70 +146,5 @@ export const aiAPI = {
     return response.json();
   },
 };
-
-// ─── S-005: 401 response interceptor — silent token refresh ──────────────────
-let _isRefreshing = false;
-let _refreshQueue = []; // callbacks waiting for a new token
-
-function processQueue(error, token = null) {
-  _refreshQueue.forEach(({ resolve, reject }) => (error ? reject(error) : resolve(token)));
-  _refreshQueue = [];
-}
-
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-
-    // Only intercept 401s that haven't already been retried
-    if (error.response?.status !== 401 || originalRequest._retry) {
-      return Promise.reject(error);
-    }
-
-    // Don't intercept the refresh call itself (avoid infinite loop)
-    if (originalRequest.url?.includes('/auth/refresh')) {
-      return Promise.reject(error);
-    }
-
-    const storedRefresh = sessionStorage.getItem('refreshToken');
-    if (!storedRefresh) return Promise.reject(error);
-
-    if (_isRefreshing) {
-      // Queue concurrent requests while a refresh is in-flight
-      return new Promise((resolve, reject) => {
-        _refreshQueue.push({ resolve, reject });
-      }).then((token) => {
-        originalRequest.headers.Authorization = `Bearer ${token}`;
-        return api(originalRequest);
-      });
-    }
-
-    originalRequest._retry = true;
-    _isRefreshing = true;
-
-    try {
-      const { data } = await api.post('/auth/refresh', { refreshToken: storedRefresh });
-      const { token: newToken, refreshToken: newRefresh } = data.data;
-
-      sessionStorage.setItem('token', newToken);
-      if (newRefresh) sessionStorage.setItem('refreshToken', newRefresh);
-
-      api.defaults.headers.common.Authorization = `Bearer ${newToken}`;
-      originalRequest.headers.Authorization = `Bearer ${newToken}`;
-      processQueue(null, newToken);
-
-      return api(originalRequest);
-    } catch (refreshError) {
-      processQueue(refreshError, null);
-      // Refresh also failed — clear session and force re-login
-      sessionStorage.clear();
-      localStorage.removeItem('token');
-      window.location.href = '/login';
-      return Promise.reject(refreshError);
-    } finally {
-      _isRefreshing = false;
-    }
-  }
-);
 
 export default api;

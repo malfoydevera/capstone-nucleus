@@ -7,28 +7,22 @@ import {
   FileText, 
   User, 
   Calendar, 
-  Download, 
-  ExternalLink, 
   CheckCircle, 
   XCircle, 
   AlertCircle, 
   Shield,
   BookOpen,
   Tag,
-  Users,
-  Mail,
   Clock,
   FileCheck,
-  Lightbulb,
   ShieldCheck,
   BarChart3,
-  ChevronRight,
   Eye,
   Maximize2,
   MessageSquarePlus,
-  Trash2,
   Highlighter,
   StickyNote,
+  Trash2,
   MessageSquare
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
@@ -90,7 +84,7 @@ const ReviewDetail = () => {
 
   const canAnnotate = ['faculty', 'dean', 'program_chair', 'staff', 'admin'].includes(user?.role);
 
-  // Called by the SecurePDFViewer editor toolbar (highlight or sticky note)
+  // Called from SecurePDFViewer toolbar (highlight or sticky note)
   const handleAddAnnotationFromViewer = useCallback(async ({ annotationType, selectedText, pageNumber: pg, highlightColor: color, note }) => {
     try {
       await researchAPI.addAnnotation(id, {
@@ -100,15 +94,15 @@ const ReviewDetail = () => {
         annotationType,
         highlightColor: annotationType === 'highlight' ? (color || 'yellow') : null,
       });
-      const annotationResponse = await researchAPI.getAnnotations(id);
-      setAnnotations(annotationResponse.data.annotations || []);
+      const res = await researchAPI.getAnnotations(id);
+      setAnnotations(res.data.annotations || []);
       toast.success(annotationType === 'highlight' ? 'Highlight added ✨' : 'Note added 📝');
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to add annotation');
+      toast.error(error.response?.data?.error || 'Failed to save annotation');
     }
   }, [id]);
 
-  const handleDeleteAnnotation = async (annotationId) => {
+  const handleDeleteAnnotation = useCallback(async (annotationId) => {
     try {
       await researchAPI.deleteAnnotation(id, annotationId);
       setAnnotations(prev => prev.filter(a => a.id !== annotationId));
@@ -116,7 +110,7 @@ const ReviewDetail = () => {
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to delete annotation');
     }
-  };
+  }, [id]);
 
   const handleApprove = async () => {
     if (!comments.trim()) {
@@ -132,7 +126,7 @@ const ReviewDetail = () => {
     const loadingToast = toast.loading('Processing approval...');
     try {
       const annotationSummary = annotations.length > 0
-        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. [${(item.annotationType || 'comment').toUpperCase()}]${item.pageNumber ? ` Page ${item.pageNumber}:` : ''} ${item.note}${item.selectedText ? ` (re: "${item.selectedText}")` : ''}`).join('\n')}`
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
         : '';
 
       const extra = user?.role === 'faculty' && selectedTargetId
@@ -163,7 +157,7 @@ const ReviewDetail = () => {
     const loadingToast = toast.loading('Processing rejection...');
     try {
       const annotationSummary = annotations.length > 0
-        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. [${(item.annotationType || 'comment').toUpperCase()}]${item.pageNumber ? ` Page ${item.pageNumber}:` : ''} ${item.note}${item.selectedText ? ` (re: "${item.selectedText}")` : ''}`).join('\n')}`
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
         : '';
       await researchAPI.rejectResearch(id, `${rejectionReason}${annotationSummary}`);
       toast.success('Research rejected', { id: loadingToast, icon: '❌' });
@@ -190,7 +184,7 @@ const ReviewDetail = () => {
     const loadingToast = toast.loading('Requesting revision...');
     try {
       const annotationSummary = annotations.length > 0
-        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. [${(item.annotationType || 'comment').toUpperCase()}]${item.pageNumber ? ` Page ${item.pageNumber}:` : ''} ${item.note}${item.selectedText ? ` (re: "${item.selectedText}")` : ''}`).join('\n')}`
+        ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
         : '';
 
       console.log('=== Requesting Revision ===');
@@ -214,16 +208,12 @@ const ReviewDetail = () => {
     }
   };
 
-  // Annotation type config for rendering in the list
   const ANNOTATION_TYPES = {
     highlight: { icon: Highlighter, label: 'Highlight', color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200' },
-    note: { icon: StickyNote, label: 'Note', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
-    comment: { icon: MessageSquare, label: 'Comment', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+    note:      { icon: StickyNote,  label: 'Note',      color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-200'  },
+    comment:   { icon: MessageSquare, label: 'Comment', color: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-200'   },
   };
-
-  const HIGHLIGHT_COLORS = {
-    yellow: { bg: 'bg-yellow-300' }, red: { bg: 'bg-red-300' }, blue: { bg: 'bg-blue-300' }, green: { bg: 'bg-green-300' },
-  };
+  const HL_COLORS = { yellow: 'bg-yellow-300', red: 'bg-red-300', blue: 'bg-blue-300', green: 'bg-green-300' };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -503,34 +493,30 @@ const ReviewDetail = () => {
                 </div>
               </div>
 
-              {/* PDF PREVIEW SECTION */}
+              {/* PDF PREVIEW SECTION - Editor Style */}
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Maximize2 size={18} className="text-[#1C4D8D]" />
                     <h4 className="text-lg font-bold text-slate-900">Document Preview</h4>
+                    {canAnnotate && <span className="text-xs text-slate-500 font-medium">🔒 Use toolbar to annotate · Fullscreen button in viewer</span>}
                   </div>
-                  <span className="text-xs font-medium text-slate-500 flex items-center gap-1">
-                    🔒 Secure Viewer &bull; Use fullscreen button in viewer
-                  </span>
                 </div>
-                <div className="rounded-2xl border-2 border-slate-200 overflow-hidden bg-slate-100 shadow-inner">
-                  {paper.file_url ? (
-                    <SecurePDFViewer
-                      fileUrl={paper.file_url}
-                      watermarkText="NU"
-                      enableAnnotationSelection={canAnnotate}
-                      annotations={annotations}
-                      onAddAnnotation={canAnnotate ? handleAddAnnotationFromViewer : undefined}
-                      onDeleteAnnotation={canAnnotate ? handleDeleteAnnotation : undefined}
-                    />
-                  ) : (
-                    <div className="h-[300px] flex flex-col items-center justify-center text-slate-400 gap-2">
-                      <XCircle size={40} />
-                      <p>Preview not available</p>
-                    </div>
-                  )}
-                </div>
+                {paper.file_url ? (
+                  <SecurePDFViewer
+                    fileUrl={paper.file_url}
+                    watermarkText="NU"
+                    enableAnnotationSelection={canAnnotate}
+                    annotations={annotations}
+                    onAddAnnotation={canAnnotate ? handleAddAnnotationFromViewer : undefined}
+                    onDeleteAnnotation={canAnnotate ? handleDeleteAnnotation : undefined}
+                  />
+                ) : (
+                  <div className="h-[300px] flex flex-col items-center justify-center text-slate-400 gap-2 rounded-2xl border-2 border-slate-200">
+                    <XCircle size={40} />
+                    <p>Preview not available</p>
+                  </div>
+                )}
               </div>
 
               {/* Keywords */}
@@ -548,7 +534,7 @@ const ReviewDetail = () => {
                 </div>
               )}
 
-              {/* Review Annotations List */}
+              {/* Annotation List */}
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-3">
                   <MessageSquarePlus size={18} className="text-[#1C4D8D]" />
@@ -559,11 +545,11 @@ const ReviewDetail = () => {
                 </div>
 
                 {canAnnotate && annotations.length === 0 && (
-                  <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 mb-4">
-                    <p className="text-sm text-blue-800 font-medium">💡 Use the toolbar above the document to add annotations directly:</p>
-                    <ul className="mt-2 text-xs text-blue-700 space-y-1">
-                      <li className="flex items-center gap-2"><Highlighter size={12} /> <strong>Highlight</strong> — Select text in the document to highlight it</li>
-                      <li className="flex items-center gap-2"><StickyNote size={12} /> <strong>Sticky</strong> — Click on the document to place a note</li>
+                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 mb-4">
+                    <p className="text-sm text-blue-800 font-medium">💡 Use the toolbar above the document to annotate directly:</p>
+                    <ul className="mt-1 text-xs text-blue-700 space-y-1">
+                      <li className="flex items-center gap-1.5"><Highlighter size={11} /> <strong>Highlight</strong> — select text in the document</li>
+                      <li className="flex items-center gap-1.5"><StickyNote size={11} /> <strong>Sticky Note</strong> — click anywhere on the document</li>
                     </ul>
                   </div>
                 )}
@@ -571,65 +557,57 @@ const ReviewDetail = () => {
                 <div className="space-y-3">
                   {annotations.length === 0 ? (
                     <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-6 text-center">
-                      <MessageSquarePlus size={24} className="text-slate-300 mx-auto mb-2" />
-                      No annotations yet. Use the document toolbar above to highlight text or add sticky notes.
+                      <MessageSquarePlus size={22} className="text-slate-300 mx-auto mb-2" />
+                      No annotations yet. Use the toolbar above the document.
                     </div>
-                  ) : (
-                    (() => {
-                      const grouped = {};
-                      annotations.forEach(a => {
-                        const key = a.pageNumber ? `Page ${a.pageNumber}` : 'General';
-                        if (!grouped[key]) grouped[key] = [];
-                        grouped[key].push(a);
-                      });
-
-                      return Object.entries(grouped).map(([pageLabel, pageAnnotations]) => (
-                        <div key={pageLabel}>
-                          <div className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">{pageLabel}</div>
-                          <div className="space-y-2">
-                            {pageAnnotations.map((annotation) => {
-                              const typeConfig = ANNOTATION_TYPES[annotation.annotationType] || ANNOTATION_TYPES.note;
-                              const TypeIcon = typeConfig.icon;
-                              const highlightColorClass = annotation.highlightColor && HIGHLIGHT_COLORS[annotation.highlightColor]
-                                ? HIGHLIGHT_COLORS[annotation.highlightColor].bg : '';
-
-                              return (
-                                <div key={annotation.id} className={`${typeConfig.bg} border ${typeConfig.border} rounded-lg p-3 group`}>
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="flex items-start gap-2 flex-1">
-                                      <TypeIcon size={14} className={`${typeConfig.color} mt-0.5 flex-shrink-0`} />
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1">
-                                          <span className={`text-xs font-bold ${typeConfig.color}`}>{typeConfig.label}</span>
-                                          {annotation.highlightColor && (
-                                            <span className={`w-3 h-3 rounded-full ${highlightColorClass} inline-block`} />
-                                          )}
-                                          <span className="text-xs text-slate-400">• {annotation.reviewerName}</span>
-                                        </div>
-                                        {annotation.selectedText && (
-                                          <p className="text-xs text-slate-500 mb-1 italic">"{annotation.selectedText}"</p>
+                  ) : (() => {
+                    const grouped = {};
+                    annotations.forEach(a => {
+                      const key = a.pageNumber ? `Page ${a.pageNumber}` : 'General';
+                      if (!grouped[key]) grouped[key] = [];
+                      grouped[key].push(a);
+                    });
+                    return Object.entries(grouped).map(([pageLabel, pageAnnotations]) => (
+                      <div key={pageLabel}>
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">{pageLabel}</div>
+                        <div className="space-y-2">
+                          {pageAnnotations.map(annotation => {
+                            const tc = ANNOTATION_TYPES[annotation.annotationType] || ANNOTATION_TYPES.comment;
+                            const TypeIcon = tc.icon;
+                            return (
+                              <div key={annotation.id} className={`${tc.bg} border ${tc.border} rounded-lg p-3 group`}>
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-start gap-2 flex-1">
+                                    <TypeIcon size={13} className={`${tc.color} mt-0.5 flex-shrink-0`} />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className={`text-xs font-bold ${tc.color}`}>{tc.label}</span>
+                                        {annotation.highlightColor && HL_COLORS[annotation.highlightColor] && (
+                                          <span className={`w-3 h-3 rounded-full ${HL_COLORS[annotation.highlightColor]} inline-block`} />
                                         )}
-                                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                                        <span className="text-xs text-slate-400">• {annotation.reviewerName}</span>
                                       </div>
+                                      {annotation.selectedText && <p className="text-xs text-slate-500 mb-1 italic">"{annotation.selectedText}"</p>}
+                                      {annotation.note && <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>}
                                     </div>
-                                    {(annotation.userId === user?.id || user?.role === 'admin') && (
-                                      <button
-                                        onClick={() => handleDeleteAnnotation(annotation.id)}
-                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                                        title="Delete annotation"
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-                                    )}
                                   </div>
+                                  {(annotation.userId === user?.id || user?.role === 'admin') && (
+                                    <button
+                                      onClick={() => handleDeleteAnnotation(annotation.id)}
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                                      title="Delete"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
                                 </div>
-                              );
-                            })}
-                          </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      ));
-                    })()
-                  )}
+                      </div>
+                    ));
+                  })()}
                 </div>
               </div>
             </div>

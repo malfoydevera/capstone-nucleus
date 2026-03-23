@@ -1,258 +1,125 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const supabase = require('../config/supabase');
-const { logAuditEvent } = require('../utils/audit');
-const { sendSuccess, sendError } = require('../utils/response');
-
-// ─── S-005: Token helpers ─────────────────────────────────────────────────────
-const ACCESS_TOKEN_TTL  = '2h';
-const REFRESH_TOKEN_TTL_DAYS = 7;
-
-function issueAccessToken(user) {
-  return jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: ACCESS_TOKEN_TTL }
-  );
-}
-
-async function issueRefreshToken(userId) {
-  try {
-    const token = crypto.randomUUID();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_TTL_DAYS);
-
-    const { error } = await supabase
-      .from('refresh_tokens')
-      .insert({ token, user_id: userId, expires_at: expiresAt.toISOString() });
-
-    if (error) {
-      // Table may not exist yet — log warning but don't crash login
-      console.warn('[S-005] refresh_tokens table unavailable. Run add_refresh_tokens.sql migration. Error:', error.message);
-      return null;
-    }
-    return token;
-  } catch (err) {
-    console.warn('[S-005] issueRefreshToken failed:', err.message);
-    return null;
-  }
-}
-
-// ... (Keep existing register and login functions exactly as they are) ...
 
 // Register new user
 exports.register = async (req, res) => {
-  // ... (Keep existing code) ...
   try {
-    const { email, password, fullName, role, program, department } = req.body;
+    const { email, password, fullName, role, departmentId, programId } = req.body;
 
     if (!email || !password || !fullName || !role) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'All fields are required' });
+      return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const normalizedRole = String(role).trim();
-    if (normalizedRole !== 'student') {
-      return sendError(res, {
-        status: 403,
-        code: 'REGISTRATION_ROLE_NOT_ALLOWED',
-        message: 'Public registration is only available for students'
-      });
-    }
-
-    const normalizedEmail = String(email).toLowerCase().trim();
-    const normalizedFullName = String(fullName).trim();
-
-    if (normalizedFullName.length < 2) {
-      return sendError(res, { status: 400, code: 'INVALID_FULL_NAME', message: 'Full name is too short' });
-    }
-
-    if (String(password).length < 8) {
-      return sendError(res, { status: 400, code: 'WEAK_PASSWORD', message: 'Password must be at least 8 characters' });
+    // Only students and faculty can self-register
+    const allowedSelfRegisterRoles = ['student', 'faculty'];
+    if (!allowedSelfRegisterRoles.includes(role)) {
+      return res.status(403).json({ error: 'This account type must be created by an administrator' });
     }
 
     const { data: existingUser } = await supabase
       .from('users')
       .select('*')
-      .eq('email', normalizedEmail)
+      .eq('email', email)
       .single();
 
     if (existingUser) {
-      return sendError(res, { status: 400, code: 'USER_EXISTS', message: 'User already exists' });
+      return res.status(400).json({ error: 'User already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // For students: auto-derive department from selected program
+    let resolvedDepartmentId = departmentId || null;
+    if (role === 'student' && programId) {
+      const { data: program } = await supabase
+        .from('programs')
+        .select('department_id')
+        .eq('id', programId)
+        .single();
+      if (program) resolvedDepartmentId = program.department_id;
+    }
+
     const { data: newUser, error } = await supabase
       .from('users')
       .insert([{
-        email: normalizedEmail,
+        email,
         password: hashedPassword,
-        full_name: normalizedFullName,
-        role: 'student',
-        program: program?.trim() || null,
-        department: department?.trim() || null,
+        full_name: fullName,
+        role,
+        department_id: resolvedDepartmentId,
+        program_id: role === 'student' ? (programId || null) : null,
       }])
       .select()
       .single();
 
     if (error) throw error;
 
-    const token = issueAccessToken(newUser);
-    const refreshToken = await issueRefreshToken(newUser.id);
+    const token = jwt.sign(
+      { id: newUser.id, email: newUser.email, role: newUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
-    return sendSuccess(res, {
-      status: 201,
+    res.status(201).json({
       message: 'User registered successfully',
-      data: {
-        token,
-        refreshToken,
-        user: {
-          id: newUser.id,
-          email: newUser.email,
-          fullName: newUser.full_name,
-          role: newUser.role,
-          department: newUser.department,
-          program: newUser.program,
-        },
+      token,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        fullName: newUser.full_name,
+        role: newUser.role,
       },
     });
   } catch (error) {
     console.error('Register error:', error);
-    return sendError(res, { status: 500, code: 'REGISTER_FAILED', message: 'Server error' });
-  }
-};
-
-// ─── S-005: Refresh token endpoint ──────────────────────────────────────────
-exports.refresh = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Refresh token is required' });
-    }
-
-    // Look up the token in DB
-    const { data: tokenRecord, error: tokenError } = await supabase
-      .from('refresh_tokens')
-      .select('*, user:users!refresh_tokens_user_id_fkey(id, email, role, full_name, department, program)')
-      .eq('token', refreshToken)
-      .single();
-
-    if (tokenError || !tokenRecord) {
-      return sendError(res, { status: 401, code: 'INVALID_REFRESH_TOKEN', message: 'Invalid or expired refresh token' });
-    }
-
-    if (new Date(tokenRecord.expires_at) < new Date()) {
-      await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
-      return sendError(res, { status: 401, code: 'REFRESH_TOKEN_EXPIRED', message: 'Refresh token has expired, please log in again' });
-    }
-
-    const user = tokenRecord.user;
-
-    // Rotate: delete old token, issue new pair
-    await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
-    const newAccessToken = issueAccessToken(user);
-    const newRefreshToken = await issueRefreshToken(user.id);
-
-    return sendSuccess(res, {
-      message: 'Token refreshed successfully',
-      data: {
-        token: newAccessToken,
-        refreshToken: newRefreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.full_name,
-          role: user.role,
-          department: user.department,
-          program: user.program,
-        },
-      },
-    });
-  } catch (error) {
-    console.error('Refresh token error:', error);
-    return sendError(res, { status: 500, code: 'REFRESH_FAILED', message: 'Server error' });
-  }
-};
-
-// ─── S-005: Logout (revoke refresh token) ─────────────────────────────────────
-exports.logout = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-    if (refreshToken) {
-      await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
-    }
-    return sendSuccess(res, { message: 'Logged out successfully' });
-  } catch (error) {
-    console.error('Logout error:', error);
-    return sendError(res, { status: 500, code: 'LOGOUT_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
 // Login user
 exports.login = async (req, res) => {
-  // ... (Keep existing code) ...
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_INPUT',
-        message: 'Email and password are required'
-      });
+      return res.status(400).json({ error: 'Email and password are required' });
     }
-
-    // F-001: Normalize email to lowercase (matching registration normalization)
-    const normalizedEmail = String(email).toLowerCase().trim();
 
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq('email', normalizedEmail)
+      .eq('email', email)
       .single();
 
     if (error || !user) {
-      return sendError(res, { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
-      return sendError(res, { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = issueAccessToken(user);
-    const refreshToken = await issueRefreshToken(user.id);
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
-    sendSuccess(res, {
+    res.json({
       message: 'Login successful',
-      data: {
-        token,
-        refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.full_name,
-          role: user.role,
-          department: user.department,
-          program: user.program,
-        },
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        role: user.role,
       },
-    });
-
-    // Audit log (fire-and-forget after response)
-    logAuditEvent({
-      userId: user.id,
-      userRole: user.role,
-      userName: user.full_name,
-      action: 'login',
-      targetType: 'system',
-      details: { email: user.email },
-      ipAddress: req.ip,
     });
   } catch (error) {
     console.error('Login error:', error);
-    return sendError(res, { status: 500, code: 'LOGIN_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -261,30 +128,26 @@ exports.getCurrentUser = async (req, res) => {
   try {
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, email, full_name, role, department, program, created_at')
+      .select('id, email, full_name, role, created_at')
       .eq('id', req.user.id)
       .single();
 
     if (error || !user) {
-      return sendError(res, { status: 404, code: 'USER_NOT_FOUND', message: 'User not found' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    return sendSuccess(res, {
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.full_name,
-          role: user.role,
-          department: user.department,
-          program: user.program,
-          createdAt: user.created_at,
-        },
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        role: user.role,
+        createdAt: user.created_at,
       },
     });
   } catch (error) {
     console.error('Get user error:', error);
-    return sendError(res, { status: 500, code: 'GET_USER_FAILED', message: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -322,7 +185,7 @@ exports.searchStudents = async (req, res) => {
     const { query } = req.query;
 
     if (!query || query.length < 2) {
-      return sendSuccess(res, { data: { students: [] } });
+      return res.json({ students: [] });
     }
 
     const { data: students, error } = await supabase
@@ -334,10 +197,10 @@ exports.searchStudents = async (req, res) => {
 
     if (error) throw error;
 
-    return sendSuccess(res, { data: { students: students || [] } });
+    res.json({ students: students || [] });
   } catch (error) {
     console.error('Search students error:', error);
-    return sendError(res, { status: 500, code: 'SEARCH_STUDENTS_FAILED', message: 'Failed to search students' });
+    res.status(500).json({ error: 'Failed to search students' });
   }
 };
 
@@ -345,7 +208,7 @@ exports.searchStudents = async (req, res) => {
 // Creates faculty, staff, dean, program_chair, or admin accounts
 exports.createPrivilegedUser = async (req, res) => {
   try {
-    const { email, password, fullName, role, department, program } = req.body;
+    const { email, password, fullName, role, department } = req.body;
 
     const allowedRoles = ['faculty', 'staff', 'dean', 'program_chair', 'admin'];
     if (!allowedRoles.includes(role)) {
@@ -356,8 +219,8 @@ exports.createPrivilegedUser = async (req, res) => {
       return res.status(400).json({ error: 'Email, password, full name, and role are required.' });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
     }
 
     const { data: existingUser } = await supabase
@@ -380,9 +243,8 @@ exports.createPrivilegedUser = async (req, res) => {
         full_name: fullName.trim(),
         role,
         department: department?.trim() || null,
-        program: program?.trim() || null,
       }])
-      .select('id, email, full_name, role, department, program, created_at')
+      .select('id, email, full_name, role, department, created_at')
       .single();
 
     if (error) throw error;
@@ -395,7 +257,6 @@ exports.createPrivilegedUser = async (req, res) => {
         fullName: newUser.full_name,
         role: newUser.role,
         department: newUser.department,
-        program: newUser.program,
         createdAt: newUser.created_at,
       },
     });
