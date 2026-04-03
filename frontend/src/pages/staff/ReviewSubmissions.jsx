@@ -19,7 +19,6 @@ import {
   Shield,
   Zap,
   Sparkles,
-  Hash,
   MoreVertical,
   Download,
   ExternalLink,
@@ -278,9 +277,26 @@ const ReviewSubmissions = () => {
           <div className="hidden md:block">
             <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 text-emerald-700 text-sm font-semibold">
               <Shield size={14} />
-              Faculty Reviewer
+              Research Editor
             </div>
           </div>
+        </div>
+
+        <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50 p-5">
+          <h2 className="text-base font-bold text-orange-900 mb-3">Editorial Toolkit</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="flex items-start gap-2 text-orange-800">
+              <AlertCircle size={16} className="mt-0.5" />
+              <span><strong>Return to Author:</strong> Send back without full rejection</span>
+            </div>
+            <div className="flex items-start gap-2 text-orange-800">
+              <FileText size={16} className="mt-0.5" />
+              <span><strong>Metadata Correction:</strong> Fix title, abstract, and authors</span>
+            </div>
+          </div>
+          <p className="text-xs text-orange-700 mt-3">
+            Open any paper card to access these actions in the Review Actions panel.
+          </p>
         </div>
 
         {/* Stats Overview */}

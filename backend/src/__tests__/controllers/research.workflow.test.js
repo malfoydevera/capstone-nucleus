@@ -167,6 +167,25 @@ describe('research workflow endpoints', () => {
         };
       }
 
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: async () => ({ data: [], error: null }),
+            in: async () => ({ data: [], error: null }),
+          }),
+        };
+      }
+
+      if (table === 'workflow_stages') {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: async () => ({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+
       return {
         insert: async () => ({ error: null }),
       };
@@ -487,133 +506,7 @@ describe('research workflow endpoints', () => {
     expect(logAuditEvent).toHaveBeenCalledTimes(1);
   });
 
-  test('approveResearch blocks staff approval when editorial checklist is incomplete', async () => {
-    supabase.from.mockImplementation((table) => {
-      if (table === 'research_papers') {
-        return {
-          select: () => ({
-            eq: () => ({
-              single: async () => ({
-                data: {
-                  id: 'p1',
-                  title: 'Paper',
-                  status: 'pending_editor',
-                  author_id: 'a1',
-                  author: {
-                    first_name: 'Stu',
-                    middle_name: null,
-                    last_name: 'Dent',
-                    email: 'student@example.com',
-                  },
-                },
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
-
-      if (table === 'editorial_checklists') {
-        return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({ data: null, error: null }),
-            }),
-          }),
-        };
-      }
-
-      return {
-        insert: async () => ({ error: null }),
-      };
-    });
-
-    const req = {
-      params: { id: 'p1' },
-      body: { comments: 'Looks good for admin review.' },
-      user: { id: 'staff-1', role: 'staff' },
-    };
-    const res = createRes();
-
-    await researchController.approveResearch(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    const payload = res.json.mock.calls[0][0];
-    expect(payload.success).toBe(false);
-    expect(payload.error.code).toBe('EDITORIAL_CHECKLIST_REQUIRED');
-  });
-
-  test('upsertEditorialChecklist saves checklist for staff', async () => {
-    supabase.from.mockImplementation((table) => {
-      if (table === 'research_papers') {
-        return {
-          select: () => ({
-            eq: () => ({
-              single: async () => ({
-                data: {
-                  id: 'p1',
-                  title: 'Paper',
-                  status: 'pending_editor',
-                },
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
-
-      if (table === 'editorial_checklists') {
-        return {
-          upsert: () => ({
-            select: () => ({
-              single: async () => ({
-                data: {
-                  id: 'c1',
-                  items: {
-                    formatting: true,
-                    citations: true,
-                    references: true,
-                  },
-                  notes: 'All checks passed',
-                  completed_at: '2026-04-01T00:00:00.000Z',
-                  staff_id: 'staff-1',
-                },
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
-
-      return {
-        insert: async () => ({ error: null }),
-      };
-    });
-
-    const req = {
-      params: { id: 'p1' },
-      body: {
-        items: {
-          formatting: true,
-          citations: true,
-          references: true,
-        },
-        notes: 'All checks passed',
-      },
-      user: { id: 'staff-1', role: 'staff' },
-    };
-    const res = createRes();
-
-    await researchController.upsertEditorialChecklist(req, res);
-
-    const payload = res.json.mock.calls[0][0];
-    expect(payload.success).toBe(true);
-    expect(payload.data.completed).toBe(true);
-    expect(payload.data.checklist.items.references).toBe(true);
-    expect(logAuditEvent).toHaveBeenCalledTimes(1);
-  });
-
-  test('approveResearch allows staff approval when editorial checklist is complete', async () => {
+  test('approveResearch allows staff approval from pending_editor', async () => {
     supabase.from.mockImplementation((table) => {
       if (table === 'research_papers') {
         return {
@@ -626,8 +519,6 @@ describe('research workflow endpoints', () => {
                   status: 'pending_editor',
                   author_id: 'a1',
                   department: 'CS',
-                  doi: null,
-                  citation_key: null,
                   author: {
                     first_name: 'Stu',
                     middle_name: null,
@@ -643,26 +534,6 @@ describe('research workflow endpoints', () => {
             eq: () => ({
               select: async () => ({
                 data: [{ id: 'p1', status: 'pending_admin' }],
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
-
-      if (table === 'editorial_checklists') {
-        return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: {
-                  items: {
-                    formatting: true,
-                    citations: true,
-                    references: true,
-                  },
-                  completed_at: '2026-04-01T00:00:00.000Z',
-                },
                 error: null,
               }),
             }),

@@ -83,8 +83,6 @@ router.post('/:id/revision',  authenticate, authorize('faculty', 'dean', 'progra
 router.post('/:id/declare-conflict', authenticate, authorize('faculty'), reviewController.declareConflictOfInterest);
 router.post('/:id/return-to-author', authenticate, authorize('staff'), reviewController.returnToAuthor);
 router.patch('/:id/metadata', authenticate, authorize('staff'), reviewController.correctMetadata);
-router.get('/:id/editorial-checklist', authenticate, authorize('staff', 'admin'), reviewController.getEditorialChecklist);
-router.put('/:id/editorial-checklist', authenticate, authorize('staff'), reviewController.upsertEditorialChecklist);
 router.get('/:id/plagiarism', authenticate, authorize('staff', 'admin'), reviewController.getPlagiarismReport);
 router.post('/:id/plagiarism/run', authenticate, authorize('staff'), reviewController.runPlagiarismScan);
 router.post('/:id/assign-faculty', authenticate, authorize('dean', 'program_chair'), reviewController.assignFacultyReviewer);

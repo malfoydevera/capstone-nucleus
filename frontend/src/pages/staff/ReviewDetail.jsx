@@ -43,7 +43,6 @@ const ReviewDetail = () => {
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [showReturnToAuthorModal, setShowReturnToAuthorModal] = useState(false);
   const [showMetadataModal, setShowMetadataModal] = useState(false);
-  const [showChecklistModal, setShowChecklistModal] = useState(false);
   const [comments, setComments] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectionCategory, setRejectionCategory] = useState('methodology');
@@ -68,13 +67,6 @@ const ReviewDetail = () => {
   const [facultyMembers, setFacultyMembers] = useState([]);
   const [selectedFacultyId, setSelectedFacultyId] = useState('');
   const [assignNotes, setAssignNotes] = useState('');
-  const [editorialChecklist, setEditorialChecklist] = useState({
-    formatting: false,
-    citations: false,
-    references: false,
-  });
-  const [editorialNotes, setEditorialNotes] = useState('');
-  const [editorialCompletedAt, setEditorialCompletedAt] = useState(null);
   const [plagiarism, setPlagiarism] = useState({
     status: 'not_checked',
     score: null,
@@ -87,6 +79,15 @@ const ReviewDetail = () => {
   const [annotations, setAnnotations] = useState([]);
   const [replyingToId, setReplyingToId] = useState(null);
   const [replyText, setReplyText] = useState('');
+
+  const getApiErrorMessage = (error, fallback) => {
+    const payload = error?.response?.data;
+    if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error;
+    if (typeof payload?.error?.message === 'string' && payload.error.message.trim()) return payload.error.message;
+    if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message;
+    if (typeof error?.message === 'string' && error.message.trim()) return error.message;
+    return fallback;
+  };
 
   // Fetch Dean/Program Chair members when adviser is reviewing
   useEffect(() => {
@@ -172,24 +173,6 @@ const ReviewDetail = () => {
         coAuthors: response.data.paper?.co_authors || '',
       });
 
-      if (user?.role === 'staff' || user?.role === 'admin') {
-        try {
-          const checklistResponse = await researchAPI.getEditorialChecklist(id);
-          const checklist = checklistResponse?.data?.checklist;
-          if (checklist?.items) {
-            setEditorialChecklist({
-              formatting: Boolean(checklist.items.formatting),
-              citations: Boolean(checklist.items.citations),
-              references: Boolean(checklist.items.references),
-            });
-          }
-          setEditorialNotes(checklist?.notes || '');
-          setEditorialCompletedAt(checklist?.completed_at || null);
-        } catch (checklistError) {
-          console.error('Failed to fetch editorial checklist:', checklistError);
-        }
-      }
-
       const annotationResponse = await researchAPI.getAnnotations(id);
       setAnnotations(annotationResponse.data.annotations || []);
 
@@ -231,7 +214,7 @@ const ReviewDetail = () => {
       setAnnotations(res.data.annotations || []);
       toast.success(annotationType === 'highlight' ? 'Highlight added ✨' : 'Note added 📝');
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to save annotation');
+      toast.error(getApiErrorMessage(error, 'Failed to save annotation'));
     }
   }, [id]);
 
@@ -241,7 +224,7 @@ const ReviewDetail = () => {
       setAnnotations(prev => prev.filter(a => a.id !== annotationId));
       toast.success('Annotation removed');
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to delete annotation');
+      toast.error(getApiErrorMessage(error, 'Failed to delete annotation'));
     }
   }, [id]);
 
@@ -264,7 +247,7 @@ const ReviewDetail = () => {
       setReplyText('');
       toast.success('Reply posted');
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to post reply');
+      toast.error(getApiErrorMessage(error, 'Failed to post reply'));
     }
   }, [id, replyText]);
 
@@ -272,14 +255,6 @@ const ReviewDetail = () => {
     if (!comments.trim()) {
       toast.error('Please provide approval comments', { icon: '📝' });
       return;
-    }
-
-    if (user?.role === 'staff') {
-      const checklistComplete = editorialChecklist.formatting && editorialChecklist.citations && editorialChecklist.references;
-      if (!checklistComplete) {
-        toast.error('Complete the editorial checklist before approving this paper', { icon: '✅' });
-        return;
-      }
     }
 
     // Adviser must pick a Dean or Program Chair
@@ -304,7 +279,7 @@ const ReviewDetail = () => {
         : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
       navigate(reviewPath);
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to approve research', { id: loadingToast });
+      toast.error(getApiErrorMessage(error, 'Failed to approve research'), { id: loadingToast });
     } finally {
       setActionLoading(false);
       setShowApproveModal(false);
@@ -331,7 +306,7 @@ const ReviewDetail = () => {
         : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
       navigate(reviewPath);
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to reject research', { id: loadingToast });
+      toast.error(getApiErrorMessage(error, 'Failed to reject research'), { id: loadingToast });
     } finally {
       setActionLoading(false);
       setShowRejectModal(false);
@@ -368,7 +343,7 @@ const ReviewDetail = () => {
       navigate(reviewPath);
     } catch (error) {
       console.error('Failed to request revision:', error);
-      toast.error(error.response?.data?.error || 'Failed to request revision', { id: loadingToast });
+      toast.error(getApiErrorMessage(error, 'Failed to request revision'), { id: loadingToast });
     } finally {
       setActionLoading(false);
       setShowRevisionModal(false);
@@ -391,7 +366,7 @@ const ReviewDetail = () => {
       setSelectedFacultyId('');
       navigate('/dean/review');
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to assign faculty reviewer', { id: loadingToast });
+      toast.error(getApiErrorMessage(error, 'Failed to assign faculty reviewer'), { id: loadingToast });
     } finally {
       setActionLoading(false);
     }
@@ -411,7 +386,7 @@ const ReviewDetail = () => {
       setShowDeadlineModal(false);
       fetchPaperDetail();
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to set review deadline', { id: loadingToast });
+      toast.error(getApiErrorMessage(error, 'Failed to set review deadline'), { id: loadingToast });
     } finally {
       setActionLoading(false);
     }
@@ -432,7 +407,7 @@ const ReviewDetail = () => {
       setReturnToAuthorNotes('');
       navigate('/staff/review');
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to return paper to author', { id: loadingToast });
+      toast.error(getApiErrorMessage(error, 'Failed to return paper to author'), { id: loadingToast });
     } finally {
       setActionLoading(false);
     }
@@ -460,29 +435,7 @@ const ReviewDetail = () => {
       setShowMetadataModal(false);
       toast.success('Metadata corrected successfully', { id: loadingToast, duration: 3000 });
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to correct metadata', { id: loadingToast });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleSaveEditorialChecklist = async () => {
-    setActionLoading(true);
-    const loadingToast = toast.loading('Saving editorial checklist...');
-
-    try {
-      const payload = {
-        items: editorialChecklist,
-        notes: editorialNotes,
-      };
-
-      const response = await researchAPI.saveEditorialChecklist(id, payload);
-      const saved = response?.data?.checklist;
-      setEditorialCompletedAt(saved?.completed_at || null);
-      toast.success(response?.message || 'Editorial checklist saved', { id: loadingToast });
-      setShowChecklistModal(false);
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to save editorial checklist', { id: loadingToast });
+      toast.error(getApiErrorMessage(error, 'Failed to correct metadata'), { id: loadingToast });
     } finally {
       setActionLoading(false);
     }
@@ -496,7 +449,7 @@ const ReviewDetail = () => {
       setPlagiarism(response?.data?.plagiarism || plagiarism);
       toast.success('Plagiarism scan completed', { id: loadingToast });
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to run plagiarism scan', { id: loadingToast });
+      toast.error(getApiErrorMessage(error, 'Failed to run plagiarism scan'), { id: loadingToast });
     } finally {
       setPlagiarismLoading(false);
     }
@@ -995,15 +948,6 @@ const ReviewDetail = () => {
                   <AlertCircle size={20} /> Request Revision
                 </button>
 
-                {user?.role === 'staff' && ['pending_editor', 'under_review'].includes(paper.status) && (
-                  <button
-                    onClick={() => setShowChecklistModal(true)}
-                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-cyan-600 text-white rounded-xl hover:bg-cyan-700 transition-all font-bold shadow-lg"
-                  >
-                    <FileCheck size={20} /> Editorial Checklist
-                  </button>
-                )}
-
                 {user?.role === 'staff' && ['pending_editor', 'under_review', 'pending_admin'].includes(paper.status) && (
                   <button
                     onClick={handleRunPlagiarismScan}
@@ -1096,18 +1040,6 @@ const ReviewDetail = () => {
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-slate-500">Review Deadline</span>
                   <span className="font-bold text-orange-700">{new Date(paper.review_deadline_at).toLocaleString()}</span>
-                </div>
-              )}
-              {paper.doi && (
-                <div className="flex justify-between items-center text-sm gap-3">
-                  <span className="text-slate-500">DOI</span>
-                  <span className="font-bold text-slate-900 text-right break-all">{paper.doi}</span>
-                </div>
-              )}
-              {paper.citation_key && (
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">Citation Key</span>
-                  <span className="font-bold text-slate-900">{paper.citation_key}</span>
                 </div>
               )}
             </div>
@@ -1373,87 +1305,6 @@ const ReviewDetail = () => {
         </div>
       )}
 
-      {/* Editorial Checklist Modal */}
-      {showChecklistModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border">
-            <div className="px-6 py-4 bg-cyan-50 border-b border-cyan-100 flex items-center gap-3">
-              <FileCheck size={20} className="text-cyan-700" />
-              <h3 className="text-xl font-bold text-slate-900">Editorial Checklist</h3>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-slate-600">
-                Complete all checklist items before approving this paper for Admin review.
-              </p>
-
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200">
-                <input
-                  type="checkbox"
-                  checked={editorialChecklist.formatting}
-                  onChange={(e) => setEditorialChecklist((prev) => ({ ...prev, formatting: e.target.checked }))}
-                  className="h-4 w-4"
-                />
-                <span className="text-slate-800 font-medium">Formatting requirements verified</span>
-              </label>
-
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200">
-                <input
-                  type="checkbox"
-                  checked={editorialChecklist.citations}
-                  onChange={(e) => setEditorialChecklist((prev) => ({ ...prev, citations: e.target.checked }))}
-                  className="h-4 w-4"
-                />
-                <span className="text-slate-800 font-medium">Citations are complete and consistent</span>
-              </label>
-
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200">
-                <input
-                  type="checkbox"
-                  checked={editorialChecklist.references}
-                  onChange={(e) => setEditorialChecklist((prev) => ({ ...prev, references: e.target.checked }))}
-                  className="h-4 w-4"
-                />
-                <span className="text-slate-800 font-medium">Reference list matches in-text citations</span>
-              </label>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Editorial Notes (Optional)</label>
-                <textarea
-                  value={editorialNotes}
-                  onChange={(e) => setEditorialNotes(e.target.value)}
-                  rows={3}
-                  placeholder="Add internal editorial notes..."
-                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-cyan-500 outline-none"
-                />
-              </div>
-
-              {editorialCompletedAt && (
-                <p className="text-xs text-emerald-700 font-semibold">
-                  Checklist completed on {new Date(editorialCompletedAt).toLocaleString()}
-                </p>
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowChecklistModal(false)}
-                  className="flex-1 py-3 border rounded-xl font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveEditorialChecklist}
-                  disabled={actionLoading}
-                  className="flex-1 py-3 bg-cyan-600 text-white rounded-xl font-bold disabled:opacity-50"
-                >
-                  {actionLoading ? 'Saving...' : 'Save Checklist'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Dean Bypass Modal */}
       {showBypassModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1507,7 +1358,7 @@ const ReviewDetail = () => {
                       toast.success('Paper bypass-approved successfully! ✅', { id: loadingToast, duration: 3000 });
                       navigate('/dean/review');
                     } catch (error) {
-                      toast.error(error.response?.data?.error || 'Failed to bypass approve', { id: loadingToast });
+                      toast.error(getApiErrorMessage(error, 'Failed to bypass approve'), { id: loadingToast });
                     } finally {
                       setActionLoading(false);
                       setShowBypassModal(false);

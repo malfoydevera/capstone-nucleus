@@ -19,17 +19,6 @@ const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/wo
 const { runPlagiarismCheck } = require('../utils/plagiarism');
 const PDFDocument = require('pdfkit');
 
-const REQUIRED_EDITORIAL_ITEMS = ['formatting', 'citations', 'references'];
-
-function buildDoiAndCitation(paper) {
-  const year = new Date().getFullYear();
-  const paperToken = String(paper.id || '').replace(/-/g, '').slice(0, 8).toUpperCase() || 'UNKNOWN';
-  const deptToken = String(paper.department || 'GEN').replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase() || 'GEN';
-  const doi = `10.55555/nucleus.${year}.${deptToken}.${paperToken}`;
-  const citationKey = `NUC-${year}-${paperToken}`;
-  return { doi, citationKey };
-}
-
 const FINAL_STATUSES = ['approved', 'published', 'rejected'];
 
 exports.declareConflictOfInterest = async (req, res) => {
@@ -428,32 +417,6 @@ exports.approveResearch = async (req, res) => {
       const { data: staffUsers } = await supabase.from('users').select('id').eq('role', nextReviewerRole);
       if (staffUsers) nextReviewers = staffUsers.map(s => s.id);
     } else if (reviewerRole === 'staff' && paper.status === 'pending_editor') {
-      const { data: checklist } = await supabase
-        .from('editorial_checklists')
-        .select('items, completed_at')
-        .eq('research_id', id)
-        .maybeSingle();
-
-      const checklistItems = checklist?.items || {};
-      const checklistComplete = Boolean(
-        checklist?.completed_at &&
-        REQUIRED_EDITORIAL_ITEMS.every((item) => checklistItems[item] === true)
-      );
-
-      if (!checklistComplete) {
-        return sendError(res, {
-          status: 400,
-          code: 'EDITORIAL_CHECKLIST_REQUIRED',
-          message: 'Complete the editorial checklist before approving this paper.',
-        });
-      }
-
-      if (!paper.doi || !paper.citation_key) {
-        const identifiers = buildDoiAndCitation(paper);
-        extraUpdate.doi = identifiers.doi;
-        extraUpdate.citation_key = identifiers.citationKey;
-      }
-
       const stage = resolveApprovalTransition({
         stages: activeStages,
         currentStatus: paper.status,
@@ -482,23 +445,9 @@ exports.approveResearch = async (req, res) => {
       ...extraUpdate,
     };
 
-    let { data: updateData, error: updateError } = await supabase.from('research_papers')
+    const { error: updateError } = await supabase.from('research_papers')
       .update(updatePayload)
       .eq('id', id).select();
-
-    if (updateError && (updatePayload.doi || updatePayload.citation_key)) {
-      const missingColumnError = String(updateError.message || '').includes('doi') || String(updateError.message || '').includes('citation_key');
-      if (missingColumnError) {
-        const fallbackPayload = { ...updatePayload };
-        delete fallbackPayload.doi;
-        delete fallbackPayload.citation_key;
-        const fallbackResult = await supabase.from('research_papers')
-          .update(fallbackPayload)
-          .eq('id', id).select();
-        updateData = fallbackResult.data;
-        updateError = fallbackResult.error;
-      }
-    }
 
     if (updateError) return sendError(res, { status: 500, code: 'UPDATE_PAPER_STATUS_FAILED', message: 'Failed to update paper status' });
 
@@ -968,150 +917,6 @@ exports.correctMetadata = async (req, res) => {
     return sendError(res, {
       status: 500,
       code: 'METADATA_CORRECTION_FAILED',
-      message: 'Server error',
-    });
-  }
-};
-
-exports.getEditorialChecklist = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const { data: paper, error: paperError } = await supabase
-      .from('research_papers')
-      .select('id, status')
-      .eq('id', id)
-      .single();
-
-    if (paperError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Paper not found' });
-    }
-
-    if (!['staff', 'admin'].includes(req.user.role)) {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
-    }
-
-    const { data: checklist, error: checklistError } = await supabase
-      .from('editorial_checklists')
-      .select('id, items, notes, completed_at, created_at, updated_at, staff_id')
-      .eq('research_id', id)
-      .maybeSingle();
-
-    if (checklistError) {
-      return sendError(res, {
-        status: 500,
-        code: 'GET_EDITORIAL_CHECKLIST_FAILED',
-        message: 'Failed to fetch editorial checklist',
-      });
-    }
-
-    return sendSuccess(res, {
-      data: {
-        checklist: checklist || {
-          items: {
-            formatting: false,
-            citations: false,
-            references: false,
-          },
-          notes: '',
-          completed_at: null,
-        },
-      },
-    });
-  } catch (error) {
-    console.error('Get editorial checklist error:', error.message);
-    return sendError(res, {
-      status: 500,
-      code: 'GET_EDITORIAL_CHECKLIST_FAILED',
-      message: 'Server error',
-    });
-  }
-};
-
-exports.upsertEditorialChecklist = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { items, notes } = req.body;
-
-    if (req.user.role !== 'staff') {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Only research editor can update checklist' });
-    }
-
-    if (!items || typeof items !== 'object') {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Checklist items are required' });
-    }
-
-    const normalizedItems = {
-      formatting: Boolean(items.formatting),
-      citations: Boolean(items.citations),
-      references: Boolean(items.references),
-    };
-
-    const completed = REQUIRED_EDITORIAL_ITEMS.every((item) => normalizedItems[item] === true);
-
-    const { data: paper, error: paperError } = await supabase
-      .from('research_papers')
-      .select('id, status, title')
-      .eq('id', id)
-      .single();
-
-    if (paperError || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Paper not found' });
-    }
-
-    if (!['pending_editor', 'under_review'].includes(paper.status)) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_WORKFLOW_TRANSITION',
-        message: `Cannot edit editorial checklist from status "${paper.status}"`,
-      });
-    }
-
-    const payload = {
-      research_id: id,
-      staff_id: req.user.id,
-      items: normalizedItems,
-      notes: notes || null,
-      completed_at: completed ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { data: savedChecklist, error: saveError } = await supabase
-      .from('editorial_checklists')
-      .upsert(payload, { onConflict: 'research_id' })
-      .select('id, items, notes, completed_at, created_at, updated_at, staff_id')
-      .single();
-
-    if (saveError) {
-      return sendError(res, {
-        status: 500,
-        code: 'SAVE_EDITORIAL_CHECKLIST_FAILED',
-        message: 'Failed to save editorial checklist',
-      });
-    }
-
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: 'staff',
-      action: 'editorial_checklist_update',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        paperTitle: paper.title,
-        items: normalizedItems,
-        completed,
-      },
-    });
-
-    return sendSuccess(res, {
-      message: completed ? 'Editorial checklist completed' : 'Editorial checklist saved',
-      data: { checklist: savedChecklist, completed },
-    });
-  } catch (error) {
-    console.error('Upsert editorial checklist error:', error.message);
-    return sendError(res, {
-      status: 500,
-      code: 'SAVE_EDITORIAL_CHECKLIST_FAILED',
       message: 'Server error',
     });
   }

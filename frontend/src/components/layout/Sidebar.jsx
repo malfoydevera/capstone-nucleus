@@ -268,11 +268,11 @@ const Sidebar = () => {
         description: 'Overview'
       },
       { 
-        name: 'Review Submissions', 
+        name: 'Editorial Workspace', 
         icon: FileCheck, 
         path: '/staff/review',
         badge: stats.staffPending > 0 ? stats.staffPending : null,
-        description: 'Review student papers'
+        description: 'ST1-ST4 editorial tools'
       },
       { 
         name: 'Browse Repository', 
