@@ -30,6 +30,7 @@ import {
   CalendarDays
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 const ReviewSubmissions = () => {
   const navigate = useNavigate();
@@ -135,7 +136,7 @@ const ReviewSubmissions = () => {
       filtered = filtered.filter(paper =>
         paper.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         paper.abstract.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.users?.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        formatFullName(paper.users).toLowerCase().includes(searchTerm.toLowerCase()) ||
         paper.keywords?.some(keyword => 
           keyword.toLowerCase().includes(searchTerm.toLowerCase())
         )
@@ -455,7 +456,7 @@ const ReviewSubmissions = () => {
                           <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
                             <div className="flex items-center gap-2">
                               <User size={14} />
-                              <span className="font-medium">{paper.users?.full_name || 'Student Researcher'}</span>
+                              <span className="font-medium">{formatFullName(paper.users) || 'Student Researcher'}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <Calendar size={14} />

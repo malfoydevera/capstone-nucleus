@@ -16,6 +16,7 @@ import {
   User
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 // Donut Chart Component
 const DonutChart = ({ data, colors, size = 80 }) => {
@@ -520,7 +521,7 @@ const StaffDashboard = () => {
                           <span className="font-medium text-slate-900 truncate max-w-[200px]">{paper.title}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{paper.users?.full_name || 'Unknown'}</td>
+                      <td className="px-5 py-4 text-sm text-slate-600">{formatFullName(paper.users) || 'Unknown'}</td>
                       <td className="px-5 py-4 text-sm text-slate-500">{formatDate(paper.submission_date || paper.created_at)}</td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(paper.status)}`}>

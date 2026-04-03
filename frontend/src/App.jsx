@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
+import CoAuthorInvitations from './pages/student/CoAuthorInvitations';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import Sidebar from './components/layout/Sidebar';
 import StudentDashboard from './pages/student/StudentDashboard';
@@ -10,6 +11,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import FacultyDashboard from './pages/faculty/FacultyDashboard';
 import SubmitResearch from './pages/student/SubmitResearch';
 import MyResearch from './pages/student/MyResearch';
+import StudentPortfolio from './pages/student/StudentPortfolio';
 import BrowseRepository from './pages/student/BrowseRepository';
 import ReviewSubmissions from './pages/staff/ReviewSubmissions';
 import FacultyReview from './pages/faculty/FacultyReview';
@@ -26,7 +28,10 @@ import DeanAuditLogs from './pages/dean/DeanAuditLogs';
 import Landing from './pages/Landing'; 
 import UserManagement from './pages/admin/UserManagement';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
+import AdminSystemHealth from './pages/admin/AdminSystemHealth';
+import AdminSettings from './pages/admin/AdminSettings';
 import ProfileDashboard from './pages/shared/ProfileDashboard';
+import Notifications from './pages/shared/Notifications';
 
 // NEW IMPORT for Research Detail View
 import ResearchDetail from './pages/student/ResearchDetail';
@@ -121,9 +126,19 @@ function App() {
                 <MyResearch />
               </ProtectedRoute>
             } />
+            <Route path="/student/portfolio" element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <StudentPortfolio />
+              </ProtectedRoute>
+            } />
             <Route path="/student/submit" element={
               <ProtectedRoute allowedRoles={['student', 'staff', 'admin']}>
                 <SubmitResearch />
+              </ProtectedRoute>
+            } />
+            <Route path="/student/co-author-invitations" element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <CoAuthorInvitations />
               </ProtectedRoute>
             } />
             <Route path="/student/browse" element={
@@ -134,6 +149,11 @@ function App() {
             <Route path="/profile" element={
               <ProtectedRoute allowedRoles={['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin']}>
                 <ProfileDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/notifications" element={
+              <ProtectedRoute allowedRoles={['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin']}>
+                <Notifications />
               </ProtectedRoute>
             } />
             <Route path="/student/profile" element={<Navigate to="/profile" replace />} />
@@ -169,14 +189,34 @@ function App() {
                 <DeanChairReview />
               </ProtectedRoute>
             } />
+            <Route path="/program-chair/review" element={
+              <ProtectedRoute allowedRoles={['program_chair']}>
+                <DeanChairReview />
+              </ProtectedRoute>
+            } />
             <Route path="/dean/review/:id" element={
               <ProtectedRoute allowedRoles={['dean', 'program_chair', 'admin']}>
+                <ReviewDetail />
+              </ProtectedRoute>
+            } />
+            <Route path="/program-chair/review/:id" element={
+              <ProtectedRoute allowedRoles={['program_chair', 'admin']}>
                 <ReviewDetail />
               </ProtectedRoute>
             } />
             <Route path="/dean/repository" element={
               <ProtectedRoute allowedRoles={['dean', 'program_chair']}>
                 <BrowseRepository />
+              </ProtectedRoute>
+            } />
+            <Route path="/program-chair/repository" element={
+              <ProtectedRoute allowedRoles={['program_chair']}>
+                <BrowseRepository />
+              </ProtectedRoute>
+            } />
+            <Route path="/program-chair/analytics" element={
+              <ProtectedRoute allowedRoles={['program_chair']}>
+                <ProgramChairDashboard />
               </ProtectedRoute>
             } />
 
@@ -227,6 +267,16 @@ function App() {
             <Route path="/admin/analytics" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminAnalytics />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/health" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminSystemHealth />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/settings" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminSettings />
               </ProtectedRoute>
             } />
           </Route>

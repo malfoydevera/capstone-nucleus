@@ -15,6 +15,7 @@ import {
   Users
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 const DeanChairDashboard = () => {
   const { user } = useAuth();
@@ -257,7 +258,7 @@ const DeanChairDashboard = () => {
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-900 group-hover:text-inherit line-clamp-1">{paper.title}</p>
                     <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                      <span>{paper.users?.full_name || 'Unknown'}</span>
+                      <span>{formatFullName(paper.users) || 'Unknown'}</span>
                       <span>·</span>
                       <span>{formatDate(paper.submission_date || paper.created_at)}</span>
                     </div>

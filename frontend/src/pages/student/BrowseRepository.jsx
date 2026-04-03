@@ -33,6 +33,7 @@ import {
   Heart
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 const BrowseRepository = () => {
   const navigate = useNavigate();
@@ -121,12 +122,12 @@ const BrowseRepository = () => {
       filtered = filtered.filter(paper => {
         const authorName = authorSearch.toLowerCase();
         // Check primary author
-        if (paper.users?.full_name?.toLowerCase().includes(authorName)) {
+        if (formatFullName(paper.users).toLowerCase().includes(authorName)) {
           return true;
         }
         // Check co-authors
         if (paper.co_authors?.some(ca => 
-          ca.author?.full_name?.toLowerCase().includes(authorName)
+          formatFullName(ca.author).toLowerCase().includes(authorName)
         )) {
           return true;
         }
@@ -700,7 +701,7 @@ const BrowseRepository = () => {
                   <div className="flex items-center justify-between text-sm text-slate-500 mb-4">
                     <div className="flex items-center gap-2">
                       <User size={14} />
-                      <span>{paper.users?.full_name || 'Researcher'}</span>
+                      <span>{formatFullName(paper.users) || 'Researcher'}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Calendar size={14} />
@@ -810,7 +811,7 @@ const BrowseRepository = () => {
                       <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
                         <div className="flex items-center gap-2">
                           <User size={14} />
-                          <span className="font-medium">{paper.users?.full_name || 'Researcher'}</span>
+                          <span className="font-medium">{formatFullName(paper.users) || 'Researcher'}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <Calendar size={14} />

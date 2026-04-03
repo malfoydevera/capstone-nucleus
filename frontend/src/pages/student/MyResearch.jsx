@@ -1,28 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  FileText, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  AlertCircle, 
-  Plus, 
-  Eye, 
-  Calendar,
-  Tag,
-  Download,
-  Edit3,
-  ExternalLink,
-  BarChart3,
-  Filter,
-  RefreshCw,
-  Shield,
-  TrendingUp,
-  ArrowRight,
-  MoreVertical,
-  ChevronRight,
-  Award
-} from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Plus, RefreshCw } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
 
 const MyResearch = () => {
@@ -32,6 +10,7 @@ const MyResearch = () => {
   const [error, setError] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedActionNotes, setExpandedActionNotes] = useState(true);
 
   useEffect(() => {
     fetchMyResearch();
@@ -48,11 +27,7 @@ const MyResearch = () => {
     try {
       const response = await researchAPI.getMyResearch();
       const fetchedPapers = response.data.papers;
-      
-      console.log('=== STUDENT: Fetched papers ===', fetchedPapers.length);
-      console.log('Papers with revision_required:', fetchedPapers.filter(p => p.status === 'revision_required'));
-      console.log('All paper statuses:', fetchedPapers.map(p => ({ title: p.title, status: p.status })));
-      
+
       setPapers(fetchedPapers);
       setError('');
     } catch (err) {
@@ -66,113 +41,95 @@ const MyResearch = () => {
     }
   };
 
-  const getStatusConfig = (status) => {
-    const configs = {
-      pending: {
-        color: 'from-yellow-100 to-yellow-50 border-yellow-200',
-        text: 'text-yellow-800',
-        icon: Clock,
-        label: 'Pending Review',
-        badge: 'bg-gradient-to-r from-yellow-500 to-amber-500',
-        badgeColor: 'text-yellow-700',
-        bgColor: 'bg-yellow-50'
-      },
-      pending_faculty: {
-        color: 'from-purple-100 to-purple-50 border-purple-200',
-        text: 'text-purple-800',
-        icon: Eye,
-        label: 'With Faculty Reviewer',
-        badge: 'bg-gradient-to-r from-purple-500 to-pink-500',
-        badgeColor: 'text-purple-700',
-        bgColor: 'bg-purple-50'
-      },
-      pending_editor: {
-        color: 'from-blue-100 to-blue-50 border-blue-200',
-        text: 'text-blue-800',
-        icon: Eye,
-        label: 'With Editor',
-        badge: 'bg-gradient-to-r from-blue-500 to-cyan-500',
-        badgeColor: 'text-blue-700',
-        bgColor: 'bg-blue-50'
-      },
-      pending_admin: {
-        color: 'from-indigo-100 to-indigo-50 border-indigo-200',
-        text: 'text-indigo-800',
-        icon: Shield,
-        label: 'With Admin',
-        badge: 'bg-gradient-to-r from-indigo-500 to-purple-500',
-        badgeColor: 'text-indigo-700',
-        bgColor: 'bg-indigo-50'
-      },
-      under_review: {
-        color: 'from-blue-100 to-blue-50 border-blue-200',
-        text: 'text-blue-800',
-        icon: Eye,
-        label: 'Under Review',
-        badge: 'bg-gradient-to-r from-blue-500 to-cyan-500',
-        badgeColor: 'text-blue-700',
-        bgColor: 'bg-blue-50'
-      },
-      approved: {
-        color: 'from-green-100 to-green-50 border-green-200',
-        text: 'text-green-800',
-        icon: CheckCircle,
-        label: 'Published',
-        badge: 'bg-gradient-to-r from-green-500 to-emerald-500',
-        badgeColor: 'text-green-700',
-        bgColor: 'bg-green-50'
-      },
-      rejected: {
-        color: 'from-red-100 to-red-50 border-red-200',
-        text: 'text-red-800',
-        icon: XCircle,
-        label: 'Rejected',
-        badge: 'bg-gradient-to-r from-red-500 to-pink-500',
-        badgeColor: 'text-red-700',
-        bgColor: 'bg-red-50'
-      },
-      revision_required: {
-        color: 'from-orange-100 to-orange-50 border-orange-200',
-        text: 'text-orange-800',
-        icon: AlertCircle,
-        label: 'Revision Required',
-        badge: 'bg-gradient-to-r from-orange-500 to-amber-500',
-        badgeColor: 'text-orange-700',
-        bgColor: 'bg-orange-50'
-      }
+  const isActionStatus = (status) => status === 'revision_required' || status === 'rejected';
+
+  const getStatusLabel = (status) => {
+    const labels = {
+      pending: 'Pending Review',
+      pending_faculty: 'With Adviser',
+      pending_editor: 'With Editor',
+      pending_admin: 'With Admin',
+      under_review: 'Under Review',
+      approved: 'Published',
+      rejected: 'Rejected',
+      revision_required: 'Revision Required',
     };
-    return configs[status] || configs.pending;
+
+    return labels[status] || 'Pending Review';
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+  const formatTimeAgo = (dateString) => {
+    if (!dateString) return 'just now';
     const date = new Date(dateString);
     const now = new Date();
     const diffTime = Math.abs(now - date);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    const days = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+    if (days === 0) return 'today';
+    if (days < 30) return `${days}d ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const filteredPapers = papers.filter(paper => {
-    if (activeFilter === 'all') return true;
-    if (activeFilter === 'needs_action') {
-      return paper.status === 'rejected' || paper.status === 'revision_required';
-    }
-    return paper.status === activeFilter;
-  });
+  const getPipelineStage = (status) => {
+    if (status === 'approved') return 5;
+    if (status === 'pending_admin') return 4;
+    if (status === 'pending_editor' || status === 'under_review') return 3;
+    if (status === 'pending') return 2;
+    if (status === 'pending_faculty') return 1;
+    return 1;
+  };
 
-  const statusCounts = papers.reduce((acc, paper) => {
-    acc[paper.status] = (acc[paper.status] || 0) + 1;
-    return acc;
-  }, {});
+  const getProgressColor = (status) => {
+    if (status === 'revision_required') return 'bg-amber-500';
+    if (status === 'rejected') return 'bg-rose-500';
+    if (status === 'approved') return 'bg-emerald-700';
+    return 'bg-slate-400';
+  };
+
+  const statusCounts = useMemo(() => {
+    return papers.reduce((acc, paper) => {
+      acc[paper.status] = (acc[paper.status] || 0) + 1;
+      return acc;
+    }, {});
+  }, [papers]);
+
+  const summary = useMemo(() => {
+    const pending = (statusCounts.pending || 0) + (statusCounts.pending_faculty || 0) + (statusCounts.pending_editor || 0) + (statusCounts.pending_admin || 0);
+    const published = statusCounts.approved || 0;
+    const needsAction = (statusCounts.rejected || 0) + (statusCounts.revision_required || 0);
+    const inReview = statusCounts.under_review || 0;
+
+    return {
+      total: papers.length,
+      pending,
+      published,
+      needsAction,
+      inReview,
+    };
+  }, [papers.length, statusCounts]);
+
+  const topActionPaper = useMemo(() => {
+    return papers.find((paper) => paper.status === 'revision_required') || papers.find((paper) => paper.status === 'rejected') || null;
+  }, [papers]);
+
+  const filteredPapers = useMemo(() => {
+    return papers.filter((paper) => {
+      if (activeFilter === 'all') return true;
+      if (activeFilter === 'needs_action') return isActionStatus(paper.status);
+      if (activeFilter === 'updates') return !isActionStatus(paper.status) && paper.status !== 'approved';
+      if (activeFilter === 'archive') return paper.status === 'approved';
+      return true;
+    });
+  }, [activeFilter, papers]);
+
+  const visibleRows = useMemo(() => {
+    return filteredPapers.filter((paper) => paper.id !== topActionPaper?.id);
+  }, [filteredPapers, topActionPaper?.id]);
+
+  const sparkline = (color) => (
+    <svg viewBox="0 0 80 24" className="h-6 w-16" fill="none" aria-hidden="true">
+      <path d="M2 18 L16 14 L28 16 L40 7 L54 10 L68 5 L78 7" className={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 
   const handleRefresh = () => {
     fetchMyResearch();
@@ -191,439 +148,311 @@ const MyResearch = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 animate-fadeIn">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight mb-2">
-              My Research Portfolio
-            </h1>
-            <p className="text-lg text-slate-600 font-medium">
-              Track and manage your academic submissions
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('/student/submit')}
-            className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-[#1C4D8D]/25 transform hover:-translate-y-0.5 flex items-center gap-3 group"
-          >
-            <Plus size={20} />
-            Submit New Research
-            <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform duration-300" />
-          </button>
-        </div>
-
-        {/* Stats Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-slate-900 mb-1">{papers.length}</div>
-            <div className="text-sm text-slate-600 font-medium">Total Papers</div>
-          </div>
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-blue-600 mb-1">{statusCounts.pending || 0}</div>
-            <div className="text-sm text-slate-600 font-medium">Pending</div>
-          </div>
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-green-600 mb-1">{statusCounts.approved || 0}</div>
-            <div className="text-sm text-slate-600 font-medium">Published</div>
-          </div>
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-orange-600 mb-1">{(statusCounts.rejected || 0) + (statusCounts.revision_required || 0)}</div>
-            <div className="text-sm text-slate-600 font-medium">Needs Action</div>
-          </div>
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-[#1C4D8D] mb-1">{statusCounts.under_review || 0}</div>
-            <div className="text-sm text-slate-600 font-medium">In Review</div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-3">
-            <Filter size={20} className="text-[#1C4D8D]" />
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setActiveFilter('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${activeFilter === 'all' ? 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white shadow-lg' : 'bg-white text-slate-700 border border-slate-300 hover:border-[#1C4D8D]'}`}
-              >
-                All Papers ({papers.length})
-              </button>
-              <button
-                onClick={() => setActiveFilter('needs_action')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${activeFilter === 'needs_action' ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white shadow-lg' : 'bg-white text-slate-700 border border-slate-300 hover:border-orange-300'}`}
-              >
-                Needs Action ({(statusCounts.rejected || 0) + (statusCounts.revision_required || 0)})
-              </button>
-              <button
-                onClick={() => setActiveFilter('approved')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${activeFilter === 'approved' ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg' : 'bg-white text-slate-700 border border-slate-300 hover:border-green-300'}`}
-              >
-                Published ({statusCounts.approved || 0})
-              </button>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 font-medium hover:from-slate-200 hover:to-white transition-all duration-300 flex items-center gap-2"
-            >
-              <RefreshCw size={16} className={`${refreshing ? 'animate-spin' : ''}`} />
-              {refreshing ? 'Refreshing...' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Error Message */}
+    <div className="max-w-7xl mx-auto px-4 py-6 animate-fadeIn">
       {error && (
-        <div className="mb-8 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-2xl p-6 flex items-start gap-4 animate-shake">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-            <AlertCircle size={24} className="text-white" />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-red-900 mb-1">Unable to Load Research</h3>
-            <p className="text-red-700">{error}</p>
-          </div>
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 text-sm">
+          {error}
         </div>
       )}
 
-      {/* Papers List */}
-      {filteredPapers.length === 0 ? (
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-3xl shadow-xl border border-slate-200 p-16 text-center">
-          <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center mx-auto mb-8">
-            <FileText size={40} className="text-[#1C4D8D]" />
-          </div>
-          <h3 className="text-2xl font-bold text-slate-900 mb-4">No research papers found</h3>
-          <p className="text-lg text-slate-600 mb-8 max-w-md mx-auto">
-            {activeFilter === 'all' 
-              ? 'Start your academic journey by submitting your first research paper'
-              : 'No papers match the current filter criteria'}
-          </p>
-          <button
-            onClick={() => navigate('/student/submit')}
-            className="px-8 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-500 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-3 mx-auto"
-          >
-            <Plus size={20} />
-            Submit Your First Paper
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {filteredPapers.map((paper) => {
-            const statusConfig = getStatusConfig(paper.status);
-            const StatusIcon = statusConfig.icon;
-            
-            return (
-              <div 
-                key={paper.id} 
-                className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-xl border border-slate-200 hover:shadow-2xl transition-all duration-500 group overflow-hidden"
+      <div className="grid grid-cols-1 xl:grid-cols-[1.95fr_0.85fr] gap-4">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 md:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">My Research Portfolio</h1>
+              <p className="text-sm text-slate-500">Track and manage your academic submissions</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="h-9 px-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 inline-flex items-center gap-2 text-sm"
               >
-                {/* Status Indicator Bar */}
-                <div className={`h-2 ${statusConfig.badge}`}></div>
-                
-                <div className="p-8">
-                  <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-6">
-                    <div className="flex-1">
-                      <div className="flex items-start gap-4 mb-4">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-100 to-white flex items-center justify-center shadow-sm flex-shrink-0">
-                          <FileText size={24} className="text-slate-600" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-[#1C4D8D] transition-colors duration-300">
-                            {paper.title}
-                          </h3>
-                          <div className="flex items-center gap-4 mb-3">
-                            <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold ${statusConfig.color} ${statusConfig.text} border`}>
-                              <StatusIcon size={14} />
-                              {statusConfig.label}
-                            </div>
-                            <div className="flex items-center gap-1 text-sm text-slate-500">
-                              <Calendar size={14} />
-                              Submitted {formatDate(paper.submission_date || paper.created_at)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <p className="text-slate-600 text-sm leading-relaxed line-clamp-2 mb-4 pl-16">
-                        {paper.abstract}
-                      </p>
+                <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                {refreshing ? 'Refreshing...' : 'Refresh'}
+              </button>
+              <button
+                onClick={() => navigate('/student/submit')}
+                className="h-9 px-3 rounded-lg bg-[#1C4D8D] text-white text-sm font-semibold hover:bg-[#163d70] inline-flex items-center gap-2"
+              >
+                <Plus size={14} />
+                Submit New Research
+              </button>
+            </div>
+          </div>
 
-                      {/* Keywords */}
-                      {paper.keywords && paper.keywords.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-4 pl-16">
-                          {paper.keywords.slice(0, 5).map((keyword, index) => (
-                            <span
-                              key={index}
-                              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-slate-100 to-white border border-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1"
-                            >
-                              <Tag size={10} />
-                              {keyword}
-                            </span>
-                          ))}
-                          {paper.keywords.length > 5 && (
-                            <span className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-slate-100 to-white border border-slate-200 text-slate-500 text-xs font-medium">
-                              +{paper.keywords.length - 5} more
-                            </span>
-                          )}
-                        </div>
-                      )}
+          <div className="mt-3 grid grid-cols-2 lg:grid-cols-5 gap-2">
+            <div className="rounded-lg border border-slate-200 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-lg font-bold text-slate-900">{summary.total}</p>
+                  <p className="text-xs text-slate-500">Total</p>
+                </div>
+                {sparkline('stroke-slate-500')}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-lg font-bold text-slate-900">{summary.pending}</p>
+                  <p className="text-xs text-slate-500">Pending</p>
+                </div>
+                {sparkline('stroke-amber-500')}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-lg font-bold text-emerald-700">{summary.published}</p>
+                  <p className="text-xs text-slate-500">Published</p>
+                </div>
+                {sparkline('stroke-emerald-700')}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-lg font-bold text-amber-700">{summary.needsAction}</p>
+                  <p className="text-xs text-slate-500">Needs Action</p>
+                </div>
+                {sparkline('stroke-amber-600')}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-lg font-bold text-slate-900">{summary.inReview}</p>
+                  <p className="text-xs text-slate-500">In Review</p>
+                </div>
+                {sparkline('stroke-sky-500')}
+              </div>
+            </div>
+          </div>
 
-                      {/* File Info */}
-                      <div className="flex items-center gap-6 text-sm text-slate-500 pl-16">
-                        <div className="flex items-center gap-2">
-                          <FileText size={14} />
-                          <span className="font-medium">{paper.file_name}</span>
-                        </div>
-                        {paper.published_date && (
-                          <div className="flex items-center gap-2">
-                            <CheckCircle size={14} className="text-green-500" />
-                            <span>Published {formatDate(paper.published_date)}</span>
-                          </div>
-                        )}
-                      </div>
+          <div className="mt-3 border-b border-slate-200 flex items-center gap-5">
+            <button
+              onClick={() => setActiveFilter('all')}
+              className={`pb-2 text-sm font-semibold border-b-2 ${activeFilter === 'all' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setActiveFilter('needs_action')}
+              className={`pb-2 text-sm font-semibold border-b-2 ${activeFilter === 'needs_action' ? 'border-amber-600 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
+              Needs Action
+            </button>
+            <button
+              onClick={() => setActiveFilter('updates')}
+              className={`pb-2 text-sm font-semibold border-b-2 ${activeFilter === 'updates' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
+              Updates
+            </button>
+            <button
+              onClick={() => setActiveFilter('archive')}
+              className={`pb-2 text-sm font-semibold border-b-2 ${activeFilter === 'archive' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
+              Archive
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {topActionPaper && activeFilter !== 'archive' ? (
+              <article className="rounded-lg border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50/50 p-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                      <AlertCircle size={13} /> Urgent: Revision Request
                     </div>
+                    <h2 className="mt-1 text-[1.35rem] leading-tight font-bold text-slate-900">
+                      {topActionPaper.title || 'Revision Request'}
+                    </h2>
+                  </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-3 lg:flex-col">
+                  <button
+                    onClick={() => navigate('/student/submit', { state: { resubmit: topActionPaper } })}
+                    className="h-9 px-3 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+                  >
+                    Resolve Revision
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setExpandedActionNotes((prev) => !prev)}
+                  className="mt-2 text-sm font-medium text-slate-700 inline-flex items-center gap-1"
+                >
+                  {expandedActionNotes ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Adviser&apos;s Notes
+                </button>
+
+                {expandedActionNotes ? (
+                  <div className="mt-1 rounded-lg bg-slate-100 border border-slate-200 px-3 py-2 text-sm font-mono text-slate-700 whitespace-pre-wrap">
+                    {topActionPaper.revision_notes || topActionPaper.rejection_reason || 'Page 1: hi'}
+                  </div>
+                ) : null}
+
+                <div className="mt-3 overflow-x-auto">
+                  <div className="min-w-[420px] flex items-center gap-2 text-xs text-slate-600">
+                    <span className="inline-flex items-center gap-1"><Check size={12} className="text-emerald-600" /> Adviser Review</span>
+                    <span className="h-px flex-1 bg-slate-300" />
+                    <span className="inline-flex items-center gap-1"><Clock3 size={12} className="text-amber-600" /> Staff Review</span>
+                    <span className="h-px flex-1 bg-slate-300" />
+                    <span>Final Review</span>
+                    <span className="h-px flex-1 bg-slate-300" />
+                    <span>Publish</span>
+                  </div>
+                </div>
+              </article>
+            ) : null}
+
+            {visibleRows.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                No research items found for this filter.
+              </div>
+            ) : (
+              visibleRows.map((paper) => {
+                const stage = getPipelineStage(paper.status);
+                const statusColor = getProgressColor(paper.status);
+                const isPublished = paper.status === 'approved';
+                const isRejected = paper.status === 'rejected';
+                const isRevision = paper.status === 'revision_required';
+                const stageNames = ['Adviser', 'Program Chair', 'Editor', 'Admin', 'Publish'];
+                const currentStageName = isPublished ? 'Published' : stageNames[Math.max(0, Math.min(stage - 1, 4))];
+                const progressPercent = Math.max(0, Math.min(100, ((stage - 1) / 4) * 100));
+
+                return (
+                  <article
+                    key={paper.id}
+                    className={`rounded-lg border p-3 ${
+                      isPublished
+                        ? 'border-emerald-400 bg-emerald-100/60'
+                        : isRejected
+                        ? 'border-rose-200 bg-rose-50/20'
+                        : isRevision
+                        ? 'border-amber-200 bg-amber-50/20'
+                        : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1.15fr_auto] items-center gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <p className="font-bold text-slate-900 truncate">{paper.title}</p>
+                          {isPublished ? (
+                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-200 text-emerald-900 border border-emerald-400">
+                              <CheckCircle2 size={11} /> Published
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="text-sm text-slate-500">
+                          {getStatusLabel(paper.status)} • Submitted {formatTimeAgo(paper.submission_date || paper.created_at)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <div className="mb-2 flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-700">
+                            Current Stage: <span className={`${isPublished ? 'text-emerald-900' : isRevision ? 'text-amber-700' : isRejected ? 'text-rose-700' : 'text-sky-700'}`}>{currentStageName}</span>
+                          </span>
+                          <span className="text-slate-500">Step {stage}/5</span>
+                        </div>
+
+                        <div className="relative">
+                          <div className="absolute left-[10%] right-[10%] top-4 h-0.5 bg-slate-200" />
+                          <div className="absolute left-[10%] top-4 h-0.5 bg-emerald-700" style={{ width: `${progressPercent * 0.8}%` }} />
+
+                          <div className="relative grid grid-cols-5 gap-1.5 text-xs text-slate-600">
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
+                                {stage > 1 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 1 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
+                              </span>
+                              <span className="text-center leading-tight">Adviser</span>
+                            </div>
+
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
+                                {stage > 2 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 2 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
+                              </span>
+                              <span className="text-center leading-tight">Chair</span>
+                            </div>
+
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
+                                {stage > 3 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 3 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
+                              </span>
+                              <span className="text-center leading-tight">Editor</span>
+                            </div>
+
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
+                                {stage > 4 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 4 ? <Clock3 size={14} className="text-sky-600" /> : <span className={`h-2.5 w-2.5 rounded-full ${statusColor}`} />}
+                              </span>
+                              <span className="text-center leading-tight">Admin</span>
+                            </div>
+
+                            <div className="flex flex-col items-center gap-1">
+                              <span className={`h-8 w-8 rounded-full border inline-flex items-center justify-center shadow-sm ${isPublished ? 'border-emerald-500 bg-emerald-200' : 'border-slate-200 bg-white'}`}>
+                                {stage >= 5 ? <CheckCircle2 size={15} className="text-emerald-800" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
+                              </span>
+                              <span className={`text-center leading-tight ${isPublished ? 'font-semibold text-emerald-900' : ''}`}>Publish</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
+                          <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} className="text-emerald-700" /> Completed</span>
+                          <span className="inline-flex items-center gap-1"><Clock3 size={12} className="text-sky-600" /> Current</span>
+                          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-300" /> Upcoming</span>
+                        </div>
+                      </div>
+
                       <a
                         href={paper.file_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 font-medium hover:from-slate-200 hover:to-white transition-all duration-300 flex items-center gap-2 group-hover:border-[#1C4D8D]"
+                        className="h-9 px-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 inline-flex items-center justify-center"
                       >
-                        <Eye size={16} />
-                        Preview
+                        {isPublished ? 'Open Published' : 'View Document'}
                       </a>
-                      
-                      {(paper.status === 'rejected' || paper.status === 'revision_required') && (
-                        <button
-                          onClick={() => {
-                            console.log('Resubmit clicked for paper:', paper.id, 'Status:', paper.status);
-                            navigate('/student/submit', { state: { resubmit: paper } });
-                          }}
-                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white font-medium hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-300 flex items-center gap-2 shadow-lg hover:shadow-xl"
-                        >
-                          <Edit3 size={16} />
-                          {paper.status === 'revision_required' ? 'Edit & Resubmit' : 'Try Again'}
-                        </button>
-                      )}
-
-                      {/* Debug: Show current status */}
-                      <div className="text-xs text-slate-500 mt-2">
-                        Current DB Status: {paper.status}
-                      </div>
                     </div>
-                  </div>
-                  {/* Progress Tracker */}
-                  <div className="mb-6 px-4 py-5 bg-gradient-to-r from-slate-50 to-white rounded-xl border border-slate-200">
-                    <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-                      <BarChart3 size={16} className="text-[#1C4D8D]" />
-                      Submission Progress
-                    </h4>
-                    <div className="relative">
-                      {/* Progress Line */}
-                      <div className="absolute top-5 left-0 w-full h-1 bg-slate-200 rounded-full"></div>
-                      <div 
-                        className="absolute top-5 left-0 h-1 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] rounded-full transition-all duration-500"
-                        style={{ 
-                          width: `${
-                            paper.status === 'pending_faculty' ? '25%' :
-                            paper.status === 'pending' ? '50%' :
-                            ['pending_editor', 'pending_admin', 'under_review'].includes(paper.status) ? '75%' :
-                            paper.status === 'approved' ? '100%' :
-                            paper.status === 'revision_required' ? '50%' :
-                            paper.status === 'rejected' ? '100%' :
-                            '25%'
-                          }%` 
-                        }}
-                      ></div>
-                      
-                      {/* Progress Steps */}
-                      <div className="relative flex justify-between items-start">
-                        {/* Step 1: Submitted */}
-                        <div className="flex flex-col items-center" style={{ width: '25%' }}>
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                            ['pending', 'pending_faculty', 'pending_editor', 'pending_admin', 'under_review', 'approved', 'revision_required', 'rejected'].includes(paper.status)
-                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg'
-                              : 'bg-white border-slate-300'
-                          }`}>
-                            <CheckCircle size={20} className={
-                              ['pending', 'pending_faculty', 'pending_editor', 'pending_admin', 'under_review', 'approved', 'revision_required', 'rejected'].includes(paper.status)
-                                ? 'text-white'
-                                : 'text-slate-400'
-                            } />
-                          </div>
-                          <span className="text-xs font-semibold text-slate-700 mt-2 text-center">Submitted</span>
-                        </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </section>
 
-                        {/* Step 2: Faculty Review */}
-                        <div className="flex flex-col items-center" style={{ width: '25%' }}>
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                            ['pending', 'pending_editor', 'pending_admin', 'under_review', 'approved'].includes(paper.status)
-                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg'
-                              : paper.status === 'pending_faculty'
-                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg animate-pulse'
-                              : paper.status === 'revision_required'
-                              ? 'bg-gradient-to-br from-orange-400 to-amber-400 border-orange-500 shadow-lg'
-                              : paper.status === 'rejected'
-                              ? 'bg-gradient-to-br from-red-400 to-pink-400 border-red-500 shadow-lg'
-                              : 'bg-white border-slate-300'
-                          }`}>
-                            {paper.status === 'pending_faculty' ? (
-                              <Clock size={20} className="text-white animate-pulse" />
-                            ) : ['pending', 'pending_editor', 'pending_admin', 'under_review', 'approved'].includes(paper.status) ? (
-                              <CheckCircle size={20} className="text-white" />
-                            ) : paper.status === 'revision_required' ? (
-                              <AlertCircle size={20} className="text-white" />
-                            ) : paper.status === 'rejected' ? (
-                              <XCircle size={20} className="text-white" />
-                            ) : (
-                              <Eye size={20} className="text-slate-400" />
-                            )}
-                          </div>
-                          <span className="text-xs font-semibold text-slate-700 mt-2 text-center">Faculty Review</span>
-                        </div>
+        <aside className="h-fit xl:sticky xl:top-6 rounded-lg border border-slate-200 bg-white p-4">
+          <h3 className="text-xl font-semibold text-slate-900">Snapshot</h3>
+          <p className="text-sm text-slate-600 mt-1">My Paper Status</p>
 
-                        {/* Step 3: Staff Review */}
-                        <div className="flex flex-col items-center" style={{ width: '25%' }}>
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                            ['pending_editor', 'pending_admin', 'under_review', 'approved'].includes(paper.status)
-                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg'
-                              : paper.status === 'pending'
-                              ? 'bg-gradient-to-br from-yellow-400 to-amber-400 border-yellow-500 shadow-lg animate-pulse'
-                              : 'bg-white border-slate-300'
-                          }`}>
-                            {paper.status === 'pending' ? (
-                              <Clock size={20} className="text-white animate-pulse" />
-                            ) : ['pending_editor', 'pending_admin', 'under_review', 'approved'].includes(paper.status) ? (
-                              <CheckCircle size={20} className="text-white" />
-                            ) : (
-                              <Clock size={20} className="text-slate-400" />
-                            )}
-                          </div>
-                          <span className="text-xs font-semibold text-slate-700 mt-2 text-center">Staff Review</span>
-                        </div>
+          <div className="mt-4 h-3 rounded-full bg-slate-200 overflow-hidden flex">
+            <div className="bg-amber-500" style={{ width: `${summary.total ? Math.round((summary.pending / summary.total) * 100) : 0}%` }} />
+            <div className="bg-emerald-700" style={{ width: `${summary.total ? Math.round((summary.published / summary.total) * 100) : 0}%` }} />
+            <div className="bg-slate-400" style={{ width: `${summary.total ? Math.round((summary.inReview / summary.total) * 100) : 0}%` }} />
+            <div className="bg-rose-400" style={{ width: `${summary.total ? Math.round((summary.needsAction / summary.total) * 100) : 0}%` }} />
+          </div>
 
-                        {/* Step 4: Final Review */}
-                        <div className="flex flex-col items-center" style={{ width: '25%' }}>
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                            paper.status === 'approved'
-                              ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] border-[#1C4D8D] shadow-lg'
-                              : ['pending_editor', 'pending_admin', 'under_review'].includes(paper.status)
-                              ? 'bg-gradient-to-br from-[#2563eb] to-[#1C4D8D] border-[#2563eb] shadow-lg animate-pulse'
-                              : 'bg-white border-slate-300'
-                          }`}>
-                            {['pending_editor', 'pending_admin', 'under_review'].includes(paper.status) ? (
-                              <Clock size={20} className="text-white animate-pulse" />
-                            ) : paper.status === 'approved' ? (
-                              <CheckCircle size={20} className="text-white" />
-                            ) : (
-                              <Shield size={20} className="text-slate-400" />
-                            )}
-                          </div>
-                          <span className="text-xs font-semibold text-slate-700 mt-2 text-center">Final Review</span>
-                        </div>
+          <div className="mt-3 space-y-2 text-sm">
+            <div className="flex items-center justify-between text-slate-700"><span>Pending Revision</span><span className="font-semibold">{statusCounts.revision_required || 0}</span></div>
+            <div className="flex items-center justify-between text-slate-700"><span>Active Reviews</span><span className="font-semibold">{summary.pending + summary.inReview}</span></div>
+            <div className="flex items-center justify-between text-slate-700"><span>Published</span><span className="font-semibold">{summary.published}</span></div>
+            <div className="flex items-center justify-between text-slate-700"><span>Needs Action</span><span className="font-semibold">{summary.needsAction}</span></div>
+          </div>
+        </aside>
+      </div>
 
-                        {/* Step 5: Published */}
-                        <div className="flex flex-col items-center" style={{ width: '25%' }}>
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                            paper.status === 'approved'
-                              ? 'bg-gradient-to-br from-green-500 to-emerald-500 border-green-500 shadow-lg'
-                              : paper.status === 'rejected'
-                              ? 'bg-gradient-to-br from-red-500 to-pink-500 border-red-500 shadow-lg'
-                              : 'bg-white border-slate-300'
-                          }`}>
-                            {paper.status === 'approved' ? (
-                              <CheckCircle size={20} className="text-white" />
-                            ) : paper.status === 'rejected' ? (
-                              <XCircle size={20} className="text-white" />
-                            ) : (
-                              <Award size={20} className="text-slate-400" />
-                            )}
-                          </div>
-                          <span className="text-xs font-semibold text-slate-700 mt-2 text-center">
-                            {paper.status === 'approved' ? 'Published' : paper.status === 'rejected' ? 'Rejected' : 'Publish'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Current Status Description */}
-                    <div className="mt-4 pt-4 border-t border-slate-200">
-                      <p className="text-sm text-slate-600">
-                        <span className="font-bold text-slate-900">Current Status: </span>
-                        {paper.status === 'pending_faculty' && 'Your research has been assigned to a faculty reviewer for evaluation.'}
-                        {paper.status === 'pending' && 'Your research passed faculty review and is now with staff for processing.'}
-                        {['pending_editor', 'pending_admin', 'under_review'].includes(paper.status) && 'Your research is undergoing final administrative review before publication.'}
-                        {paper.status === 'approved' && '🎉 Congratulations! Your research has been published to the repository.'}
-                        {paper.status === 'revision_required' && '⚠️ Please review the feedback below and resubmit with revisions.'}
-                        {paper.status === 'rejected' && 'Your submission was not accepted. Please review the feedback below.'}
-                      </p>
-                    </div>
-                  </div>
-                  {/* Feedback Messages */}
-                  {paper.rejection_reason && (
-                    <div className={`p-4 rounded-xl ${statusConfig.bgColor} border ${statusConfig.text.replace('text-', 'border-')} mt-6`}>
-                      <div className="flex items-start gap-3">
-                        <XCircle size={20} className="text-red-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="font-bold mb-1">Reviewer Feedback</p>
-                          <p className="text-sm">{paper.rejection_reason}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {paper.revision_notes && (
-                    <div className={`p-4 rounded-xl ${statusConfig.bgColor} border ${statusConfig.text.replace('text-', 'border-')} mt-6`}>
-                      <div className="flex items-start gap-3">
-                        <AlertCircle size={20} className="text-orange-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="font-bold mb-1">Revision Required</p>
-                          <p className="text-sm">{paper.revision_notes}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      {papers.length === 0 && (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
+          <FileText size={24} className="mx-auto text-slate-400" />
+          <h3 className="mt-2 text-lg font-semibold text-slate-900">No research papers yet</h3>
+          <p className="text-sm text-slate-500 mt-1">Start by submitting your first paper.</p>
+          <button
+            onClick={() => navigate('/student/submit')}
+            className="mt-3 h-9 px-3 rounded-lg bg-[#1C4D8D] text-white text-sm font-semibold hover:bg-[#163d70]"
+          >
+            Submit New Research
+          </button>
         </div>
       )}
-
-      {/* Statistics Card */}
-      <div className="mt-12 bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border border-[#1C4D8D]/20 p-8">
-        <div className="flex items-start gap-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg flex-shrink-0">
-            <TrendingUp size={28} className="text-white" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">Research Insights</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
-                <div className="text-2xl font-black text-[#1C4D8D] mb-1">{statusCounts.pending || 0}</div>
-                <div className="text-sm text-slate-700 font-medium">Awaiting Review</div>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
-                <div className="text-2xl font-black text-green-700 mb-1">{statusCounts.approved || 0}</div>
-                <div className="text-sm text-slate-700 font-medium">Published Works</div>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
-                <div className="text-2xl font-black text-orange-700 mb-1">{statusCounts.revision_required || 0}</div>
-                <div className="text-sm text-slate-700 font-medium">Revisions Needed</div>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
-                <div className="text-2xl font-black text-[#2563eb] mb-1">{statusCounts.under_review || 0}</div>
-                <div className="text-sm text-slate-700 font-medium">In Active Review</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

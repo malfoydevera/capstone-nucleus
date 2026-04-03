@@ -29,6 +29,7 @@ import {
 import { researchAPI } from '../../utils/api';
 import ResearchChat from '../../components/ai/ResearchChat';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
+import { formatFullName } from '../../utils/names';
 
 const ResearchDetail = () => {
   const { id } = useParams();
@@ -40,6 +41,7 @@ const ResearchDetail = () => {
   const [downloadCount, setDownloadCount] = useState(0);
   const [viewCount, setViewCount] = useState(0);
   const [annotations, setAnnotations] = useState([]);
+  const [workflowHistory, setWorkflowHistory] = useState([]);
 
   useEffect(() => {
     fetchPaperDetail();
@@ -51,6 +53,7 @@ const ResearchDetail = () => {
     try {
       const response = await researchAPI.getResearchById(id);
       setPaper(response.data.paper);
+      setWorkflowHistory(response.data.workflowHistory || []);
       setDownloadCount(response.data.paper.download_count || 0);
       setViewCount(response.data.paper.view_count || 0);
       const annotationResponse = await researchAPI.getAnnotations(id);
@@ -114,8 +117,9 @@ const ResearchDetail = () => {
 
   const getAuthors = () => {
     const authors = [];
-    if (paper?.users?.full_name) {
-      authors.push(paper.users.full_name);
+    const primaryAuthor = formatFullName(paper?.users);
+    if (primaryAuthor) {
+      authors.push(primaryAuthor);
     }
     if (paper?.co_authors) {
       String(paper.co_authors)
@@ -139,6 +143,15 @@ const ResearchDetail = () => {
     const authorText = authors.length > 0 ? authors.join(', ') : 'Unknown Author';
     const year = getCitationYear();
     return `${authorText}, "${paper?.title || 'Untitled research paper'}," NUCLEUS Research Repository, ${year}.`;
+  };
+
+  const formatWorkflowLabel = (entry) => {
+    const status = (entry?.status || '').toLowerCase();
+    if (status === 'approved') return 'Approved';
+    if (status === 'rejected') return 'Rejected';
+    if (status === 'revision_required') return 'Revision Requested';
+    if (status === 'bypassed') return 'Dean Bypass';
+    return entry?.status || 'Updated';
   };
 
   const copyCitation = async (content) => {
@@ -318,7 +331,7 @@ const ResearchDetail = () => {
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-slate-900 mb-1">Primary Author</p>
-                      <p className="text-lg font-bold text-slate-900">{paper.users?.full_name || 'Researcher'}</p>
+                      <p className="text-lg font-bold text-slate-900">{formatFullName(paper.users) || 'Researcher'}</p>
                       <div className="flex items-center gap-2 mt-2">
                         <GraduationCap size={14} className="text-slate-500" />
                         <span className="text-sm text-slate-600">National University Dasmariñas</span>
@@ -417,17 +430,71 @@ const ResearchDetail = () => {
                     <p className="text-sm text-slate-500">No targeted review notes have been added yet.</p>
                   ) : (
                     <div className="space-y-3">
-                      {annotations.map((annotation) => (
-                        <div key={annotation.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <p className="text-xs text-slate-500 mb-1">
-                            {annotation.reviewerName}
-                            {annotation.pageNumber ? ` • Page ${annotation.pageNumber}` : ''}
-                            {annotation.sectionLabel ? ` • ${annotation.sectionLabel}` : ''}
-                          </p>
-                          {annotation.selectedText && (
-                            <p className="text-xs text-slate-600 mb-1">Selected: "{annotation.selectedText}"</p>
-                          )}
-                          <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                      {annotations
+                        .filter((annotation) => !annotation.parentId)
+                        .map((annotation) => {
+                          const replies = annotations
+                            .filter((item) => item.parentId === annotation.id)
+                            .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+                          return (
+                            <div key={annotation.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                              <p className="text-xs text-slate-500 mb-1">
+                                {annotation.reviewerName}
+                                {annotation.pageNumber ? ` • Page ${annotation.pageNumber}` : ''}
+                                {annotation.sectionLabel ? ` • ${annotation.sectionLabel}` : ''}
+                              </p>
+                              {annotation.selectedText && (
+                                <p className="text-xs text-slate-600 mb-1">Selected: "{annotation.selectedText}"</p>
+                              )}
+                              <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+
+                              {replies.length > 0 && (
+                                <div className="mt-3 border-l-2 border-slate-200 pl-3 space-y-2">
+                                  {replies.map((reply) => (
+                                    <div key={reply.id} className="rounded-md border border-slate-200 bg-white p-2.5">
+                                      <p className="text-xs text-slate-500 mb-1">
+                                        {reply.reviewerName}
+                                        {reply.pageNumber ? ` • Page ${reply.pageNumber}` : ''}
+                                      </p>
+                                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{reply.note}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-8 p-4 rounded-xl bg-white border border-slate-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Clock size={18} className="text-indigo-600" />
+                    <h4 className="text-lg font-bold text-slate-900">Revision and Workflow History</h4>
+                  </div>
+                  {workflowHistory.length === 0 ? (
+                    <p className="text-sm text-slate-500">No workflow actions recorded yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {workflowHistory.map((entry) => (
+                        <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-800">
+                              {formatWorkflowLabel(entry)}
+                              <span className="ml-2 text-xs text-slate-500">by {formatFullName(entry.reviewer) || entry.reviewer_role}</span>
+                            </p>
+                            <span className="text-xs text-slate-500">{formatDate(entry.reviewed_at || entry.created_at)}</span>
+                          </div>
+                          {entry.comments ? (
+                            <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{entry.comments}</p>
+                          ) : null}
+                          {(entry.previous_status || entry.new_status) ? (
+                            <p className="text-xs text-slate-500 mt-1">
+                              {entry.previous_status || 'n/a'} to {entry.new_status || entry.status || 'n/a'}
+                            </p>
+                          ) : null}
                         </div>
                       ))}
                     </div>

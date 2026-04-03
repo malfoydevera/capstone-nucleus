@@ -1,0 +1,1200 @@
+{
+  "projectMetadata": {
+    "name": "Capstone Research Repository Management System",
+    "version": "1.0.0",
+    "description": "A sophisticated academic research repository management system with multi-stage approval workflows, AI-powered document analysis, and comprehensive role-based access control",
+    "analysisDate": "2026-03-28",
+    "status": "Production-Ready",
+    "repositoryPath": "/Users/malfoyjamesdevera/CapstoneWeb/capstone-nucleus"
+  },
+  "systemOverview": {
+    "purpose": "Manage research paper submissions through a complex multi-tier approval workflow with AI integration, secure document handling, and role-based access control",
+    "keyFeatures": [
+      "Multi-stage approval workflow (Student → Faculty → Dean/Program Chair → Staff → Admin)",
+      "AI-powered document analysis using Google Gemini",
+      "Secure PDF viewing with access control and watermarking",
+      "Role-based access control (6 distinct user roles)",
+      "Department and program management",
+      "Audit logging and activity monitoring",
+      "Annotation support for reviewers",
+      "View and download analytics"
+    ],
+    "architecture": {
+      "frontend": "React 19.2.0 SPA with Vite",
+      "backend": "Node.js + Express 5.2.1 REST API",
+      "database": "Supabase PostgreSQL with RLS",
+      "storage": "Supabase Storage for PDF files",
+      "aiIntegration": "Google Gemini AI API"
+    }
+  },
+  "technologyStack": {
+    "frontend": {
+      "runtime": "Node.js (browser)",
+      "framework": "React 19.2.0",
+      "buildTool": "Vite 7.2.4",
+      "routing": "React Router 7.11.0",
+      "styling": "Tailwind CSS 4.1.18",
+      "stateManagement": "React Context API",
+      "ui": {
+        "lucideReact": "0.562.0",
+        "framerMotion": "12.33.0",
+        "reactPDF": "10.3.0",
+        "reactDropzone": "14.3.8",
+        "reactHotToast": "2.6.0"
+      },
+      "http": "Axios 1.13.2",
+      "authentication": "JWT tokens + Azure MSAL (optional)",
+      "testing": {
+        "vitest": "4.1.0",
+        "testingLibraryReact": "16.3.2"
+      }
+    },
+    "backend": {
+      "runtime": "Node.js",
+      "framework": "Express 5.2.1",
+      "authentication": {
+        "jwtLibrary": "jsonwebtoken 9.0.3",
+        "passwordHash": "bcryptjs 3.0.3"
+      },
+      "fileHandling": "Multer 2.0.2",
+      "pdf": "pdf-parse 1.1.1",
+      "database": "@supabase/supabase-js 2.89.0",
+      "storage": "@supabase/storage-js 2.89.0",
+      "ai": "@google/generative-ai 0.24.1",
+      "http": "Axios 1.13.2",
+      "utilities": {
+        "uuid": "13.0.0",
+        "cors": "2.8.5",
+        "dotenv": "17.2.3"
+      },
+      "testing": {
+        "jest": "30.0.5",
+        "supertest": "7.1.1",
+        "nodemon": "3.1.11 (dev)"
+      }
+    },
+    "external": {
+      "database": "Supabase PostgreSQL",
+      "storage": "Supabase Storage",
+      "ai": "Google Gemini AI",
+      "authentication": "Azure MSAL (optional)"
+    }
+  },
+  "databaseSchema": {
+    "tables": {
+      "users": {
+        "description": "Central authentication and identity table for all system users",
+        "fields": {
+          "id": "UUID primary key",
+          "email": "VARCHAR unique, not null",
+          "password": "VARCHAR bcrypt hash (cost 10)",
+          "full_name": "VARCHAR not null",
+          "role": "VARCHAR - student|faculty|dean|program_chair|staff|admin",
+          "profile_picture_url": "TEXT optional",
+          "bio": "TEXT optional",
+          "program": "VARCHAR - student's academic program",
+          "department": "VARCHAR - faculty/dean/chair department affiliation",
+          "department_id": "UUID optional - links to departments table",
+          "program_id": "UUID optional - links to programs table",
+          "created_at": "TIMESTAMPTZ",
+          "updated_at": "TIMESTAMPTZ"
+        },
+        "purpose": "Store all user accounts; JWT tokens issued by Express backend"
+      },
+      "research_papers": {
+        "description": "Core table for research paper submissions tracked through approval workflow",
+        "fields": {
+          "id": "UUID primary key",
+          "title": "VARCHAR not null",
+          "abstract": "TEXT not null",
+          "keywords": "TEXT[] - array of keyword strings",
+          "author_id": "UUID FK to users (primary submitter)",
+          "co_authors": "TEXT - legacy plain text field",
+          "category": "VARCHAR not null",
+          "file_url": "TEXT - Supabase Storage URL",
+          "file_name": "VARCHAR",
+          "file_size": "BIGINT - bytes",
+          "file_storage_path": "TEXT - internal storage path for signed URLs",
+          "status": "VARCHAR - see workflow statuses below",
+          "submission_date": "TIMESTAMPTZ",
+          "published_date": "TIMESTAMPTZ",
+          "rejection_reason": "TEXT - set on reject",
+          "revision_notes": "TEXT - feedback from reviewer",
+          "view_count": "INTEGER",
+          "download_count": "INTEGER",
+          "faculty_id": "UUID FK - assigned adviser (Stage 1 reviewer)",
+          "dean_chair_id": "UUID FK - Dean or Program Chair (Stage 2 reviewer)",
+          "department": "VARCHAR",
+          "department_id": "UUID FK to departments",
+          "last_reviewer_role": "VARCHAR - role of last person who acted",
+          "previous_status": "VARCHAR - status before revision",
+          "bypass_reason": "TEXT - reason for dean bypass",
+          "bypassed_by": "UUID - dean who did bypass",
+          "bypassed_at": "TIMESTAMPTZ",
+          "created_at": "TIMESTAMPTZ",
+          "updated_at": "TIMESTAMPTZ"
+        },
+        "workflowStatuses": [
+          "pending - legacy",
+          "pending_faculty - Stage 1: awaiting adviser review",
+          "pending_dean - Stage 2a: assigned to dean",
+          "pending_program_chair - Stage 2b: assigned to program chair",
+          "pending_editor - Stage 3: awaiting staff/editor review",
+          "pending_admin - Stage 4: awaiting admin final approval",
+          "revision_required - returned to student from any stage",
+          "rejected - permanently rejected",
+          "approved - final approval granted",
+          "published - alternative final state",
+          "under_review - legacy generic status",
+          "faculty_approved - legacy intermediate",
+          "editor_approved - legacy intermediate"
+        ]
+      },
+      "research_authors": {
+        "description": "Structured co-author join table",
+        "fields": {
+          "id": "UUID primary key",
+          "research_id": "UUID FK to research_papers",
+          "user_id": "UUID FK to users",
+          "author_order": "INTEGER - 1=first, 2=second, etc",
+          "is_primary": "BOOLEAN - true for main submitting author",
+          "created_at": "TIMESTAMPTZ"
+        }
+      },
+      "research_categories": {
+        "description": "Lookup table for paper categories",
+        "fields": {
+          "id": "UUID",
+          "name": "VARCHAR unique",
+          "description": "TEXT",
+          "created_at": "TIMESTAMPTZ"
+        }
+      },
+      "approval_workflow": {
+        "description": "Full audit trail of every review action",
+        "fields": {
+          "id": "UUID",
+          "research_id": "UUID FK",
+          "reviewer_id": "UUID FK to users",
+          "reviewer_role": "VARCHAR - faculty|dean|program_chair|staff|admin",
+          "status": "VARCHAR - approved|rejected|revision_required|bypassed|returned",
+          "comments": "TEXT",
+          "previous_status": "VARCHAR",
+          "new_status": "VARCHAR",
+          "action_type": "VARCHAR - review_action|etc",
+          "metadata": "JSONB optional",
+          "reviewed_at": "TIMESTAMPTZ",
+          "created_at": "TIMESTAMPTZ"
+        }
+      },
+      "faculty_reviews": {
+        "description": "Adviser (faculty) review decisions on papers",
+        "fields": {
+          "id": "UUID",
+          "research_id": "UUID FK",
+          "faculty_id": "UUID FK",
+          "status": "VARCHAR - approved|rejected|revision_required",
+          "comments": "TEXT",
+          "reviewed_at": "TIMESTAMPTZ"
+        }
+      },
+      "research_comments": {
+        "description": "Comment threads on papers",
+        "fields": {
+          "id": "UUID",
+          "research_id": "UUID FK",
+          "user_id": "UUID FK",
+          "comment": "TEXT not null",
+          "is_internal": "BOOLEAN - true=reviewers only, false=public",
+          "created_at": "TIMESTAMPTZ",
+          "updated_at": "TIMESTAMPTZ"
+        }
+      },
+      "notifications": {
+        "description": "In-app notification feed for users",
+        "fields": {
+          "id": "UUID",
+          "user_id": "UUID FK to users",
+          "research_id": "UUID FK optional",
+          "type": "VARCHAR - approval|revision_required|review_request|etc",
+          "title": "VARCHAR",
+          "message": "TEXT",
+          "is_read": "BOOLEAN default false",
+          "created_at": "TIMESTAMPTZ"
+        }
+      },
+      "paper_views": {
+        "description": "View analytics per paper per user",
+        "fields": {
+          "id": "UUID",
+          "research_id": "UUID FK",
+          "user_id": "UUID FK",
+          "viewed_at": "TIMESTAMPTZ"
+        }
+      },
+      "paper_downloads": {
+        "description": "Download analytics per paper per user",
+        "fields": {
+          "id": "UUID",
+          "research_id": "UUID FK",
+          "user_id": "UUID FK",
+          "downloaded_at": "TIMESTAMPTZ"
+        }
+      },
+      "audit_logs": {
+        "description": "System-wide audit trail for compliance",
+        "fields": {
+          "id": "UUID",
+          "user_id": "UUID FK",
+          "user_role": "VARCHAR",
+          "action": "VARCHAR - approve|reject|revision|bypass|etc",
+          "target_type": "VARCHAR - research_paper|user|department|etc",
+          "target_id": "UUID",
+          "details": "JSONB",
+          "created_at": "TIMESTAMPTZ"
+        }
+      },
+      "departments": {
+        "description": "Academic departments",
+        "fields": {
+          "id": "UUID",
+          "name": "VARCHAR unique",
+          "code": "VARCHAR",
+          "description": "TEXT",
+          "is_active": "BOOLEAN default true",
+          "created_at": "TIMESTAMPTZ",
+          "updated_at": "TIMESTAMPTZ"
+        }
+      },
+      "programs": {
+        "description": "Academic programs within departments",
+        "fields": {
+          "id": "UUID",
+          "department_id": "UUID FK to departments",
+          "name": "VARCHAR not null",
+          "code": "VARCHAR",
+          "description": "TEXT",
+          "is_active": "BOOLEAN default true",
+          "created_at": "TIMESTAMPTZ",
+          "updated_at": "TIMESTAMPTZ"
+        }
+      }
+    }
+  },
+  "apiEndpoints": {
+    "auth": {
+      "base": "/api/auth",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/register",
+          "description": "Register new user (students and faculty only self-register)",
+          "auth": "None",
+          "requestBody": {
+            "email": "string",
+            "password": "string",
+            "fullName": "string",
+            "role": "string - student|faculty",
+            "program": "string optional",
+            "programId": "uuid optional",
+            "department": "string optional",
+            "departmentId": "uuid optional"
+          },
+          "responseBody": {
+            "message": "string",
+            "token": "jwt",
+            "user": { "id": "uuid", "email": "string", "fullName": "string", "role": "string" }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/login",
+          "description": "Login user with email and password",
+          "auth": "None",
+          "requestBody": { "email": "string", "password": "string" },
+          "responseBody": {
+            "message": "string",
+            "token": "jwt",
+            "user": { "id": "uuid", "email": "string", "fullName": "string", "role": "string" }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/me",
+          "description": "Get current authenticated user",
+          "auth": "JWT Required",
+          "responseBody": { "user": { "id": "uuid", "email": "string", "fullName": "string", "role": "string", "createdAt": "timestamp" } }
+        },
+        {
+          "method": "GET",
+          "path": "/student/search",
+          "description": "Search students for co-author selection",
+          "auth": "JWT Required",
+          "queryParams": { "query": "string" }
+        },
+        {
+          "method": "GET",
+          "path": "/users",
+          "description": "List all users",
+          "auth": "JWT Required - Admin only",
+          "queryParams": { "role": "string optional" }
+        },
+        {
+          "method": "DELETE",
+          "path": "/users/:id",
+          "description": "Delete user",
+          "auth": "JWT Required - Admin only"
+        },
+        {
+          "method": "POST",
+          "path": "/users/create",
+          "description": "Create privileged account (faculty, staff, dean, program_chair, admin)",
+          "auth": "JWT Required - Admin only",
+          "requestBody": {
+            "email": "string",
+            "password": "string",
+            "fullName": "string",
+            "role": "string - faculty|staff|dean|program_chair|admin",
+            "department": "string optional"
+          }
+        }
+      ]
+    },
+    "research": {
+      "base": "/api/research",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/published",
+          "description": "Get published/approved research papers (public endpoint)",
+          "auth": "None",
+          "queryParams": { "category": "string", "search": "string", "limit": "integer", "offset": "integer" }
+        },
+        {
+          "method": "GET",
+          "path": "/categories",
+          "description": "Get all research categories",
+          "auth": "None"
+        },
+        {
+          "method": "POST",
+          "path": "/submit",
+          "description": "Submit new research or update revision",
+          "auth": "JWT Required - student|staff|admin",
+          "requestBody": {
+            "id": "uuid optional - for updates",
+            "title": "string",
+            "abstract": "string",
+            "keywords": "string comma-separated",
+            "coAuthors": "string optional",
+            "coAuthorIds": "uuid[] optional",
+            "category": "string",
+            "facultyId": "uuid optional - adviser to assign",
+            "department": "string optional",
+            "departmentId": "uuid optional",
+            "file": "file - PDF required for new submissions"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/my/papers",
+          "description": "Get current user's research papers",
+          "auth": "JWT Required"
+        },
+        {
+          "method": "GET",
+          "path": "/all/papers",
+          "description": "Get all research papers",
+          "auth": "JWT Required - staff|admin",
+          "queryParams": { "status": "string optional" }
+        },
+        {
+          "method": "GET",
+          "path": "/:id",
+          "description": "Get research paper by ID",
+          "auth": "JWT Required",
+          "accessControl": "Author, reviewer, staff, or admin"
+        },
+        {
+          "method": "GET",
+          "path": "/:id/file",
+          "description": "Get research paper file with access control",
+          "auth": "JWT Required"
+        },
+        {
+          "method": "POST",
+          "path": "/:id/view",
+          "description": "Track paper view",
+          "auth": "JWT Required"
+        },
+        {
+          "method": "POST",
+          "path": "/:id/download",
+          "description": "Track paper download",
+          "auth": "JWT Required"
+        },
+        {
+          "method": "GET",
+          "path": "/profile/data",
+          "description": "Get profile research data",
+          "auth": "JWT Required"
+        },
+        {
+          "method": "POST",
+          "path": "/:id/approve",
+          "description": "Approve research paper",
+          "auth": "JWT Required - faculty|dean|program_chair|staff|admin",
+          "requestBody": {
+            "comments": "string optional",
+            "targetUserId": "uuid - for faculty approving to dean/chair",
+            "targetRole": "string - dean|program_chair"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/:id/reject",
+          "description": "Reject research paper",
+          "auth": "JWT Required - faculty|dean|program_chair|staff|admin",
+          "requestBody": { "reason": "string required" }
+        },
+        {
+          "method": "POST",
+          "path": "/:id/revision",
+          "description": "Request revision on research paper",
+          "auth": "JWT Required - faculty|dean|program_chair|staff|admin",
+          "requestBody": { "notes": "string required" }
+        },
+        {
+          "method": "POST",
+          "path": "/:id/dean-bypass",
+          "description": "Dean bypass approve paper",
+          "auth": "JWT Required - dean",
+          "requestBody": {
+            "bypassReason": "string",
+            "target": "string optional - approved|pending_editor|etc"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/faculty/members",
+          "description": "Get faculty members for paper assignment",
+          "auth": "JWT Required",
+          "queryParams": { "department": "string optional" }
+        },
+        {
+          "method": "GET",
+          "path": "/dean-chair/members",
+          "description": "Get dean/program chair members",
+          "auth": "JWT Required - faculty",
+          "queryParams": { "department": "string optional", "includeDean": "boolean" }
+        },
+        {
+          "method": "GET",
+          "path": "/faculty/assigned",
+          "description": "Get papers assigned to faculty reviewer",
+          "auth": "JWT Required - faculty",
+          "queryParams": { "status": "string optional" }
+        },
+        {
+          "method": "GET",
+          "path": "/dean-chair/assigned",
+          "description": "Get papers assigned to dean/program chair",
+          "auth": "JWT Required - dean|program_chair",
+          "queryParams": { "status": "string optional" }
+        },
+        {
+          "method": "GET",
+          "path": "/dean/activity-monitor",
+          "description": "Get dean activity monitoring data",
+          "auth": "JWT Required - dean"
+        },
+        {
+          "method": "GET",
+          "path": "/dean/audit-logs",
+          "description": "Get audit logs for dean oversight",
+          "auth": "JWT Required - dean"
+        },
+        {
+          "method": "GET",
+          "path": "/:id/annotations",
+          "description": "Get paper annotations",
+          "auth": "JWT Required"
+        },
+        {
+          "method": "POST",
+          "path": "/:id/annotations",
+          "description": "Add annotation to paper",
+          "auth": "JWT Required - faculty|dean|program_chair|staff|admin",
+          "requestBody": { "annotation": "object with text, location, etc" }
+        },
+        {
+          "method": "DELETE",
+          "path": "/:id/annotations/:annotationId",
+          "description": "Delete annotation",
+          "auth": "JWT Required - owner or admin"
+        }
+      ]
+    },
+    "ai": {
+      "base": "/api/ai",
+      "rateLimit": "30 requests per 60 seconds per user",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/chat",
+          "description": "Chat with research paper using AI",
+          "auth": "JWT Required",
+          "requestBody": {
+            "paperId": "uuid",
+            "message": "string"
+          },
+          "responseBody": {
+            "data": {
+              "response": "string - AI generated response",
+              "paperId": "uuid"
+            }
+          },
+          "implementation": "Google Gemini API with PDF text extraction via pdf-parse"
+        },
+        {
+          "method": "POST",
+          "path": "/extract-pdf",
+          "description": "Extract metadata from PDF file",
+          "auth": "JWT Required",
+          "requestBody": {
+            "file": "file - PDF"
+          }
+        }
+      ]
+    },
+    "departments": {
+      "base": "/api/departments",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "List all active departments with programs",
+          "auth": "None"
+        },
+        {
+          "method": "GET",
+          "path": "/:id/programs",
+          "description": "Get programs for a department",
+          "auth": "None"
+        },
+        {
+          "method": "POST",
+          "path": "/",
+          "description": "Create new department",
+          "auth": "JWT Required - admin",
+          "requestBody": {
+            "name": "string",
+            "code": "string",
+            "description": "string"
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/:id",
+          "description": "Update department",
+          "auth": "JWT Required - admin",
+          "requestBody": {
+            "name": "string optional",
+            "code": "string optional",
+            "description": "string optional",
+            "is_active": "boolean optional"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/:id",
+          "description": "Soft-delete department (sets is_active=false)",
+          "auth": "JWT Required - admin"
+        },
+        {
+          "method": "POST",
+          "path": "/:id/programs",
+          "description": "Create program under department",
+          "auth": "JWT Required - admin",
+          "requestBody": {
+            "name": "string",
+            "code": "string",
+            "description": "string"
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/programs/:programId",
+          "description": "Update program",
+          "auth": "JWT Required - admin",
+          "requestBody": {
+            "name": "string optional",
+            "code": "string optional",
+            "description": "string optional",
+            "is_active": "boolean optional"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/programs/:programId",
+          "description": "Soft-delete program",
+          "auth": "JWT Required - admin"
+        }
+      ]
+    }
+  },
+  "frontendPages": {
+    "landing": {
+      "path": "src/pages/Landing.jsx",
+      "description": "Public landing page"
+    },
+    "student": {
+      "StudentDashboard": { "path": "src/pages/student/StudentDashboard.jsx", "description": "Student main dashboard" },
+      "SubmitResearch": { "path": "src/pages/student/SubmitResearch.jsx", "description": "Submit new research paper" },
+      "MyResearch": { "path": "src/pages/student/MyResearch.jsx", "description": "View student's own papers" },
+      "ResearchDetail": { "path": "src/pages/student/ResearchDetail.jsx", "description": "View detailed paper info" },
+      "BrowseRepository": { "path": "src/pages/student/BrowseRepository.jsx", "description": "Browse published repository" },
+      "StudentProfile": { "path": "src/pages/student/StudentProfile.jsx", "description": "Student profile management" }
+    },
+    "faculty": {
+      "FacultyDashboard": { "path": "src/pages/faculty/FacultyDashboard.jsx", "description": "Faculty main dashboard with assigned papers" },
+      "FacultyReview": { "path": "src/pages/faculty/FacultyReview.jsx", "description": "Review student papers and make recommendations" },
+      "FacultyBrowseRepository": { "path": "src/pages/faculty/FacultyBrowseRepository.jsx", "description": "Browse research repository" }
+    },
+    "dean": {
+      "DeanDashboard": { "path": "src/pages/dean/DeanDashboard.jsx", "description": "Dean main dashboard" },
+      "DeanChairDashboard": { "path": "src/pages/dean/DeanChairDashboard.jsx", "description": "Dean/Program Chair dashboard" },
+      "DeanChairReview": { "path": "src/pages/dean/DeanChairReview.jsx", "description": "Review papers in dean/program chair stage" },
+      "ProgramChairDashboard": { "path": "src/pages/dean/ProgramChairDashboard.jsx", "description": "Program chair specific dashboard" },
+      "DeanActivityMonitor": { "path": "src/pages/dean/DeanActivityMonitor.jsx", "description": "Monitor workflow activity" },
+      "DeanAuditLogs": { "path": "src/pages/dean/DeanAuditLogs.jsx", "description": "View audit logs for compliance" }
+    },
+    "staff": {
+      "StaffDashboard": { "path": "src/pages/staff/StaffDashboard.jsx", "description": "Staff main dashboard" },
+      "ReviewSubmissions": { "path": "src/pages/staff/ReviewSubmissions.jsx", "description": "Review pending papers" },
+      "ReviewDetail": { "path": "src/pages/staff/ReviewDetail.jsx", "description": "Detailed paper review page" },
+      "StaffBrowseRepository": { "path": "src/pages/staff/StaffBrowseRepository.jsx", "description": "Browse all papers" },
+      "ManageSchedule": { "path": "src/pages/staff/ManageSchedule.jsx", "description": "Manage review schedule" },
+      "StaffSettings": { "path": "src/pages/staff/StaffSettings.jsx", "description": "Staff settings" }
+    },
+    "admin": {
+      "AdminDashboard": { "path": "src/pages/admin/AdminDashboard.jsx", "description": "Admin main dashboard" },
+      "AdminReviewSubmissions": { "path": "src/pages/admin/AdminReviewSubmissions.jsx", "description": "Final review and approval of papers" },
+      "UserManagement": { "path": "src/pages/admin/UserManagement.jsx", "description": "Manage all system users" },
+      "AdminAnalytics": { "path": "src/pages/admin/AdminAnalytics.jsx", "description": "System analytics and statistics" },
+      "AdminSettings": { "path": "src/pages/admin/AdminSettings.jsx", "description": "System settings and configuration" }
+    },
+    "shared": {
+      "ProfileDashboard": { "path": "src/pages/shared/ProfileDashboard.jsx", "description": "Shared profile management page" }
+    }
+  },
+  "frontendComponents": {
+    "auth": {
+      "Login": { "path": "src/components/auth/Login.jsx", "description": "User login form and logic" },
+      "Register": { "path": "src/components/auth/Register.jsx", "description": "User registration form" },
+      "ProtectedRoute": { "path": "src/components/auth/ProtectedRoute.jsx", "description": "Route guard for authenticated users" }
+    },
+    "layout": {
+      "Sidebar": { "path": "src/components/layout/Sidebar.jsx", "description": "Navigation sidebar with role-based menu" }
+    },
+    "pdf": {
+      "SecurePDFViewer": { "path": "src/components/pdf/SecurePDFViewer.jsx", "description": "Secure PDF viewer with copy protection and watermarking" }
+    },
+    "ai": {
+      "ResearchChat": { "path": "src/components/ai/ResearchChat.jsx", "description": "AI chat interface for paper analysis" }
+    },
+    "root": {
+      "ErrorBoundary": { "path": "src/components/ErrorBoundary.jsx", "description": "React error boundary for error handling" }
+    }
+  },
+  "contextProviders": {
+    "AuthContext": {
+      "path": "src/contexts/AuthContext.jsx",
+      "exports": {
+        "useAuth": "Hook to access auth context",
+        "AuthProvider": "Provider component wrapping app"
+      },
+      "state": {
+        "user": "Current authenticated user object",
+        "loading": "Authentication loading state",
+        "error": "Authentication error message",
+        "isAuthenticated": "Boolean - user logged in"
+      },
+      "methods": {
+        "login": "async (email, password) => Promise",
+        "register": "async (userData) => Promise",
+        "logout": "() => void",
+        "checkAuth": "async () => void - validates token on mount"
+      },
+      "implementation": "Stores token in sessionStorage, validates on app load"
+    }
+  },
+  "userRoles": {
+    "student": {
+      "tier": 1,
+      "permissions": [
+        "Submit research papers",
+        "Upload PDF documents",
+        "Add co-authors",
+        "Track submission status",
+        "Download approved papers",
+        "Use AI chat for analysis",
+        "View personal research history",
+        "Browse published repository"
+      ],
+      "restrictions": [
+        "Cannot review other students' work",
+        "Limited to own submissions",
+        "No administrative functions"
+      ],
+      "workflow": "Paper submitter - initiates workflow"
+    },
+    "faculty": {
+      "tier": 2,
+      "permissions": [
+        "Review student papers (Stage 1)",
+        "Approve/reject/request revision",
+        "Assign dean or program chair for Stage 2",
+        "Provide detailed feedback",
+        "Access department resources",
+        "View research repository",
+        "View assigned review queue"
+      ],
+      "restrictions": [
+        "Can only review assigned papers",
+        "Limited to own department scope",
+        "Cannot publish papers"
+      ],
+      "workflow": "First-level reviewer - approves and routes to Stage 2"
+    },
+    "program_chair": {
+      "tier": 3,
+      "permissions": [
+        "Review faculty-endorsed papers (Stage 2b)",
+        "Approve/reject/request revision",
+        "Provide decision notes",
+        "Monitor department progress",
+        "View assigned papers",
+        "Route to staff/editorial stage"
+      ],
+      "restrictions": [
+        "Department-scoped authority",
+        "Cannot review own submissions"
+      ],
+      "workflow": "Department oversight - Stage 2b reviewer"
+    },
+    "dean": {
+      "tier": 3,
+      "permissions": [
+        "Review submissions (Stage 2a)",
+        "Dean intervention on pending reviews",
+        "Bypass approve papers (with reason)",
+        "Verify policy compliance",
+        "Monitor workflow progress",
+        "View activity and audit logs",
+        "Access oversight dashboard"
+      ],
+      "restrictions": [
+        "Limited to institution scope",
+        "Cannot override rejected papers"
+      ],
+      "workflow": "Institutional oversight - Stage 2a reviewer + bypass authority"
+    },
+    "staff": {
+      "tier": 4,
+      "permissions": [
+        "Research Editor - Stage 3 review",
+        "Approve/reject/request revision",
+        "Edit paper metadata",
+        "Manage review queue",
+        "Schedule reviews",
+        "Route to admin",
+        "Browse all papers",
+        "View analytics"
+      ],
+      "restrictions": [
+        "Cannot approve final publication"
+      ],
+      "workflow": "Editorial gate - Stage 3 reviewer"
+    },
+    "admin": {
+      "tier": 5,
+      "permissions": [
+        "Super user - full system access",
+        "Final approval and publication (Stage 4)",
+        "Create/manage user accounts",
+        "Manage departments and programs",
+        "Publish/unpublish papers",
+        "Full audit trail access",
+        "System configuration",
+        "Analytics and reporting",
+        "Override any workflow decision"
+      ],
+      "restrictions": [
+        "None"
+      ],
+      "workflow": "Final authority - Stage 4 reviewer + system admin"
+    }
+  },
+  "workflowStages": {
+    "stagingModel": "Multi-tier approval workflow",
+    "stages": [
+      {
+        "name": "Stage 1 - Faculty Review",
+        "status": "pending_faculty",
+        "reviewer": "faculty (adviser)",
+        "actions": ["approve → Stage 2", "reject → rejected", "revision → revision_required"],
+        "decision": "Faculty adviser approves and assigns to Dean OR Program Chair for Stage 2",
+        "routing": "Adviser selects targetUserId and targetRole (dean|program_chair)"
+      },
+      {
+        "name": "Stage 2a - Dean Review",
+        "status": "pending_dean",
+        "reviewer": "dean",
+        "actions": ["approve → pending_editor", "reject → rejected", "revision → pending_dean"],
+        "decision": "Dean reviews for institutional compliance"
+      },
+      {
+        "name": "Stage 2b - Program Chair Review",
+        "status": "pending_program_chair",
+        "reviewer": "program_chair",
+        "actions": ["approve → pending_editor", "reject → rejected", "revision → pending_program_chair"],
+        "decision": "Program Chair reviews for department-level oversight"
+      },
+      {
+        "name": "Stage 3 - Editorial Review",
+        "status": "pending_editor",
+        "reviewer": "staff (research editor)",
+        "actions": ["approve → pending_admin", "reject → rejected", "revision → routes back to Stage 2 or 1"],
+        "decision": "Staff editor conducts final content review"
+      },
+      {
+        "name": "Stage 4 - Admin Final Approval",
+        "status": "pending_admin",
+        "reviewer": "admin",
+        "actions": ["approve → approved (published)", "reject → rejected", "revision → pending_editor"],
+        "decision": "Admin provides final authorization for publication"
+      }
+    ],
+    "specialTransitions": [
+      {
+        "name": "Dean Bypass",
+        "trigger": "Dean can bypass multiple stages",
+        "requiredRole": "dean",
+        "validTargets": ["pending_dean", "pending_editor", "pending_admin", "approved"],
+        "blockedStatuses": ["approved", "published", "rejected"],
+        "purpose": "Emergency expedited approval with audit trail"
+      },
+      {
+        "name": "Revision Routing",
+        "trigger": "Revision request from any stage",
+        "behavior": "Returns to original submitter (student); restart from requesting stage",
+        "tracking": "previous_status and last_reviewer_role used for routing"
+      }
+    ]
+  },
+  "keyFunctions": {
+    "backend": {
+      "auth": {
+        "authenticate": {
+          "signature": "authenticate(req, res, next) => void",
+          "file": "backend/src/middleware/auth.middleware.js",
+          "purpose": "Verify JWT token and attach user to request",
+          "implementation": "Checks Authorization header for Bearer token, verifies with JWT_SECRET"
+        },
+        "authorize": {
+          "signature": "authorize(...allowedRoles) => middleware",
+          "file": "backend/src/middleware/auth.middleware.js",
+          "purpose": "Check if user has required role(s)",
+          "implementation": "Returns middleware that checks req.user.role against allowedRoles"
+        },
+        "register": {
+          "signature": "register(req, res) => Promise<void>",
+          "file": "backend/src/controllers/auth.controller.js",
+          "purpose": "Register new user (students/faculty only)",
+          "implementation": "Validates input, hashes password, creates user in DB, returns JWT"
+        },
+        "login": {
+          "signature": "login(req, res) => Promise<void>",
+          "file": "backend/src/controllers/auth.controller.js",
+          "purpose": "Authenticate user with email/password",
+          "implementation": "Compares bcrypt hash, generates JWT on success"
+        }
+      },
+      "research": {
+        "submitResearch": {
+          "signature": "submitResearch(req, res) => Promise<void>",
+          "file": "backend/src/controllers/submission.controller.js",
+          "purpose": "Submit new research or update revision",
+          "implementation": "Uploads file to Supabase Storage, creates/updates paper record, handles co-authors"
+        },
+        "approveResearch": {
+          "signature": "approveResearch(req, res) => Promise<void>",
+          "file": "backend/src/controllers/review.controller.js",
+          "purpose": "Move paper to next workflow stage",
+          "implementation": "Validates workflow transition, updates status, logs audit event, sends notifications"
+        },
+        "rejectResearch": {
+          "signature": "rejectResearch(req, res) => Promise<void>",
+          "file": "backend/src/controllers/review.controller.js",
+          "purpose": "Reject paper permanently",
+          "implementation": "Sets status to rejected, stores reason, logs audit"
+        },
+        "requestRevision": {
+          "signature": "requestRevision(req, res) => Promise<void>",
+          "file": "backend/src/controllers/review.controller.js",
+          "purpose": "Request revisions from student or route back to previous reviewer",
+          "implementation": "Complex routing logic based on reviewer role and paper status"
+        },
+        "deanBypassApprove": {
+          "signature": "deanBypassApprove(req, res) => Promise<void>",
+          "file": "backend/src/controllers/review.controller.js",
+          "purpose": "Dean can bypass multiple stages with audit trail",
+          "implementation": "Special privileged action with enhanced audit logging"
+        }
+      },
+      "ai": {
+        "chatWithPaper": {
+          "signature": "chatWithPaper(req, res) => Promise<void>",
+          "file": "backend/src/controllers/ai.controller.js",
+          "purpose": "Query paper using AI (Gemini)",
+          "implementation": "Fetches PDF, extracts text with pdf-parse, sends to Gemini API with query, returns response"
+        },
+        "extractPdfMetadata": {
+          "signature": "extractPdfMetadata(req, res) => Promise<void>",
+          "file": "backend/src/controllers/ai.controller.js",
+          "purpose": "Extract metadata from uploaded PDF",
+          "implementation": "Uses pdf-parse to extract text and metadata"
+        }
+      },
+      "utils": {
+        "canAccessPaper": {
+          "signature": "canAccessPaper(user, paper) => boolean",
+          "file": "backend/src/utils/fileAccess.js",
+          "purpose": "Check if user can access paper",
+          "implementation": "Author, assigned reviewer, staff/admin, or published status"
+        },
+        "resolvePaperFileUrl": {
+          "signature": "resolvePaperFileUrl(paper) => Promise<string|null>",
+          "file": "backend/src/utils/fileAccess.js",
+          "purpose": "Get file URL with signed URL for unpublished papers",
+          "implementation": "Creates signed URL for private papers, returns public URL for published"
+        },
+        "validateWorkflowAction": {
+          "signature": "validateWorkflowAction(action, user, paper) => {ok, code, error}",
+          "file": "backend/src/utils/workflowPolicy.js",
+          "purpose": "Validate workflow action against policy",
+          "implementation": "Checks action allowed for role/status, validates assignments"
+        },
+        "logAuditEvent": {
+          "signature": "logAuditEvent({userId, userRole, action, targetType, targetId, details}) => Promise<void>",
+          "file": "backend/src/utils/audit.js",
+          "purpose": "Log action to audit trail",
+          "implementation": "Inserts record into audit_logs table"
+        }
+      }
+    },
+    "frontend": {
+      "auth": {
+        "useAuth": {
+          "signature": "useAuth() => {user, loading, error, login, register, logout, isAuthenticated}",
+          "file": "frontend/src/contexts/AuthContext.jsx",
+          "purpose": "Hook for accessing auth context",
+          "implementation": "React Context hook, throws error if used outside AuthProvider"
+        },
+        "login": {
+          "signature": "login(email, password) => Promise<{success, error?}>",
+          "file": "frontend/src/contexts/AuthContext.jsx",
+          "purpose": "Login user",
+          "implementation": "Calls API, stores token in sessionStorage, updates context"
+        },
+        "register": {
+          "signature": "register({email, password, fullName, role, program, programId, department, departmentId}) => Promise<{success, error?}>",
+          "file": "frontend/src/contexts/AuthContext.jsx",
+          "purpose": "Register new user",
+          "implementation": "Calls API, stores token, updates context"
+        }
+      },
+      "api": {
+        "researchAPI": {
+          "submitResearch": "api.post('/research/submit', formData)",
+          "getMyResearch": "api.get('/research/my/papers')",
+          "getResearchById": "api.get(`/research/${id}`)",
+          "approveResearch": "api.post(`/research/${id}/approve`, {comments, ...extra})",
+          "rejectResearch": "api.post(`/research/${id}/reject`, {reason})",
+          "requestRevision": "api.post(`/research/${id}/revision`, {notes})",
+          "deanBypassApprove": "api.post(`/research/${id}/dean-bypass`, {bypassReason, target})"
+        },
+        "aiAPI": {
+          "chatWithPaper": "fetch(api/ai/chat) with {paperId, message}",
+          "extractPdfMetadata": "FormData upload to /ai/extract-pdf"
+        }
+      }
+    }
+  },
+  "fileAccess": {
+    "permissions": {
+      "publicStatuses": ["approved", "published"],
+      "privateAccess": [
+        "Paper author",
+        "Assigned faculty reviewer",
+        "Assigned dean/program chair",
+        "Staff (editors)",
+        "Admin users"
+      ]
+    },
+    "signedUrls": {
+      "purpose": "Provide temporary access to private PDF files",
+      "ttl": "3600 seconds (1 hour) - configurable via SIGNED_URL_TTL_SECONDS",
+      "storage": "Supabase Storage bucket: research-papers"
+    },
+    "implementation": {
+      "publicPapers": "Return public URL directly",
+      "privatePapers": "Generate and return signed URL with expiration",
+      "fallback": "Return public URL if signing fails"
+    }
+  },
+  "deploymentNotes": {
+    "environment": {
+      "frontend": {
+        "viteConfig": "vite.config.js",
+        "publicDir": "public/",
+        "buildOutput": "dist/",
+        "devServer": "localhost:5173"
+      },
+      "backend": {
+        "entry": "src/server.js",
+        "port": "5000 (via PORT env var)",
+        "devServer": "nodemon src/server.js",
+        "startCommand": "npm start / npm run dev"
+      }
+    },
+    "environment_variables": {
+      "backend": [
+        "PORT - Server port",
+        "JWT_SECRET - Secret for JWT signing",
+        "CORS_ORIGINS - Comma-separated allowed origins",
+        "SUPABASE_URL - Supabase project URL",
+        "SUPABASE_KEY - Supabase API key",
+        "SUPABASE_STORAGE_BUCKET - research-papers",
+        "GOOGLE_GEMINI_API_KEY - Google Gemini API key",
+        "AI_RATE_LIMIT_WINDOW_MS - AI rate limit window (default 60000)",
+        "AI_RATE_LIMIT_MAX - Max requests per window (default 30)",
+        "SIGNED_URL_TTL_SECONDS - Signed URL expiration (default 3600)"
+      ],
+      "frontend": [
+        "VITE_API_URL - Backend API URL (default http://localhost:5000/api)"
+      ]
+    },
+    "migrations": {
+      "location": "backend/migrations/",
+      "files": [
+        "schema_full.sql - Complete schema reference",
+        "add_departments_programs.sql - Department/program tables",
+        "add_user_role_requirements.sql - User roles and constraints",
+        "add_faculty_workflow.sql - Faculty review tables",
+        "add_dean_programchair_workflow.sql - Dean/program chair tables",
+        "add_file_storage_path.sql - File storage tracking",
+        "add_audit_logs.sql - Audit trail tables",
+        "add_refresh_tokens.sql - Token refresh support",
+        "add_research_authors.sql - Co-author structured table",
+        "add_performance_indexes.sql - Query optimization",
+        "backfill_users_department_program.sql - Data backfill"
+      ]
+    }
+  },
+  "securityFeatures": {
+    "authentication": [
+      "JWT tokens with configurable expiration (7 days default)",
+      "bcryptjs password hashing (cost factor 10)",
+      "Token validation middleware on protected routes",
+      "Session storage for tokens (not localStorage)"
+    ],
+    "authorization": [
+      "Role-based access control (RBAC) with 6 roles",
+      "Resource-level authorization (e.g., can user access this paper)",
+      "Middleware helpers for common role combinations",
+      "Workflow policy validation preventing invalid transitions"
+    ],
+    "dataAccess": [
+      "File access control based on paper status and user role",
+      "Signed URLs for temporary access to private files",
+      "Public/private status segregation",
+      "Supabase RLS policies (if configured)"
+    ],
+    "auditTrail": [
+      "All workflow actions logged to approval_workflow table",
+      "System-wide audit_logs table",
+      "Timestamps and user IDs tracked",
+      "Metadata stored for complex actions"
+    ],
+    "fileHandling": [
+      "Multer for secure file upload handling",
+      "File size limits (10MB)",
+      "MIME type validation (PDF only)",
+      "Memory storage (no temporary disk files)"
+    ],
+    "corsPolicy": [
+      "Configurable allowed origins via environment variable",
+      "Credentials allowed for cross-origin requests",
+      "Dynamic origin checking"
+    ]
+  },
+  "performanceOptimizations": {
+    "caching": {
+      "implementation": "Custom cache utility with TTL",
+      "file": "backend/src/utils/cache.js",
+      "usage": "Caching frequently accessed data like departments"
+    },
+    "database": [
+      "Indexes on frequently queried columns",
+      "Foreign key constraints for referential integrity",
+      "TIMESTAMPTZ for timezone awareness"
+    ],
+    "frontend": [
+      "Code splitting with React Router",
+      "Lazy loading of pages and components",
+      "Framer Motion for smooth animations",
+      "React Context for state management"
+    ],
+    "apiOptimization": [
+      "Pagination support on list endpoints",
+      "Status filtering to reduce data transfer",
+      "Rate limiting on AI endpoints"
+    ]
+  },
+  "testingStrategy": {
+    "backend": {
+      "framework": "Jest",
+      "coverage": "Configured for coverage reporting",
+      "testFiles": [
+        "backend/__tests__/controllers/",
+        "backend/__tests__/middleware/",
+        "backend/__tests__/utils/"
+      ],
+      "commands": {
+        "test": "jest --runInBand",
+        "testWatch": "jest --watch"
+      }
+    },
+    "frontend": {
+      "framework": "Vitest",
+      "runner": "Test runner with coverage",
+      "commands": {
+        "test": "vitest",
+        "coverage": "vitest run --coverage"
+      }
+    }
+  },
+  "knownIssuesAndNotes": [
+    "Research file access requires authentication except for published papers",
+    "DEV NOTE: Backend uses custom JWT authentication, not Supabase Auth",
+    "Signed URLs expire after 1 hour - frontend should handle expiration gracefully",
+    "Dean bypass is high-value action - audit carefully",
+    "Workflow routing logic complex - revision requests must route to correct stage",
+    "PDF extraction uses pdf-parse which may struggle with image-based PDFs",
+    "Gemini AI integration has token limits - long papers truncated to 30k chars",
+    "Co-author structured table (research_authors) is newer addition - legacy co_authors text field still present",
+    "Department/program structure added for organization but not fully integrated everywhere"
+  ]
+}

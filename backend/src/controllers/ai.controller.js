@@ -4,24 +4,31 @@ const supabase = require('../config/supabase');
 const { canAccessPaper, resolvePaperFileUrl } = require('../utils/fileAccess');
 const { sendSuccess, sendError } = require('../utils/response');
 
+const AI_DEBUG = process.env.AI_DEBUG === 'true';
+const debugLog = (...args) => {
+  if (AI_DEBUG) {
+    console.log(...args);
+  }
+};
+
 // Import pdf-parse with fallback
 let pdfParse;
 try {
   pdfParse = require('pdf-parse');
-  console.log('pdf-parse loaded:', typeof pdfParse);
+  debugLog('pdf-parse loaded:', typeof pdfParse);
 } catch (err) {
   console.error('Failed to load pdf-parse:', err);
 }
 
 const chatWithPaper = async (req, res) => {
   try {
-    console.log('=== Chat Request Started ===');
+    debugLog('=== Chat Request Started ===');
     const { paperId, message } = req.body;
     const requester = req.user;
 
     // Validate inputs
     if (!message) {
-      console.error('Error: Message is missing');
+      debugLog('Error: Message is missing');
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Message is required' });
     }
 
@@ -49,7 +56,7 @@ const chatWithPaper = async (req, res) => {
       return sendError(res, { status: 400, code: 'FILE_UNAVAILABLE', message: 'Paper file is not available' });
     }
 
-    console.log('Fetching PDF from:', fileUrl);
+    debugLog('Fetching PDF from:', fileUrl);
 
     // Fetch the PDF using axios
     const response = await axios({
@@ -60,17 +67,17 @@ const chatWithPaper = async (req, res) => {
       maxContentLength: 15 * 1024 * 1024,
     });
 
-    console.log('PDF fetched successfully');
+    debugLog('PDF fetched successfully');
 
     const buffer = Buffer.from(response.data);
-    console.log('Buffer size:', buffer.length, 'bytes');
+    debugLog('Buffer size:', buffer.length, 'bytes');
 
     // Extract text from PDF
-    console.log('Starting PDF text extraction...');
-    console.log('pdfParse function type:', typeof pdfParse);
+    debugLog('Starting PDF text extraction...');
+    debugLog('pdfParse function type:', typeof pdfParse);
     
     if (typeof pdfParse !== 'function') {
-      console.error('pdf-parse is not a function! Type:', typeof pdfParse);
+      debugLog('pdf-parse is not a function! Type:', typeof pdfParse);
       return sendError(res, {
         status: 500,
         code: 'PDF_PARSER_INIT_FAILED',
@@ -94,11 +101,11 @@ const chatWithPaper = async (req, res) => {
 
     const extractedText = pdfData.text;
 
-    console.log('Text extracted, length:', extractedText.length, 'characters');
-    console.log('First 200 chars:', extractedText.substring(0, 200));
+    debugLog('Text extracted, length:', extractedText.length, 'characters');
+    debugLog('First 200 chars:', extractedText.substring(0, 200));
 
     if (!extractedText || extractedText.trim().length === 0) {
-      console.error('No text could be extracted from PDF');
+      debugLog('No text could be extracted from PDF');
       return sendError(res, {
         status: 400,
         code: 'PDF_TEXT_EXTRACTION_FAILED',
@@ -112,7 +119,7 @@ const chatWithPaper = async (req, res) => {
       ? extractedText.substring(0, maxChars) + '\n\n[Text truncated due to length...]'
       : extractedText;
 
-    console.log('Preparing prompt for Gemini...');
+    debugLog('Preparing prompt for Gemini...');
 
     // Prepare the context-aware prompt
     const prompt = `You are an AI assistant helping a student understand a research paper. Here is the full text of the paper:
@@ -127,15 +134,15 @@ Question: ${message}
 
 Answer:`;
 
-    console.log('Sending request to Gemini API...');
+    debugLog('Sending request to Gemini API...');
 
     // Send to Gemini
     const model = getModel();
     const result = await model.generateContent(prompt);
     const aiResponse = result.response.text();
 
-    console.log('Gemini response received, length:', aiResponse.length);
-    console.log('=== Chat Request Completed Successfully ===');
+    debugLog('Gemini response received, length:', aiResponse.length);
+    debugLog('=== Chat Request Completed Successfully ===');
 
     return sendSuccess(res, {
       data: {
@@ -174,20 +181,141 @@ Answer:`;
   }
 };
 
+const generateReviewSummary = async (req, res) => {
+  try {
+    const { paperId } = req.body;
+    const requester = req.user;
+
+    if (!paperId) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Paper ID is required' });
+    }
+
+    if (!['faculty', 'dean', 'program_chair', 'staff', 'admin'].includes(requester.role)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Only reviewers can use AI summary' });
+    }
+
+    const { data: paper, error: paperError } = await supabase
+      .from('research_papers')
+      .select('id, title, abstract, status, file_url, file_storage_path, author_id, faculty_id, dean_chair_id')
+      .eq('id', paperId)
+      .single();
+
+    if (paperError || !paper) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+
+    if (!canAccessPaper(requester, paper)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'You do not have access to this paper' });
+    }
+
+    const fileUrl = await resolvePaperFileUrl(paper);
+    if (!fileUrl) {
+      return sendError(res, { status: 400, code: 'FILE_UNAVAILABLE', message: 'Paper file is not available' });
+    }
+
+    if (typeof pdfParse !== 'function') {
+      return sendError(res, {
+        status: 500,
+        code: 'PDF_PARSER_INIT_FAILED',
+        message: 'PDF parser not properly initialized',
+      });
+    }
+
+    const response = await axios({
+      method: 'get',
+      url: fileUrl,
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      maxContentLength: 15 * 1024 * 1024,
+    });
+
+    const buffer = Buffer.from(response.data);
+    const pdfData = await pdfParse(buffer);
+    const extractedText = (pdfData?.text || '').trim();
+
+    if (!extractedText) {
+      return sendError(res, {
+        status: 400,
+        code: 'PDF_TEXT_EXTRACTION_FAILED',
+        message: 'Could not extract text from PDF',
+      });
+    }
+
+    const maxChars = 25000;
+    const truncatedText = extractedText.length > maxChars
+      ? `${extractedText.substring(0, maxChars)}\n\n[Text truncated due to length]`
+      : extractedText;
+
+    const prompt = `You are assisting an academic reviewer. Read the paper content below and produce:
+1) A concise 3-5 sentence summary.
+2) Three strengths.
+3) Three potential concerns or questions for reviewers.
+
+Return strict JSON with this shape only:
+{"summary":"...","strengths":["..."],"concerns":["..."]}
+
+Paper title: ${paper.title}
+Paper abstract: ${paper.abstract || ''}
+
+Paper content:
+---
+${truncatedText}
+---`;
+
+    const model = getModel();
+    const result = await model.generateContent(prompt);
+    const aiResponse = result.response.text();
+
+    let parsed;
+    try {
+      let clean = aiResponse.trim();
+      if (clean.startsWith('```json')) {
+        clean = clean.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (clean.startsWith('```')) {
+        clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+      parsed = JSON.parse(clean);
+    } catch {
+      parsed = {
+        summary: aiResponse,
+        strengths: [],
+        concerns: [],
+      };
+    }
+
+    return sendSuccess(res, {
+      data: {
+        paperId,
+        summary: parsed.summary || '',
+        strengths: Array.isArray(parsed.strengths) ? parsed.strengths.slice(0, 5) : [],
+        concerns: Array.isArray(parsed.concerns) ? parsed.concerns.slice(0, 5) : [],
+      },
+    });
+  } catch (error) {
+    console.error('AI review summary error:', error.message);
+    return sendError(res, {
+      status: 500,
+      code: 'AI_REVIEW_SUMMARY_FAILED',
+      message: 'Failed to generate review summary',
+      details: error.message,
+    });
+  }
+};
+
 // Extract title and abstract from uploaded PDF
 const extractPdfMetadata = async (req, res) => {
   try {
-    console.log('=== PDF Metadata Extraction Started ===');
+    debugLog('=== PDF Metadata Extraction Started ===');
     
     if (!req.file) {
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'No PDF file uploaded' });
     }
 
     const buffer = req.file.buffer;
-    console.log('PDF buffer size:', buffer.length, 'bytes');
+    debugLog('PDF buffer size:', buffer.length, 'bytes');
 
     if (typeof pdfParse !== 'function') {
-      console.error('pdf-parse is not a function!');
+      debugLog('pdf-parse is not a function!');
       return sendError(res, {
         status: 500,
         code: 'PDF_PARSER_INIT_FAILED',
@@ -210,7 +338,7 @@ const extractPdfMetadata = async (req, res) => {
     }
 
     const extractedText = pdfData.text;
-    console.log('Text extracted, length:', extractedText.length, 'characters');
+    debugLog('Text extracted, length:', extractedText.length, 'characters');
 
     if (!extractedText || extractedText.trim().length === 0) {
       return sendError(res, {
@@ -226,7 +354,7 @@ const extractPdfMetadata = async (req, res) => {
       ? extractedText.substring(0, maxChars)
       : extractedText;
 
-    console.log('Preparing extraction prompt for Gemini...');
+    debugLog('Preparing extraction prompt for Gemini...');
 
     // Prompt for extracting title and abstract
     const prompt = `You are an expert at analyzing academic research papers. I need you to extract the title and abstract from the following research paper text.
@@ -250,7 +378,7 @@ IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text 
     const result = await model.generateContent(prompt);
     const aiResponse = result.response.text();
 
-    console.log('Gemini response:', aiResponse);
+    debugLog('Gemini response:', aiResponse);
 
     // Parse the JSON response
     let metadata;
@@ -280,9 +408,9 @@ IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text 
       if (abstractMatch) metadata.abstract = abstractMatch[1];
     }
 
-    console.log('=== PDF Metadata Extraction Completed ===');
-    console.log('Title:', metadata.title?.substring(0, 50) + '...');
-    console.log('Abstract length:', metadata.abstract?.length);
+    debugLog('=== PDF Metadata Extraction Completed ===');
+    debugLog('Title:', metadata.title?.substring(0, 50) + '...');
+    debugLog('Abstract length:', metadata.abstract?.length);
 
     return sendSuccess(res, {
       data: {
@@ -307,5 +435,6 @@ IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text 
 
 module.exports = {
   chatWithPaper,
-  extractPdfMetadata
+  extractPdfMetadata,
+  generateReviewSummary,
 };

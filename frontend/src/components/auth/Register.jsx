@@ -26,7 +26,9 @@ const Register = () => {
     email: '',
     password: '',
     confirmPassword: '',
-    fullName: '',
+    firstName: '',
+    middleName: '',
+    lastName: '',
     role: 'student',
     department: '',
     departmentId: '',
@@ -124,14 +126,18 @@ const Register = () => {
     setLoading(true);
     const loadingToast = toast.loading('Creating your account...');
 
-    const result = await register(
-      formData.email,
-      formData.password,
-      formData.fullName,
-      formData.role,
-      formData.program,
-      formData.department
-    );
+    const result = await register({
+      email: formData.email,
+      password: formData.password,
+      firstName: formData.firstName,
+      middleName: formData.middleName,
+      lastName: formData.lastName,
+      role: formData.role,
+      program: formData.program,
+      programId: formData.programId,
+      department: formData.department,
+      departmentId: formData.departmentId,
+    });
 
     setLoading(false);
 
@@ -270,23 +276,62 @@ const Register = () => {
                   </div>
                 )}
 
-                {/* Full Name Field */}
+                {/* Name Fields */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5 transition-all duration-300">
+                    <label htmlFor="firstName" className="block text-sm font-semibold text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <User size={14} className="text-indigo-600" />
+                        First Name
+                      </div>
+                    </label>
+                    <input
+                      id="firstName"
+                      name="firstName"
+                      type="text"
+                      required
+                      value={formData.firstName}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
+                      placeholder="Enter first name"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 transition-all duration-300">
+                    <label htmlFor="middleName" className="block text-sm font-semibold text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <User size={14} className="text-indigo-600" />
+                        Middle Name
+                      </div>
+                    </label>
+                    <input
+                      id="middleName"
+                      name="middleName"
+                      type="text"
+                      value={formData.middleName}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1.5 transition-all duration-300">
-                  <label htmlFor="fullName" className="block text-sm font-semibold text-slate-700">
+                  <label htmlFor="lastName" className="block text-sm font-semibold text-slate-700">
                     <div className="flex items-center gap-2">
                       <User size={14} className="text-indigo-600" />
-                      Full Name
+                      Last Name
                     </div>
                   </label>
                   <input
-                    id="fullName"
-                    name="fullName"
+                    id="lastName"
+                    name="lastName"
                     type="text"
                     required
-                    value={formData.fullName}
+                    value={formData.lastName}
                     onChange={handleChange}
                     className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
-                    placeholder="Enter your full name"
+                    placeholder="Enter last name"
                   />
                 </div>
 

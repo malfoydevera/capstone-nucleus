@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { chatWithPaper, extractPdfMetadata } = require('../controllers/ai.controller');
+const { chatWithPaper, extractPdfMetadata, generateReviewSummary } = require('../controllers/ai.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
 // Configure multer for memory storage
@@ -40,6 +40,7 @@ const aiRateLimiter = (req, res, next) => {
 };
 
 router.post('/chat', authenticate, aiRateLimiter, chatWithPaper);
+router.post('/review-summary', authenticate, aiRateLimiter, generateReviewSummary);
 router.post('/extract-pdf', authenticate, aiRateLimiter, upload.single('file'), extractPdfMetadata);
 
 module.exports = router;

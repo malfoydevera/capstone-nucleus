@@ -17,9 +17,11 @@ import {
   Eye,
   MoreVertical,
   RefreshCw,
-  Download
+  Download,
+  Upload
 } from 'lucide-react';
 import { authAPI } from '../../utils/api';
+import { formatFullName, getInitials } from '../../utils/names';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
@@ -34,8 +36,9 @@ const UserManagement = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
   const [createForm, setCreateForm] = useState({
-    email: '', password: '', fullName: '', role: 'faculty', department: ''
+    email: '', password: '', firstName: '', middleName: '', lastName: '', role: 'faculty', department: ''
   });
 
   useEffect(() => {
@@ -66,7 +69,7 @@ const UserManagement = () => {
     if (searchTerm) {
       const lowerSearch = searchTerm.toLowerCase();
       filtered = filtered.filter(user => 
-        user.full_name?.toLowerCase().includes(lowerSearch) ||
+        formatFullName(user).toLowerCase().includes(lowerSearch) ||
         user.email?.toLowerCase().includes(lowerSearch) ||
         user.role?.toLowerCase().includes(lowerSearch)
       );
@@ -81,6 +84,11 @@ const UserManagement = () => {
     filtered.sort((a, b) => {
       let aValue = a[sortConfig.key];
       let bValue = b[sortConfig.key];
+
+      if (sortConfig.key === 'name') {
+        aValue = formatFullName(a).toLowerCase();
+        bValue = formatFullName(b).toLowerCase();
+      }
 
       if (sortConfig.key === 'createdAt') {
         aValue = new Date(a.createdAt || a.created_at);
@@ -117,7 +125,7 @@ const UserManagement = () => {
       toast.success(`${response.data.user.role.replace('_', ' ')} account created!`, {
         id: loadingToast, icon: '✅', duration: 3000
       });
-      setCreateForm({ email: '', password: '', fullName: '', role: 'faculty', department: '' });
+      setCreateForm({ email: '', password: '', firstName: '', middleName: '', lastName: '', role: 'faculty', department: '' });
       setShowCreateModal(false);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to create user', { id: loadingToast });
@@ -135,7 +143,7 @@ const UserManagement = () => {
       await authAPI.deleteUser(userToDelete.id);
       // Remove user from local state immediately
       setUsers(users.filter(u => u.id !== userToDelete.id));
-      toast.success(`User ${userToDelete.full_name} deleted successfully`, {
+      toast.success(`User ${formatFullName(userToDelete)} deleted successfully`, {
         id: loadingToast,
         icon: '🗑️',
         duration: 3000,
@@ -148,6 +156,85 @@ const UserManagement = () => {
         id: loadingToast,
         duration: 4000,
       });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const downloadCsvTemplate = () => {
+    const template = [
+      'email,password,role,firstName,middleName,lastName,department,program',
+      'faculty1@university.edu,TempPass123,faculty,Juan,,Dela Cruz,College of Engineering,',
+      'student1@university.edu,TempPass123,student,Ana,,Santos,College of Engineering,BS Computer Engineering',
+    ].join('\n');
+
+    const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'user_import_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleImportCsv = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toast.error('Please select a CSV file');
+      event.target.value = '';
+      return;
+    }
+
+    setImportLoading(true);
+    const loadingToast = toast.loading('Importing users from CSV...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await authAPI.importUsersCsv(formData);
+      const result = response.data.data;
+
+      toast.success(
+        `Import complete: ${result.created} created, ${result.skipped} skipped, ${result.failed} failed`,
+        { id: loadingToast, duration: 4500 }
+      );
+
+      await fetchUsers();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to import CSV', { id: loadingToast });
+    } finally {
+      setImportLoading(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleToggleSuspension = async (targetUser) => {
+    setActionLoading(true);
+    try {
+      if (targetUser.is_active === false || targetUser.suspended_at) {
+        await authAPI.reactivateUser(targetUser.id);
+        setUsers((prev) => prev.map((user) => (
+          user.id === targetUser.id
+            ? { ...user, is_active: true, suspended_at: null, suspended_reason: null }
+            : user
+        )));
+        toast.success(`${formatFullName(targetUser)} reactivated`);
+      } else {
+        const reason = window.prompt('Suspension reason (optional):', 'Policy violation') || '';
+        await authAPI.suspendUser(targetUser.id, reason);
+        setUsers((prev) => prev.map((user) => (
+          user.id === targetUser.id
+            ? { ...user, is_active: false, suspended_at: new Date().toISOString(), suspended_reason: reason || null }
+            : user
+        )));
+        toast.success(`${formatFullName(targetUser)} suspended`);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update suspension state');
     } finally {
       setActionLoading(false);
     }
@@ -267,6 +354,24 @@ const UserManagement = () => {
               <RefreshCw size={16} />
               Refresh
             </button>
+            <button
+              onClick={downloadCsvTemplate}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors"
+            >
+              <Download size={16} />
+              CSV Template
+            </button>
+            <label className={`flex items-center gap-2 px-4 py-2 rounded-xl border font-semibold transition-colors ${importLoading ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-emerald-50 to-green-50 border-emerald-200 text-emerald-700 cursor-pointer hover:border-emerald-300'}`}>
+              <Upload size={16} />
+              {importLoading ? 'Importing...' : 'Import CSV'}
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleImportCsv}
+                className="hidden"
+                disabled={importLoading}
+              />
+            </label>
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#1a4480] hover:to-[#1d55d0] transition-all duration-300 shadow-md"
@@ -450,13 +555,13 @@ const UserManagement = () => {
                 <tr>
                   <th className="px-6 py-4 text-left">
                     <button
-                      onClick={() => handleSort('full_name')}
+                      onClick={() => handleSort('name')}
                       className="flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-[#1C4D8D] transition-colors"
                     >
                       User
                       <ChevronRight size={14} className={`transition-transform ${
-                        sortConfig.key === 'full_name' && sortConfig.direction === 'asc' ? 'rotate-90' : 
-                        sortConfig.key === 'full_name' && sortConfig.direction === 'desc' ? '-rotate-90' : ''
+                        sortConfig.key === 'name' && sortConfig.direction === 'asc' ? 'rotate-90' : 
+                        sortConfig.key === 'name' && sortConfig.direction === 'desc' ? '-rotate-90' : ''
                       }`} />
                     </button>
                   </th>
@@ -496,14 +601,19 @@ const UserManagement = () => {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-4">
                           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center text-[#1C4D8D] font-bold text-lg shadow-lg">
-                            {user.full_name?.charAt(0).toUpperCase() || '?'}
+                            {getInitials(user)}
                           </div>
                           <div>
-                            <h4 className="font-bold text-slate-900">{user.full_name || 'Unknown Name'}</h4>
+                            <h4 className="font-bold text-slate-900">{formatFullName(user) || 'Unknown Name'}</h4>
                             <div className="flex items-center gap-2 mt-1">
                               <Mail size={12} className="text-slate-500" />
                               <span className="text-sm text-slate-600">{user.email}</span>
                             </div>
+                            {(user.is_active === false || user.suspended_at) && (
+                              <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-100 text-red-700 text-xs font-bold">
+                                Suspended
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -521,6 +631,13 @@ const UserManagement = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleToggleSuspension(user)}
+                            className={`h-10 px-3 rounded-xl border flex items-center justify-center text-xs font-bold transition-colors ${user.is_active === false || user.suspended_at ? 'bg-emerald-100 border-emerald-200 text-emerald-700 hover:bg-emerald-200' : 'bg-amber-100 border-amber-200 text-amber-700 hover:bg-amber-200'}`}
+                            title={user.is_active === false || user.suspended_at ? 'Reactivate User' : 'Suspend User'}
+                          >
+                            {user.is_active === false || user.suspended_at ? 'Reactivate' : 'Suspend'}
+                          </button>
                           {/* Placeholder for Edit functionality */}
                           {/* <button
                             className="w-10 h-10 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 flex items-center justify-center text-slate-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
@@ -563,7 +680,7 @@ const UserManagement = () => {
             </div>
             <div className="p-6">
               <p className="text-slate-700 mb-4">
-                Are you sure you want to delete <span className="font-bold text-slate-900">{userToDelete.full_name}</span>?
+                Are you sure you want to delete <span className="font-bold text-slate-900">{formatFullName(userToDelete)}</span>?
                 This will permanently remove their account and all associated data.
               </p>
               <div className="flex gap-3">
@@ -620,14 +737,38 @@ const UserManagement = () => {
 
             {/* Modal Form */}
             <form onSubmit={handleCreateUser} className="p-6 space-y-4">
-              {/* Full Name */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">First Name <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Maria"
+                    value={createForm.firstName}
+                    onChange={e => setCreateForm({ ...createForm, firstName: e.target.value })}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Middle Name <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Reyes"
+                    value={createForm.middleName}
+                    onChange={e => setCreateForm({ ...createForm, middleName: e.target.value })}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Full Name <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Last Name <span className="text-red-500">*</span></label>
                 <input
                   type="text"
-                  placeholder="e.g. Dr. Maria Santos"
-                  value={createForm.fullName}
-                  onChange={e => setCreateForm({ ...createForm, fullName: e.target.value })}
+                  placeholder="e.g. Santos"
+                  value={createForm.lastName}
+                  onChange={e => setCreateForm({ ...createForm, lastName: e.target.value })}
                   className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
                   required
                 />

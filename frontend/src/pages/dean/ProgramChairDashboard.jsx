@@ -3,16 +3,21 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText, Clock, CheckCircle, Eye, ChevronRight, RefreshCw,
-  BookOpen, Users, Calendar
+  BookOpen, Users, Calendar, AlertTriangle
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 const ProgramChairDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [programScope, setProgramScope] = useState('');
+  const [topKeywords, setTopKeywords] = useState([]);
   const [stats, setStats] = useState({
     total: 0, pending: 0, approved: 0, rejected: 0, revisionRequired: 0, thisMonth: 0
   });
+  const [deadlineSummary, setDeadlineSummary] = useState({ totalWithDeadline: 0, overdueCount: 0, dueSoonCount: 0 });
+  const [deadlineItems, setDeadlineItems] = useState([]);
   const [recentPapers, setRecentPapers] = useState([]);
   const [allPapers, setAllPapers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,20 +27,21 @@ const ProgramChairDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await researchAPI.getDeanChairAssignedPapers();
+      const response = await researchAPI.getProgramChairAnalytics();
+      const deadlinesResponse = await researchAPI.getProgramChairDeadlines();
       const papers = response.data.papers || [];
+      setProgramScope(response.data.program?.department || 'Unassigned Program');
+      setTopKeywords(response.data.topKeywords || []);
       setAllPapers(papers);
-
-      const now = new Date();
-      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-      setStats({
-        total: papers.length,
-        pending: papers.filter(p => p.status === 'pending_program_chair').length,
-        approved: papers.filter(p => ['pending_editor', 'pending_admin', 'approved', 'published'].includes(p.status)).length,
-        rejected: papers.filter(p => p.status === 'rejected').length,
-        revisionRequired: papers.filter(p => p.status === 'revision_required').length,
-        thisMonth: papers.filter(p => new Date(p.created_at) >= firstDayOfMonth).length
+      setDeadlineSummary(deadlinesResponse.data.summary || { totalWithDeadline: 0, overdueCount: 0, dueSoonCount: 0 });
+      setDeadlineItems([...(deadlinesResponse.data.overdue || []), ...(deadlinesResponse.data.upcoming || [])].slice(0, 6));
+      setStats(response.data.summary || {
+        total: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        revisionRequired: 0,
+        thisMonth: 0,
       });
 
       const sortedPapers = [...papers].sort((a, b) =>
@@ -44,6 +50,10 @@ const ProgramChairDashboard = () => {
       setRecentPapers(sortedPapers.slice(0, 5));
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
+      setProgramScope('');
+      setTopKeywords([]);
+      setDeadlineSummary({ totalWithDeadline: 0, overdueCount: 0, dueSoonCount: 0 });
+      setDeadlineItems([]);
       setStats({ total: 0, pending: 0, approved: 0, rejected: 0, revisionRequired: 0, thisMonth: 0 });
       setRecentPapers([]);
       setAllPapers([]);
@@ -109,7 +119,7 @@ const ProgramChairDashboard = () => {
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Program Chair Dashboard</h1>
               <p className="text-sm text-slate-500">
-                Primary clearance reviewer &middot; {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                {programScope || 'Program Scope'} &middot; {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
               </p>
             </div>
           </div>
@@ -125,7 +135,7 @@ const ProgramChairDashboard = () => {
             <Users size={24} className="text-white/80" />
             <h2 className="text-lg font-bold">Primary Clearance Reviewer</h2>
           </div>
-          <p className="text-teal-100 text-sm">You are the primary person responsible for reviewing and processing student clearance requests forwarded by advisers.</p>
+          <p className="text-teal-100 text-sm">Department-scoped analytics for {programScope || 'your assigned program'}.</p>
         </div>
 
         {/* Stats Cards */}
@@ -197,11 +207,95 @@ const ProgramChairDashboard = () => {
           </div>
         )}
 
+        {/* Deadline Monitor */}
+        <div className="mb-10 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-900">Review Deadlines</h2>
+            <span className="text-xs font-semibold text-slate-500">Program Chair reminders</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+            <div className="rounded-xl border border-slate-200 p-4 bg-slate-50">
+              <p className="text-xs font-semibold text-slate-600 mb-1">With Deadlines</p>
+              <p className="text-2xl font-black text-slate-900">{deadlineSummary.totalWithDeadline}</p>
+            </div>
+            <div className="rounded-xl border border-orange-200 p-4 bg-orange-50">
+              <p className="text-xs font-semibold text-orange-700 mb-1">Due in 48h</p>
+              <p className="text-2xl font-black text-orange-700">{deadlineSummary.dueSoonCount}</p>
+            </div>
+            <div className="rounded-xl border border-red-200 p-4 bg-red-50">
+              <p className="text-xs font-semibold text-red-700 mb-1">Overdue</p>
+              <p className="text-2xl font-black text-red-700">{deadlineSummary.overdueCount}</p>
+            </div>
+          </div>
+
+          {deadlineItems.length === 0 ? (
+            <p className="text-sm text-slate-500">No upcoming or overdue deadlines yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {deadlineItems.map((paper) => {
+                const overdue = (paper.hoursUntilDeadline || 0) <= 0;
+                return (
+                  <button
+                    key={paper.id}
+                    onClick={() => navigate(`/program-chair/review/${paper.id}`)}
+                    className="w-full text-left rounded-xl border border-slate-200 px-4 py-3 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 line-clamp-1">{paper.title}</p>
+                        <p className="text-xs text-slate-500 mt-1">Deadline: {formatDate(paper.review_deadline_at)}</p>
+                      </div>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${overdue ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                        <AlertTriangle size={12} />
+                        {overdue ? `Overdue by ${Math.abs(paper.hoursUntilDeadline)}h` : `${paper.hoursUntilDeadline}h left`}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Program Topic Trends */}
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-900">Program Topic Trends</h2>
+            <span className="text-xs font-semibold text-slate-500">Top keywords in your program</span>
+          </div>
+          {topKeywords.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 text-sm text-slate-500">
+              No keyword data yet for this program.
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+              <div className="space-y-3">
+                {topKeywords.slice(0, 8).map((item) => {
+                  const max = topKeywords[0]?.count || 1;
+                  const widthPct = Math.max(8, Math.round((item.count / max) * 100));
+                  return (
+                    <div key={item.keyword} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-semibold text-slate-700 capitalize">{item.keyword}</span>
+                        <span className="text-slate-500">{item.count}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-cyan-500" style={{ width: `${widthPct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Recent Submissions */}
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-900">Recent Submissions</h2>
-            <button onClick={() => navigate('/dean/review')} className="text-sm font-semibold text-teal-600 hover:text-teal-800 flex items-center gap-1 transition-colors">
+            <button onClick={() => navigate('/program-chair/review')} className="text-sm font-semibold text-teal-600 hover:text-teal-800 flex items-center gap-1 transition-colors">
               View all <ChevronRight size={16} />
             </button>
           </div>
@@ -216,7 +310,7 @@ const ProgramChairDashboard = () => {
               {recentPapers.map(paper => (
                 <div
                   key={paper.id}
-                  onClick={() => navigate(`/dean/review/${paper.id}`)}
+                  onClick={() => navigate(`/program-chair/review/${paper.id}`)}
                   className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 cursor-pointer group"
                 >
                   <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-600 to-cyan-600 flex items-center justify-center flex-shrink-0">
@@ -225,7 +319,7 @@ const ProgramChairDashboard = () => {
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-900 group-hover:text-inherit line-clamp-1">{paper.title}</p>
                     <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                      <span>{paper.users?.full_name || 'Unknown'}</span>
+                      <span>{formatFullName(paper.users) || 'Unknown'}</span>
                       <span>&middot;</span>
                       <span>{formatDate(paper.submission_date || paper.created_at)}</span>
                     </div>

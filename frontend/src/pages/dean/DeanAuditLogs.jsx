@@ -63,6 +63,65 @@ const DeanAuditLogs = () => {
     return colors[role] || 'bg-slate-100 text-slate-700';
   };
 
+  const escapeCsvValue = (value) => {
+    const text = value == null ? '' : String(value);
+    if (text.includes('"') || text.includes(',') || text.includes('\n')) {
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+  };
+
+  const exportCsv = () => {
+    if (!logs.length) return;
+
+    const header = ['timestamp', 'action', 'role', 'user', 'target_type', 'target_id', 'reason', 'details'];
+    const rows = logs.map((log) => [
+      log.created_at || '',
+      log.action || '',
+      log.user_role || '',
+      log.user_name || '',
+      log.target_type || '',
+      log.target_id || '',
+      log.reason || '',
+      log.details ? JSON.stringify(log.details) : '',
+    ]);
+
+    const csvContent = [header, ...rows]
+      .map((row) => row.map(escapeCsvValue).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `dean_audit_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPdf = async () => {
+    try {
+      const cleanParams = {};
+      if (filters.action) cleanParams.action = filters.action;
+      if (filters.role) cleanParams.role = filters.role;
+
+      const response = await researchAPI.getAuditLogsPdf(cleanParams);
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `dean_audit_logs_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export PDF:', err);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 animate-fadeIn">
       {/* Header */}
@@ -76,10 +135,18 @@ const DeanAuditLogs = () => {
             <p className="text-slate-600">Complete trail of all system actions — approvals, rejections, revisions, bypasses, and logins</p>
           </div>
         </div>
-        <button onClick={() => fetchLogs()} disabled={loading} className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold hover:border-slate-300 transition-all">
-          <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={exportCsv} disabled={loading || logs.length === 0} className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold hover:border-slate-300 transition-all disabled:opacity-50">
+            Export CSV
+          </button>
+          <button onClick={exportPdf} disabled={loading || logs.length === 0} className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold hover:border-slate-300 transition-all disabled:opacity-50">
+            Export PDF
+          </button>
+          <button onClick={() => fetchLogs()} disabled={loading} className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold hover:border-slate-300 transition-all">
+            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

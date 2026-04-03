@@ -8,7 +8,10 @@
     "dev": "nodemon src/server.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
-    "backfill:storage-path": "node scripts/backfill-storage-path.js"
+    "backfill:storage-path": "node scripts/backfill-storage-path.js",
+    "smoke:bootstrap-users": "node scripts/bootstrap-smoke-users.js",
+    "check:migrations": "node scripts/check-migrations.js",
+    "smoke:workflow": "node scripts/smoke-workflow.js"
   },
   "keywords": [],
   "author": "",
@@ -24,9 +27,12 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
+    "node-cache": "^5.1.2",
     "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.18.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

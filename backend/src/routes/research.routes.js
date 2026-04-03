@@ -6,6 +6,7 @@ const submissionController = require('../controllers/submission.controller');
 const reviewController     = require('../controllers/review.controller');
 const adminController      = require('../controllers/admin.controller');
 const annotationController = require('../controllers/annotation.controller');
+const coauthorInvitationController = require('../controllers/coauthorInvitation.controller');
 const { authenticate, authorize, isFaculty, isStaffOrAdmin, isDean } = require('../middleware/auth.middleware');
 
 // Configure multer for memory storage
@@ -13,13 +14,19 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 100 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
+    const allowedMimeTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+
+    if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF files are allowed'), false);
+      cb(new Error('Unsupported file type'), false);
     }
   }
 });
@@ -37,9 +44,14 @@ router.get('/faculty/members', authenticate, submissionController.getFacultyMemb
 // ========== DEAN ONLY ROUTES (must precede /:id catch-all) ==========
 router.get('/dean/activity-monitor', authenticate, authorize('dean'), reviewController.getDeanActivityMonitor);
 router.get('/dean/audit-logs',       authenticate, authorize('dean'), reviewController.getAuditLogs);
+router.get('/dean/audit-logs/pdf',   authenticate, authorize('dean'), reviewController.exportAuditLogsPdf);
+router.get('/dean/department-comparison', authenticate, authorize('dean'), reviewController.getDepartmentComparison);
 
 // ========== AUTHENTICATED USER ROUTES ==========
 router.get('/profile/data',           authenticate, submissionController.getProfileResearchData);
+router.get('/drafts/me',              authenticate, authorize('student'), submissionController.getMyDraft);
+router.put('/drafts/me',              authenticate, authorize('student'), submissionController.upsertMyDraft);
+router.delete('/drafts/me',           authenticate, authorize('student'), submissionController.deleteMyDraft);
 router.get('/:id/annotations',        authenticate, annotationController.getPaperAnnotations);
 router.post(
   '/:id/annotations',
@@ -68,17 +80,36 @@ router.get('/all/papers', authenticate, authorize('staff', 'admin'), adminContro
 router.post('/:id/approve',   authenticate, authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'), reviewController.approveResearch);
 router.post('/:id/reject',    authenticate, authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'), reviewController.rejectResearch);
 router.post('/:id/revision',  authenticate, authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'), reviewController.requestRevision);
+router.post('/:id/declare-conflict', authenticate, authorize('faculty'), reviewController.declareConflictOfInterest);
+router.post('/:id/return-to-author', authenticate, authorize('staff'), reviewController.returnToAuthor);
+router.patch('/:id/metadata', authenticate, authorize('staff'), reviewController.correctMetadata);
+router.get('/:id/editorial-checklist', authenticate, authorize('staff', 'admin'), reviewController.getEditorialChecklist);
+router.put('/:id/editorial-checklist', authenticate, authorize('staff'), reviewController.upsertEditorialChecklist);
+router.get('/:id/plagiarism', authenticate, authorize('staff', 'admin'), reviewController.getPlagiarismReport);
+router.post('/:id/plagiarism/run', authenticate, authorize('staff'), reviewController.runPlagiarismScan);
+router.post('/:id/assign-faculty', authenticate, authorize('dean', 'program_chair'), reviewController.assignFacultyReviewer);
+router.post('/:id/co-author-invitations', authenticate, authorize('student'), coauthorInvitationController.createCoAuthorInvitations);
 
 // ========== FACULTY ROUTES ==========
 router.get('/faculty/assigned', authenticate, authorize('faculty'), reviewController.getFacultyAssignedPapers);
+router.get('/faculty/workload', authenticate, authorize('faculty'), reviewController.getFacultyWorkloadSummary);
 
 // ========== DEAN & PROGRAM CHAIR ROUTES ==========
 router.get('/dean-chair/assigned', authenticate, authorize('dean', 'program_chair'), reviewController.getDeanChairAssignedPapers);
+router.get('/program-chair/analytics', authenticate, authorize('program_chair'), reviewController.getProgramChairAnalytics);
+router.get('/program-chair/deadlines', authenticate, authorize('program_chair'), reviewController.getProgramChairDeadlines);
+router.patch('/:id/review-deadline', authenticate, authorize('program_chair'), reviewController.setProgramChairReviewDeadline);
 
 // ========== ADMIN ONLY ROUTES ==========
+router.get('/admin/workflow-stages', authenticate, authorize('admin'), adminController.getWorkflowStages);
+router.get('/admin/workflow-stages/validate', authenticate, authorize('admin'), adminController.validateWorkflowStages);
+router.post('/admin/workflow-stages', authenticate, authorize('admin'), adminController.createWorkflowStage);
+router.patch('/admin/workflow-stages/:stageId', authenticate, authorize('admin'), adminController.updateWorkflowStage);
+router.delete('/admin/workflow-stages/:stageId', authenticate, authorize('admin'), adminController.deleteWorkflowStage);
 router.get('/admin/all',           authenticate, authorize('admin'), adminController.adminGetAllResearch);
 router.put('/admin/:id',           authenticate, authorize('admin'), adminController.adminUpdateResearch);
 router.delete('/admin/:id',        authenticate, authorize('admin'), adminController.adminDeleteResearch);
+router.post('/admin/:id/restore',  authenticate, authorize('admin'), adminController.adminRestoreResearch);
 router.post('/admin/:id/publish',  authenticate, authorize('admin'), adminController.adminPublishResearch);
 router.post('/admin/:id/unpublish', authenticate, authorize('admin'), adminController.adminUnpublishResearch);
 

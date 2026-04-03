@@ -6,6 +6,11 @@ jest.mock('../../utils/audit', () => ({
   logAuditEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../utils/workflowEmail', () => ({
+  sendPaperStatusEmail: jest.fn().mockResolvedValue(undefined),
+  sendReviewAssignmentEmail: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid'),
 }));
@@ -180,6 +185,812 @@ describe('research workflow endpoints', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
     expect(payload.message).toBe('Research rejected successfully');
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('assignFacultyReviewer requires facultyId', async () => {
+    const req = {
+      params: { id: 'p1' },
+      body: {},
+      user: { id: 'd1', role: 'dean' },
+    };
+    const res = createRes();
+
+    await researchController.assignFacultyReviewer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.error.code).toBe('INVALID_INPUT');
+  });
+
+  test('assignFacultyReviewer blocks program chair not assigned to paper', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_program_chair',
+                  author_id: 'a1',
+                  dean_chair_id: 'other-chair',
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: { facultyId: 'f1' },
+      user: { id: 'chair-1', role: 'program_chair' },
+    };
+    const res = createRes();
+
+    await researchController.assignFacultyReviewer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.error.code).toBe('ACCESS_DENIED');
+  });
+
+  test('assignFacultyReviewer success moves paper to pending_faculty', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_program_chair',
+                  author_id: 'a1',
+                  department: 'CS',
+                  department_id: null,
+                  dean_chair_id: 'chair-1',
+                },
+                error: null,
+              }),
+            }),
+          }),
+          update: () => ({
+            eq: () => ({
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'p1',
+                    status: 'pending_faculty',
+                    faculty_id: 'f1',
+                    dean_chair_id: null,
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'users') {
+        const userQuery = {
+          eq: jest.fn().mockReturnThis(),
+          single: async () => ({
+            data: {
+              id: 'f1',
+              first_name: 'Fac',
+              middle_name: null,
+              last_name: 'Reviewer',
+              email: 'fac@example.com',
+              role: 'faculty',
+              department: 'CS',
+              department_id: null,
+            },
+            error: null,
+          }),
+        };
+
+        return {
+          select: () => userQuery,
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: { facultyId: 'f1', notes: 'Please review methodology section.' },
+      user: { id: 'chair-1', role: 'program_chair' },
+    };
+    const res = createRes();
+
+    await researchController.assignFacultyReviewer(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.message).toBe('Faculty reviewer assigned successfully');
+    expect(payload.data.paper.status).toBe('pending_faculty');
+    expect(payload.data.paper.faculty_id).toBe('f1');
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('returnToAuthor requires notes', async () => {
+    const req = {
+      params: { id: 'p1' },
+      body: {},
+      user: { id: 's1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.returnToAuthor(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.error.code).toBe('INVALID_INPUT');
+  });
+
+  test('returnToAuthor success updates paper to revision_required', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_editor',
+                  author_id: 'a1',
+                  author: {
+                    first_name: 'Stu',
+                    middle_name: null,
+                    last_name: 'Dent',
+                    email: 'student@example.com',
+                  },
+                },
+                error: null,
+              }),
+            }),
+          }),
+          update: () => ({
+            eq: () => ({
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'p1',
+                    status: 'revision_required',
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: { notes: 'Please fix citations and formatting.' },
+      user: { id: 'staff-1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.returnToAuthor(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.message).toBe('Paper returned to author successfully');
+    expect(payload.data.newStatus).toBe('revision_required');
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('correctMetadata requires at least one field', async () => {
+    const req = {
+      params: { id: 'p1' },
+      body: {},
+      user: { id: 'staff-1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.correctMetadata(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.error.code).toBe('INVALID_INPUT');
+  });
+
+  test('correctMetadata updates title and keywords for staff', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Old Title',
+                  abstract: 'Old abstract',
+                  keywords: ['old'],
+                  category: 'Category',
+                  co_authors: null,
+                  status: 'pending_editor',
+                  author_id: 'a1',
+                },
+                error: null,
+              }),
+            }),
+          }),
+          update: () => ({
+            eq: () => ({
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'p1',
+                    title: 'New Title',
+                    abstract: 'New abstract',
+                    keywords: ['new', 'keywords'],
+                    category: 'Category',
+                    co_authors: null,
+                    status: 'pending_editor',
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: {
+        title: 'New Title',
+        abstract: 'New abstract',
+        keywords: 'new, keywords',
+      },
+      user: { id: 'staff-1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.correctMetadata(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.message).toBe('Paper metadata corrected successfully');
+    expect(payload.data.paper.title).toBe('New Title');
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('approveResearch blocks staff approval when editorial checklist is incomplete', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_editor',
+                  author_id: 'a1',
+                  author: {
+                    first_name: 'Stu',
+                    middle_name: null,
+                    last_name: 'Dent',
+                    email: 'student@example.com',
+                  },
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'editorial_checklists') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: { comments: 'Looks good for admin review.' },
+      user: { id: 'staff-1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.approveResearch(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.error.code).toBe('EDITORIAL_CHECKLIST_REQUIRED');
+  });
+
+  test('upsertEditorialChecklist saves checklist for staff', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_editor',
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'editorial_checklists') {
+        return {
+          upsert: () => ({
+            select: () => ({
+              single: async () => ({
+                data: {
+                  id: 'c1',
+                  items: {
+                    formatting: true,
+                    citations: true,
+                    references: true,
+                  },
+                  notes: 'All checks passed',
+                  completed_at: '2026-04-01T00:00:00.000Z',
+                  staff_id: 'staff-1',
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: {
+        items: {
+          formatting: true,
+          citations: true,
+          references: true,
+        },
+        notes: 'All checks passed',
+      },
+      user: { id: 'staff-1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.upsertEditorialChecklist(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.data.completed).toBe(true);
+    expect(payload.data.checklist.items.references).toBe(true);
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('approveResearch allows staff approval when editorial checklist is complete', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_editor',
+                  author_id: 'a1',
+                  department: 'CS',
+                  doi: null,
+                  citation_key: null,
+                  author: {
+                    first_name: 'Stu',
+                    middle_name: null,
+                    last_name: 'Dent',
+                    email: 'student@example.com',
+                  },
+                },
+                error: null,
+              }),
+            }),
+          }),
+          update: () => ({
+            eq: () => ({
+              select: async () => ({
+                data: [{ id: 'p1', status: 'pending_admin' }],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'editorial_checklists') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  items: {
+                    formatting: true,
+                    citations: true,
+                    references: true,
+                  },
+                  completed_at: '2026-04-01T00:00:00.000Z',
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: async () => ({ data: [], error: null }),
+            in: async () => ({ data: [], error: null }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: { comments: 'Editorial checks completed.' },
+      user: { id: 'staff-1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.approveResearch(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.data.status).toBe('pending_admin');
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('setProgramChairReviewDeadline requires deadlineAt', async () => {
+    const req = {
+      params: { id: 'p1' },
+      body: {},
+      user: { id: 'chair-1', role: 'program_chair' },
+    };
+    const res = createRes();
+
+    await researchController.setProgramChairReviewDeadline(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.error.code).toBe('INVALID_INPUT');
+  });
+
+  test('setProgramChairReviewDeadline saves deadline for in-scope paper', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'chair-1',
+                  department: 'CS',
+                  department_id: null,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_program_chair',
+                  dean_chair_id: 'chair-1',
+                  department: 'CS',
+                  department_id: null,
+                },
+                error: null,
+              }),
+            }),
+          }),
+          update: () => ({
+            eq: () => ({
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'p1',
+                    title: 'Paper',
+                    status: 'pending_program_chair',
+                    review_deadline_at: '2026-12-31T08:00:00.000Z',
+                    dean_chair_id: 'chair-1',
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: { deadlineAt: '2026-12-31T08:00:00.000Z' },
+      user: { id: 'chair-1', role: 'program_chair' },
+    };
+    const res = createRes();
+
+    await researchController.setProgramChairReviewDeadline(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.message).toBe('Review deadline set successfully');
+    expect(payload.data.paper.review_deadline_at).toBe('2026-12-31T08:00:00.000Z');
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('getPlagiarismReport returns current plagiarism payload for staff/admin', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_editor',
+                  plagiarism_status: 'checked',
+                  plagiarism_score: 27,
+                  plagiarism_checked_at: '2026-04-01T01:00:00.000Z',
+                  plagiarism_provider: 'local_stub',
+                  plagiarism_summary: 'Stub plagiarism scan complete.',
+                  plagiarism_report: { mode: 'stub' },
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      user: { id: 'staff-1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.getPlagiarismReport(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.data.plagiarism.status).toBe('checked');
+    expect(payload.data.plagiarism.score).toBe(27);
+  });
+
+  test('runPlagiarismScan stores scan result for staff role', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper Title',
+                  abstract: 'This paper explores method method method.',
+                  status: 'pending_editor',
+                },
+                error: null,
+              }),
+            }),
+          }),
+          update: () => ({
+            eq: () => ({
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'p1',
+                    plagiarism_status: 'checked',
+                    plagiarism_score: 35,
+                    plagiarism_checked_at: '2026-04-01T01:00:00.000Z',
+                    plagiarism_provider: 'local_stub',
+                    plagiarism_summary: 'Stub plagiarism scan complete.',
+                    plagiarism_report: { mode: 'stub' },
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      user: { id: 'staff-1', role: 'staff' },
+    };
+    const res = createRes();
+
+    await researchController.runPlagiarismScan(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.message).toBe('Plagiarism scan completed');
+    expect(payload.data.plagiarism.status).toBe('checked');
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('declareConflictOfInterest blocks faculty not assigned to paper', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_faculty',
+                  author_id: 'a1',
+                  faculty_id: 'other-faculty',
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: { reason: 'Conflict reason' },
+      user: { id: 'f1', role: 'faculty' },
+    };
+    const res = createRes();
+
+    await researchController.declareConflictOfInterest(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(false);
+    expect(payload.error.code).toBe('ACCESS_DENIED');
+  });
+
+  test('declareConflictOfInterest success removes paper from faculty queue', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'p1',
+                  title: 'Paper',
+                  status: 'pending_faculty',
+                  author_id: 'a1',
+                  faculty_id: 'f1',
+                },
+                error: null,
+              }),
+            }),
+          }),
+          update: () => ({
+            eq: async () => ({ error: null }),
+          }),
+        };
+      }
+
+      if (table === 'faculty_conflict_declarations') {
+        return {
+          upsert: async () => ({ error: null }),
+        };
+      }
+
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: async () => ({ data: [{ id: 'staff-1' }], error: null }),
+            }),
+          }),
+        };
+      }
+
+      return {
+        insert: async () => ({ error: null }),
+      };
+    });
+
+    const req = {
+      params: { id: 'p1' },
+      body: { reason: 'I collaborated with the author on this topic.' },
+      user: { id: 'f1', role: 'faculty' },
+    };
+    const res = createRes();
+
+    await researchController.declareConflictOfInterest(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.data.status).toBe('pending');
     expect(logAuditEvent).toHaveBeenCalledTimes(1);
   });
 });

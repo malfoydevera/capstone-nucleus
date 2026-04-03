@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
+const reviewController = require('./review.controller');
 
 const getRoleMemberForPaper = async (role, paper, allowFallback = true) => {
   let query = supabase
@@ -1423,3 +1424,19 @@ exports.register = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+// Keep workflow handlers aligned with the canonical review controller.
+exports.approveResearch = reviewController.approveResearch;
+exports.rejectResearch = reviewController.rejectResearch;
+exports.requestRevision = reviewController.requestRevision;
+exports.declareConflictOfInterest = reviewController.declareConflictOfInterest;
+exports.returnToAuthor = reviewController.returnToAuthor;
+exports.correctMetadata = reviewController.correctMetadata;
+exports.getEditorialChecklist = reviewController.getEditorialChecklist;
+exports.upsertEditorialChecklist = reviewController.upsertEditorialChecklist;
+exports.deanBypassApprove = reviewController.deanBypassApprove;
+exports.assignFacultyReviewer = reviewController.assignFacultyReviewer;
+exports.setProgramChairReviewDeadline = reviewController.setProgramChairReviewDeadline;
+exports.getProgramChairDeadlines = reviewController.getProgramChairDeadlines;
+exports.getPlagiarismReport = reviewController.getPlagiarismReport;
+exports.runPlagiarismScan = reviewController.runPlagiarismScan;

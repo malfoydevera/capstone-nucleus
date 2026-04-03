@@ -56,10 +56,10 @@ CREATE TABLE public.users (
   id                  uuid          NOT NULL DEFAULT gen_random_uuid(),
   email               varchar       NOT NULL UNIQUE,
   password            varchar       NOT NULL,          -- bcrypt hash (cost 10)
-  full_name           varchar       NOT NULL,
+  first_name          varchar       NOT NULL,
+  middle_name         varchar,
+  last_name           varchar       NOT NULL,
   role                varchar       NOT NULL,
-  profile_picture_url text,
-  bio                 text,
   program             text,                            -- student's academic program
   department          varchar,                         -- faculty/dean/chair department
   created_at          timestamptz   NOT NULL DEFAULT CURRENT_TIMESTAMP,

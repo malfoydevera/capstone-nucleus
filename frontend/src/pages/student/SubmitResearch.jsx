@@ -22,7 +22,14 @@ import {
   Plus,
   UserPlus
 } from 'lucide-react';
-import { researchAPI, authAPI, aiAPI } from '../../utils/api';
+import { researchAPI, authAPI, aiAPI, departmentsAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
+
+const TYPE_TO_MIME = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
 
 const SubmitResearch = () => {
   const navigate = useNavigate();
@@ -35,6 +42,7 @@ const SubmitResearch = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [facultyMembers, setFacultyMembers] = useState([]);
   const [file, setFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -45,6 +53,12 @@ const SubmitResearch = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [showChecklistModal, setShowChecklistModal] = useState(false);
+  const [draftSyncMessage, setDraftSyncMessage] = useState('');
+  const [submissionPolicy, setSubmissionPolicy] = useState({
+    maxFileSizeMb: 10,
+    allowedFileTypes: ['pdf'],
+  });
   
   const [formData, setFormData] = useState({
     title: resubmitData?.title || '',
@@ -53,13 +67,115 @@ const SubmitResearch = () => {
     coAuthors: resubmitData?.co_authors || '',
     category: resubmitData?.category || '',
     facultyId: resubmitData?.faculty_id || '',
-    department: resubmitData?.department || ''
+    department: resubmitData?.department || '',
+    departmentId: ''
   });
 
   useEffect(() => {
     fetchCategories();
-    fetchFacultyMembers();
+    fetchDepartments();
+    fetchSubmissionPolicy();
   }, []);
+
+  const fetchSubmissionPolicy = async () => {
+    try {
+      const response = await authAPI.getSubmissionPolicy();
+      const data = response.data || {};
+      setSubmissionPolicy({
+        maxFileSizeMb: Number(data.maxFileSizeMb) || 10,
+        allowedFileTypes: Array.isArray(data.allowedFileTypes) && data.allowedFileTypes.length > 0
+          ? data.allowedFileTypes
+          : ['pdf'],
+      });
+    } catch (err) {
+      console.error('Failed to fetch submission policy:', err);
+    }
+  };
+
+  const getDraftStorageKey = () => {
+    const draftId = resubmitData?.id || 'new';
+    return `submission_draft_${draftId}`;
+  };
+
+  const buildDraftPayload = () => ({
+    formData,
+    selectedCoAuthors,
+    hasNewFile: Boolean(file),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const hasAnyDraftContent = () => {
+    const hasText = [formData.title, formData.abstract, formData.keywords, formData.coAuthors]
+      .some((value) => String(value || '').trim().length > 0);
+    return hasText || Boolean(formData.category) || Boolean(formData.facultyId) || Boolean(formData.departmentId) || selectedCoAuthors.length > 0;
+  };
+
+  const restoreDraft = async () => {
+    const storageKey = getDraftStorageKey();
+
+    try {
+      const localRaw = localStorage.getItem(storageKey);
+      if (localRaw) {
+        const localDraft = JSON.parse(localRaw);
+        if (localDraft?.formData) {
+          setFormData((prev) => ({ ...prev, ...localDraft.formData }));
+        }
+        if (Array.isArray(localDraft?.selectedCoAuthors)) {
+          setSelectedCoAuthors(localDraft.selectedCoAuthors);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to restore local draft:', err);
+    }
+
+    try {
+      const response = await researchAPI.getMyDraft(resubmitData?.id || undefined);
+      const serverDraft = response.data?.draft?.draft_data;
+      if (serverDraft?.formData) {
+        setFormData((prev) => ({ ...prev, ...serverDraft.formData }));
+      }
+      if (Array.isArray(serverDraft?.selectedCoAuthors)) {
+        setSelectedCoAuthors(serverDraft.selectedCoAuthors);
+      }
+      if (serverDraft) {
+        setDraftSyncMessage('Draft restored');
+      }
+    } catch (err) {
+      console.error('Failed to restore server draft:', err);
+    }
+  };
+
+  useEffect(() => {
+    restoreDraft();
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (!hasAnyDraftContent() || loading) return;
+
+      const payload = buildDraftPayload();
+      const storageKey = getDraftStorageKey();
+
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(payload));
+      } catch (err) {
+        console.error('Failed to save local draft:', err);
+      }
+
+      try {
+        await researchAPI.saveMyDraft(resubmitData?.id || null, payload);
+        setDraftSyncMessage(`Draft synced at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      } catch (err) {
+        console.error('Failed to sync draft:', err);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [formData, selectedCoAuthors, file, loading]);
+
+  useEffect(() => {
+    fetchFacultyMembers(formData.department || undefined);
+  }, [formData.department]);
 
   const fetchCategories = async () => {
     try {
@@ -71,9 +187,34 @@ const SubmitResearch = () => {
     }
   };
 
-  const fetchFacultyMembers = async () => {
+  const fetchDepartments = async () => {
     try {
-      const response = await researchAPI.getFacultyMembers();
+      const response = await departmentsAPI.getAll();
+      const list = response.data.departments || [];
+      setDepartments(list);
+
+      if (!formData.departmentId && formData.department) {
+        const normalized = formData.department.toLowerCase();
+        const matched = list.find(
+          (d) => (d.name || '').toLowerCase() === normalized || (d.code || '').toLowerCase() === normalized
+        );
+        if (matched) {
+          setFormData((prev) => ({
+            ...prev,
+            departmentId: matched.id,
+            department: matched.name,
+          }));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch departments:', err);
+      setDepartments([]);
+    }
+  };
+
+  const fetchFacultyMembers = async (department) => {
+    try {
+      const response = await researchAPI.getFacultyMembers(department);
       setFacultyMembers(response.data.facultyMembers || []);
     } catch (err) {
       console.error('Failed to fetch faculty members:', err);
@@ -89,29 +230,75 @@ const SubmitResearch = () => {
       // Simulate upload progress for better UX
       simulateUploadProgress();
       
-      // Extract title and abstract from PDF
-      await extractPdfMetadata(uploadedFile);
+      // Extract title/abstract only for PDF uploads.
+      if (uploadedFile.type === 'application/pdf') {
+        await extractPdfMetadata(uploadedFile);
+      } else {
+        toast('Metadata extraction is available for PDF uploads only.', {
+          icon: 'ℹ️',
+          duration: 2500,
+        });
+      }
     }
   };
+
+
+  const onDropRejected = (rejections) => {
+    const firstError = rejections?.[0]?.errors?.[0];
+    if (!firstError) return;
+
+    if (firstError.code === 'file-too-large') {
+      const message = `File is too large. Max allowed size is ${submissionPolicy.maxFileSizeMb} MB.`;
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
+    if (firstError.code === 'file-invalid-type') {
+      const message = `Invalid file type. Allowed types: ${submissionPolicy.allowedFileTypes.map((type) => `.${type}`).join(', ')}`;
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
+    setError(firstError.message || 'Invalid file upload');
+  };
+
+  const acceptedMimeMap = submissionPolicy.allowedFileTypes.reduce((acc, type) => {
+    const mime = TYPE_TO_MIME[type];
+    if (mime) {
+      acc[mime] = [`.${type}`];
+    }
+    return acc;
+  }, {});
 
   const extractPdfMetadata = async (pdfFile) => {
     setExtracting(true);
     toast.loading('Extracting title and abstract from PDF...', { id: 'extract' });
-    
+
     try {
       const result = await aiAPI.extractPdfMetadata(pdfFile);
-      
-      if (result.success) {
-        setFormData(prev => ({
-          ...prev,
-          title: result.title || prev.title,
-          abstract: result.abstract || prev.abstract
-        }));
-        
-        toast.success('Title and abstract extracted successfully!', { 
+
+      const extractedTitle = result?.data?.title || '';
+      const extractedAbstract = result?.data?.abstract || '';
+
+      setFormData(prev => ({
+        ...prev,
+        title: extractedTitle || prev.title,
+        abstract: extractedAbstract || prev.abstract,
+      }));
+
+      if (extractedTitle || extractedAbstract) {
+        toast.success('Title and abstract extracted successfully!', {
           id: 'extract',
           icon: '✨',
-          duration: 3000 
+          duration: 3000,
+        });
+      } else {
+        toast('No clear metadata found. Please review fields manually.', {
+          id: 'extract',
+          icon: 'ℹ️',
+          duration: 3000,
         });
       }
     } catch (err) {
@@ -140,14 +327,23 @@ const SubmitResearch = () => {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'application/pdf': ['.pdf']
-    },
+    onDropRejected,
+    accept: acceptedMimeMap,
     maxFiles: 1,
-    maxSize: 10 * 1024 * 1024 // 10MB
+    maxSize: submissionPolicy.maxFileSizeMb * 1024 * 1024,
   });
 
   const handleChange = (e) => {
+    if (e.target.name === 'departmentId') {
+      const selectedDepartment = departments.find((dept) => dept.id === e.target.value);
+      setFormData({
+        ...formData,
+        departmentId: e.target.value,
+        department: selectedDepartment?.name || '',
+      });
+      return;
+    }
+
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -181,7 +377,7 @@ const SubmitResearch = () => {
   const addCoAuthor = (student) => {
     if (!selectedCoAuthors.find(a => a.id === student.id)) {
       setSelectedCoAuthors([...selectedCoAuthors, student]);
-      toast.success(`Added ${student.full_name} as co-author`, {
+      toast.success(`Added ${formatFullName(student)} as co-author`, {
         icon: '👤',
         duration: 2000,
       });
@@ -199,8 +395,7 @@ const SubmitResearch = () => {
     });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const submitResearch = async () => {
     setError('');
     setSuccess(false);
     setUploadProgress(0);
@@ -241,13 +436,34 @@ const SubmitResearch = () => {
       submitData.append('category', formData.category);
       submitData.append('facultyId', formData.facultyId);
       submitData.append('department', formData.department);
+      submitData.append('departmentId', formData.departmentId);
       
-      // Add co-author IDs
-      if (selectedCoAuthors.length > 0) {
-        submitData.append('coAuthorIds', JSON.stringify(selectedCoAuthors.map(a => a.id)));
+      const submissionResponse = await researchAPI.submitResearch(submitData);
+      const researchId = submissionResponse?.data?.data?.research?.id || submissionResponse?.data?.research?.id;
+
+      if (researchId && selectedCoAuthors.length > 0) {
+        try {
+          const inviteResponse = await researchAPI.createCoAuthorInvitations(
+            researchId,
+            selectedCoAuthors.map((author) => author.id)
+          );
+          const createdCount = inviteResponse?.data?.data?.created?.length || 0;
+          if (createdCount > 0) {
+            toast.success(`${createdCount} co-author invitation${createdCount > 1 ? 's were' : ' was'} sent`);
+          }
+        } catch (inviteError) {
+          console.error('Co-author invite error:', inviteError);
+          toast.error('Paper submitted, but failed to send one or more co-author invitations');
+        }
       }
 
-      await researchAPI.submitResearch(submitData);
+      const storageKey = getDraftStorageKey();
+      localStorage.removeItem(storageKey);
+      try {
+        await researchAPI.deleteMyDraft(resubmitData?.id || null);
+      } catch (draftDeleteErr) {
+        console.error('Failed to delete server draft after submit:', draftDeleteErr);
+      }
       
       toast.success(resubmitData ? 'Research resubmitted successfully! 🎉' : 'Research submitted successfully! 🎉', {
         duration: 3000,
@@ -268,6 +484,29 @@ const SubmitResearch = () => {
       setLoading(false);
       setUploadProgress(0);
     }
+  };
+
+  const checklistItems = [
+    { key: 'pdf', label: 'PDF file attached', done: Boolean(file || resubmitData?.file_name) },
+    { key: 'title', label: 'Research title provided', done: Boolean(formData.title?.trim()) },
+    { key: 'abstract', label: 'Abstract provided', done: Boolean(formData.abstract?.trim()) },
+    { key: 'faculty', label: 'Adviser selected', done: Boolean(formData.facultyId || resubmitData?.faculty_id) },
+  ];
+
+  const checklistComplete = checklistItems.every((item) => item.done);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setShowChecklistModal(true);
+  };
+
+  const confirmChecklistAndSubmit = async () => {
+    if (!checklistComplete) {
+      toast.error('Please complete all checklist items before submitting.');
+      return;
+    }
+    setShowChecklistModal(false);
+    await submitResearch();
   };
 
   const removeFile = () => {
@@ -370,6 +609,9 @@ const SubmitResearch = () => {
             <div>
               <h2 className="text-xl font-bold text-slate-900">Research Details</h2>
               <p className="text-slate-600 text-sm font-medium">Fill in all required academic information</p>
+              {draftSyncMessage && (
+                <p className="text-xs text-emerald-700 font-semibold mt-1">{draftSyncMessage}</p>
+              )}
             </div>
           </div>
         </div>
@@ -411,7 +653,7 @@ const SubmitResearch = () => {
                 )}
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 text-sm font-semibold">
                   <FileText size={14} />
-                  PDF files only • Max 10MB
+                  {submissionPolicy.allowedFileTypes.map((type) => `.${type}`).join(', ')} • Max {submissionPolicy.maxFileSizeMb}MB
                 </div>
               </div>
             ) : (
@@ -426,7 +668,7 @@ const SubmitResearch = () => {
                       <div className="flex items-center gap-4 text-sm text-slate-600">
                         <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
                         <span className="px-2 py-1 rounded-full bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 text-xs font-bold">
-                          PDF Format
+                          {String(file.name || '').split('.').pop()?.toUpperCase() || 'FILE'} Format
                         </span>
                       </div>
                     </div>
@@ -618,7 +860,7 @@ const SubmitResearch = () => {
                 {facultyMembers && facultyMembers.length > 0 ? (
                   facultyMembers.map((faculty) => (
                     <option key={faculty.id} value={faculty.id} className="text-slate-900">
-                      {faculty.full_name} {faculty.department ? `(${faculty.department})` : ''}
+                      {formatFullName(faculty)} {faculty.department ? `(${faculty.department})` : ''}
                     </option>
                   ))
                 ) : (
@@ -639,26 +881,31 @@ const SubmitResearch = () => {
             )}
           </div>
 
-          {/* Department (Optional) */}
+          {/* Department */}
           <div className="space-y-3">
-            <label htmlFor="department" className="block text-lg font-bold text-slate-900">
-              Department (Optional)
+            <label htmlFor="departmentId" className="block text-lg font-bold text-slate-900">
+              Department
             </label>
             <div className="relative">
-              <input
-                type="text"
-                id="department"
-                name="department"
-                value={formData.department}
+              <select
+                id="departmentId"
+                name="departmentId"
+                value={formData.departmentId}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
-                placeholder="e.g., Computer Science, Engineering"
-              />
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
+              >
+                <option value="">Select department (optional)</option>
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id} className="text-slate-900">
+                    {department.code ? `${department.code} - ` : ''}{department.name}
+                  </option>
+                ))}
+              </select>
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
                 <FolderOpen size={20} className="text-slate-400" />
               </div>
             </div>
-            <p className="text-sm text-slate-500">Specify your academic department if applicable</p>
+            <p className="text-sm text-slate-500">Selecting a department helps route review assignments correctly.</p>
           </div>
 
           {/* Co-Authors - NEW: Search and select students */}
@@ -676,7 +923,7 @@ const SubmitResearch = () => {
                     className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border-2 border-[#1C4D8D]/20 rounded-xl"
                   >
                     <User size={16} className="text-[#1C4D8D]" />
-                    <span className="text-sm font-semibold text-[#1C4D8D]">{author.full_name}</span>
+                    <span className="text-sm font-semibold text-[#1C4D8D]">{formatFullName(author)}</span>
                     <button
                       type="button"
                       onClick={() => removeCoAuthor(author.id)}
@@ -723,7 +970,7 @@ const SubmitResearch = () => {
                         <User size={20} className="text-white" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-semibold text-slate-900">{student.full_name}</p>
+                        <p className="font-semibold text-slate-900">{formatFullName(student)}</p>
                         <p className="text-sm text-slate-500">{student.email}</p>
                         {student.program && (
                           <p className="text-xs text-slate-400">{student.program}</p>
@@ -849,6 +1096,46 @@ const SubmitResearch = () => {
           </div>
         </div>
       </div>
+
+      {showChecklistModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white border border-slate-200 shadow-2xl">
+            <div className="px-6 py-5 border-b border-slate-200">
+              <h3 className="text-xl font-bold text-slate-900">Submission Checklist</h3>
+              <p className="text-sm text-slate-600 mt-1">Confirm all required items before final submission.</p>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              {checklistItems.map((item) => (
+                <div key={item.key} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${item.done ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                  <span className="text-sm font-semibold text-slate-800">{item.label}</span>
+                  {item.done ? (
+                    <CheckCircle size={18} className="text-emerald-600" />
+                  ) : (
+                    <AlertCircle size={18} className="text-amber-600" />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowChecklistModal(false)}
+                className="px-5 py-2.5 rounded-xl border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50"
+              >
+                Review Form
+              </button>
+              <button
+                type="button"
+                onClick={confirmChecklistAndSubmit}
+                disabled={!checklistComplete || loading}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white font-bold disabled:opacity-50"
+              >
+                Confirm & Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -5,6 +5,7 @@
 const supabase = require('../config/supabase');
 const { canAccessPaper } = require('../utils/fileAccess');
 const { sendSuccess, sendError } = require('../utils/response');
+const { buildFullName } = require('../utils/name');
 
 exports.getPaperAnnotations = async (req, res) => {
   try {
@@ -16,7 +17,7 @@ exports.getPaperAnnotations = async (req, res) => {
 
     const { data: annotations, error } = await supabase
       .from('research_comments')
-      .select('id, comment, created_at, user_id, is_internal, user:users!research_comments_user_id_fkey (full_name, role)')
+      .select('id, comment, created_at, user_id, is_internal, parent_id, user:users!research_comments_user_id_fkey (first_name, middle_name, last_name, role)')
       .eq('research_id', id)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -36,13 +37,14 @@ exports.getPaperAnnotations = async (req, res) => {
         }
         return {
           id: item.id, userId: item.user_id, note: body,
+          parentId: item.parent_id || null,
           annotationType: metadata.annotationType || 'comment',
           highlightColor: metadata.highlightColor || null,
           pageNumber: metadata.pageNumber || null,
           sectionLabel: metadata.sectionLabel || null,
           selectedText: metadata.selectedText || null,
           createdAt: item.created_at,
-          reviewerName: item.user?.full_name || 'Reviewer',
+          reviewerName: buildFullName(item.user) || 'Reviewer',
           reviewerRole: item.user?.role || null,
         };
       });
@@ -56,7 +58,7 @@ exports.getPaperAnnotations = async (req, res) => {
 exports.addPaperAnnotation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { note, pageNumber, sectionLabel, selectedText, annotationType, highlightColor } = req.body;
+    const { note, pageNumber, sectionLabel, selectedText, annotationType, highlightColor, parentId } = req.body;
     const validTypes = ['highlight', 'comment', 'note'];
     const type = validTypes.includes(annotationType) ? annotationType : 'comment';
 
@@ -69,19 +71,33 @@ exports.addPaperAnnotation = async (req, res) => {
     if (paperError || !paper) return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
     if (!canAccessPaper(req.user, paper)) return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
 
+    if (parentId) {
+      const { data: parent, error: parentError } = await supabase
+        .from('research_comments')
+        .select('id')
+        .eq('id', parentId)
+        .eq('research_id', id)
+        .maybeSingle();
+
+      if (parentError) throw parentError;
+      if (!parent) {
+        return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Parent annotation not found for this paper' });
+      }
+    }
+
     const metadata = { annotationType: type, highlightColor: highlightColor || null, pageNumber: pageNumber || null, sectionLabel: sectionLabel || null, selectedText: selectedText || null };
     const noteText = note ? String(note).trim() : '';
     const payloadComment = `[[meta]]${JSON.stringify(metadata)}[[/meta]]\n${noteText}`;
 
     const { data, error } = await supabase
       .from('research_comments')
-      .insert({ research_id: id, user_id: req.user.id, comment: payloadComment, is_internal: false })
+      .insert({ research_id: id, user_id: req.user.id, comment: payloadComment, is_internal: false, parent_id: parentId || null })
       .select('id, comment, created_at').single();
     if (error) throw error;
 
     return sendSuccess(res, {
       status: 201, message: 'Annotation added successfully',
-      data: { annotation: { id: data.id, note: noteText, annotationType: type, highlightColor: metadata.highlightColor, pageNumber: metadata.pageNumber, sectionLabel: metadata.sectionLabel, selectedText: metadata.selectedText, createdAt: data.created_at } },
+      data: { annotation: { id: data.id, note: noteText, parentId: parentId || null, annotationType: type, highlightColor: metadata.highlightColor, pageNumber: metadata.pageNumber, sectionLabel: metadata.sectionLabel, selectedText: metadata.selectedText, createdAt: data.created_at } },
     });
   } catch (error) {
     console.error('Add paper annotation error:', error);

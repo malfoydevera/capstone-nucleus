@@ -15,6 +15,7 @@ import {
   Users
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 // Donut Chart Component
 const DonutChart = ({ data, colors, size = 80 }) => {
@@ -127,6 +128,7 @@ const FacultyDashboard = () => {
   });
   const [recentPapers, setRecentPapers] = useState([]);
   const [allPapers, setAllPapers] = useState([]);
+  const [workload, setWorkload] = useState({ avgReviewDays: 0, overdueCount: 0, overdueThresholdDays: 7 });
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -137,9 +139,19 @@ const FacultyDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await researchAPI.getFacultyAssignedPapers();
+      const [response, workloadResponse] = await Promise.all([
+        researchAPI.getFacultyAssignedPapers(),
+        researchAPI.getFacultyWorkloadSummary(),
+      ]);
       const papers = response.data.papers || [];
+      const workloadData = workloadResponse?.data?.summary || {};
+      const overdueThresholdDays = workloadResponse?.data?.overdueThresholdDays || 7;
       setAllPapers(papers);
+      setWorkload({
+        avgReviewDays: Number(workloadData.avgReviewDays || 0),
+        overdueCount: Number(workloadData.overdueCount || 0),
+        overdueThresholdDays,
+      });
 
       const now = new Date();
       const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -161,6 +173,7 @@ const FacultyDashboard = () => {
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
       setStats({ total: 0, pending: 0, approved: 0, rejected: 0, revisionRequired: 0, thisMonth: 0 });
+      setWorkload({ avgReviewDays: 0, overdueCount: 0, overdueThresholdDays: 7 });
       setRecentPapers([]);
       setAllPapers([]);
     } finally {
@@ -182,6 +195,7 @@ const FacultyDashboard = () => {
   const reviewedPapers = stats.approved + stats.rejected + stats.revisionRequired;
   const approvalRate = reviewedPapers > 0 ? Math.round((stats.approved / reviewedPapers) * 100) : 0;
   const pendingPercentage = stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0;
+  const overduePercentage = stats.pending > 0 ? Math.round((workload.overdueCount / stats.pending) * 100) : 0;
 
   const getStatusColor = (status) => {
     const colors = {
@@ -323,16 +337,16 @@ const FacultyDashboard = () => {
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500 mb-1">This Month</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.thisMonth}</p>
-                <p className="text-xs text-slate-400 mt-1">new assignments</p>
+                <p className="text-sm text-slate-500 mb-1">Avg Review Time</p>
+                <p className="text-3xl font-bold text-slate-900">{workload.avgReviewDays}</p>
+                <p className="text-xs text-slate-400 mt-1">days per completed review</p>
               </div>
               <DonutChart data={activityChartData} colors={activityChartColors} size={70} />
             </div>
             <div className="mt-3 flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span className="text-slate-500">{reviewedPapers} Reviewed</span>
+                <span className="text-slate-500">{stats.thisMonth} assignments this month</span>
               </span>
             </div>
           </div>
@@ -372,15 +386,15 @@ const FacultyDashboard = () => {
             </div>
 
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center">
-                <Eye size={24} className="text-amber-600" />
+              <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
+                <Clock size={24} className="text-red-600" />
               </div>
               <div className="flex-1">
-                <p className="text-sm text-slate-500">Pending</p>
-                <p className="text-xl font-bold text-slate-900">{stats.pending} Papers</p>
-                <p className="text-xs text-slate-400">awaiting review</p>
+                <p className="text-sm text-slate-500">Overdue Items</p>
+                <p className="text-xl font-bold text-slate-900">{workload.overdueCount} Papers</p>
+                <p className="text-xs text-slate-400">older than {workload.overdueThresholdDays} days</p>
               </div>
-              <CircularProgress percentage={pendingPercentage || 0} color="#f59e0b" size={52} />
+              <CircularProgress percentage={overduePercentage || 0} color="#ef4444" size={52} />
             </div>
           </div>
         </div>
@@ -464,7 +478,7 @@ const FacultyDashboard = () => {
                           <span className="font-medium text-slate-900 truncate max-w-[200px]">{paper.title}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{paper.users?.full_name || 'Unknown'}</td>
+                      <td className="px-5 py-4 text-sm text-slate-600">{formatFullName(paper.users) || 'Unknown'}</td>
                       <td className="px-5 py-4 text-sm text-slate-500">{formatDate(paper.submission_date || paper.created_at)}</td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(paper.status)}`}>

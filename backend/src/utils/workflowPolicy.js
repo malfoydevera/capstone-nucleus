@@ -9,7 +9,6 @@ const WORKFLOW_POLICY = {
   reject: {
     faculty: ['pending_faculty'],
     dean: ['pending_dean'],
-    program_chair: ['pending_program_chair'],
     staff: ['pending_editor'],
     admin: ['pending_admin', 'under_review'],
   },
@@ -32,6 +31,14 @@ function isWorkflowActionAllowed(action, role, status) {
 }
 
 function validateWorkflowAction(action, user, paper) {
+  if (action === 'reject' && user.role === 'program_chair') {
+    return {
+      ok: false,
+      code: 403,
+      error: 'Program Chair cannot reject directly; request revision or escalate to Dean',
+    };
+  }
+
   if (!isWorkflowActionAllowed(action, user.role, paper.status)) {
     return {
       ok: false,

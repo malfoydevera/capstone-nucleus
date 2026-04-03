@@ -6,10 +6,61 @@
  *   faculty/dean  — 5 min  (added/removed occasionally)
  *   departments   — 10 min (static)
  */
-const NodeCache = require('node-cache');
+let NodeCache;
+try {
+  NodeCache = require('node-cache');
+} catch (_error) {
+  NodeCache = null;
+}
+
+class FallbackCache {
+  constructor() {
+    this.store = new Map();
+  }
+
+  get(key) {
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+      return undefined;
+    }
+
+    return entry.value;
+  }
+
+  set(key, value, ttlSeconds = 0) {
+    const expiresAt = ttlSeconds > 0 ? Date.now() + ttlSeconds * 1000 : null;
+    this.store.set(key, { value, expiresAt });
+    return true;
+  }
+
+  del(keys) {
+    const list = Array.isArray(keys) ? keys : [keys];
+    list.forEach((key) => this.store.delete(key));
+  }
+
+  keys() {
+    const now = Date.now();
+    const result = [];
+
+    for (const [key, entry] of this.store.entries()) {
+      if (entry.expiresAt && now > entry.expiresAt) {
+        this.store.delete(key);
+        continue;
+      }
+      result.push(key);
+    }
+
+    return result;
+  }
+}
 
 // stdTTL: default TTL in seconds.  checkperiod: scan every 60s for expired keys.
-const cache = new NodeCache({ stdTTL: 0, checkperiod: 60, useClones: false });
+const cache = NodeCache
+  ? new NodeCache({ stdTTL: 0, checkperiod: 60, useClones: false })
+  : new FallbackCache();
 
 const TTL = {
   CATEGORIES:   600,  // 10 min

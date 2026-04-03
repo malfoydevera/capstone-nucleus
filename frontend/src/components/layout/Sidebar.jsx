@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { researchAPI } from '../../utils/api';
+import { notificationsAPI, researchAPI } from '../../utils/api';
+import supabase from '../../config/supabase';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -42,7 +43,9 @@ import {
   BellDot,
   ChevronRight,
   MoreVertical,
-  GraduationCap
+  GraduationCap,
+  Trash2,
+  UserPlus
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -54,18 +57,47 @@ const Sidebar = () => {
   const location = useLocation();
 
   useEffect(() => {
-    if (['staff', 'admin', 'faculty', 'dean', 'program_chair'].includes(user?.role)) {
+    if (!user?.id) return;
+
+    fetchNotifications();
+
+    if (['staff', 'admin', 'faculty', 'dean', 'program_chair'].includes(user.role)) {
       fetchBadgeStats();
-      fetchNotifications();
-      
-      const interval = setInterval(() => {
-        fetchBadgeStats();
-        fetchNotifications();
-      }, 10000);
-      
-      return () => clearInterval(interval);
     }
+
+    const interval = setInterval(() => {
+      fetchNotifications();
+      if (['staff', 'admin', 'faculty', 'dean', 'program_chair'].includes(user.role)) {
+        fetchBadgeStats();
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    if (!user?.id || !supabase) return;
+
+    const channel = supabase
+      .channel(`notifications:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   const fetchBadgeStats = async () => {
     try {
@@ -99,12 +131,23 @@ const Sidebar = () => {
 
   const fetchNotifications = async () => {
     try {
-      // Mock notifications for demo
-      const mockNotifications = [
-        { id: 1, type: 'review', message: 'New paper needs review', count: 2 },
-        { id: 2, type: 'update', message: 'System update available', count: 1 }
-      ];
-      setNotifications(mockNotifications);
+      const response = await notificationsAPI.getMine({ limit: 30 });
+      const rows = response.data.notifications || [];
+
+      const groupedUnread = rows.reduce((acc, notif) => {
+        if (notif.is_read) return acc;
+        const key = notif.type || 'general';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+
+      const summary = Object.entries(groupedUnread).map(([type, count], index) => ({
+        id: `${type}-${index}`,
+        type,
+        count,
+      }));
+
+      setNotifications(summary);
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
     }
@@ -180,12 +223,33 @@ const Sidebar = () => {
         badge: stats.adminPending > 0 ? stats.adminPending : null,
         description: 'Review & approve papers'
       },
+      {
+        name: 'Recycle Bin',
+        icon: Trash2,
+        path: '/admin/papers?recycleBin=1',
+        badge: null,
+        description: 'Restore deleted papers'
+      },
       { 
         name: 'Analytics', 
         icon: PieChart, 
         path: '/admin/analytics',
         badge: null,
         description: 'System insights'
+      },
+      {
+        name: 'System Health',
+        icon: Database,
+        path: '/admin/health',
+        badge: null,
+        description: 'API, storage, AI metrics'
+      },
+      {
+        name: 'System Settings',
+        icon: Grid,
+        path: '/admin/settings',
+        badge: null,
+        description: 'Upload and policy controls'
       },
       { 
         name: 'Profile', 
@@ -301,23 +365,23 @@ const Sidebar = () => {
     ],
     program_chair: [
       { 
-        name: 'Dashboard', 
+        name: 'Program Analytics', 
         icon: LayoutDashboard, 
-        path: '/dashboard',
+        path: '/program-chair/analytics',
         badge: null,
-        description: 'Overview'
+        description: 'PC1 and PC3 insights'
       },
       { 
-        name: 'Review Submissions', 
+        name: 'Assign Faculty', 
         icon: FileCheck, 
-        path: '/dean/review',
+        path: '/program-chair/review',
         badge: stats.deanChairPending > 0 ? stats.deanChairPending : null,
-        description: 'Review assigned papers'
+        description: 'PC2 reassignment queue'
       },
       { 
         name: 'Browse Repository', 
         icon: Search, 
-        path: '/dean/repository',
+        path: '/program-chair/repository',
         badge: null,
         description: 'Explore papers'
       },
@@ -338,11 +402,11 @@ const Sidebar = () => {
         description: 'Overview'
       },
       { 
-        name: 'My Research', 
+        name: 'Portfolio', 
         icon: FileText, 
-        path: '/student/my-research',
+        path: '/student/portfolio',
         badge: null,
-        description: 'Your submissions'
+        description: 'Your papers and timeline'
       },
       { 
         name: 'Submit Research', 
@@ -350,6 +414,13 @@ const Sidebar = () => {
         path: '/student/submit',
         badge: null,
         description: 'Upload new paper'
+      },
+      {
+        name: 'Co-author Invites',
+        icon: UserPlus,
+        path: '/student/co-author-invitations',
+        badge: null,
+        description: 'Accept or decline invites'
       },
       { 
         name: 'Browse Repository', 
@@ -370,142 +441,74 @@ const Sidebar = () => {
 
   const menuItems = menuConfig[user?.role] || [];
   const roleConfig = getRoleConfig(user?.role);
-  const RoleIcon = roleConfig.icon;
+  const primaryMenuItems = menuItems.filter((item) => item.path !== '/profile');
+  const roleLabel = (user?.role || 'user').replace('_', ' ').toUpperCase();
 
   const totalNotifications = notifications.reduce((sum, notif) => sum + notif.count, 0);
 
   return (
-    <aside className={`bg-gradient-to-b from-slate-900 to-slate-800 border-r border-slate-700 transition-all duration-300 flex flex-col sticky top-0 h-screen ${isCollapsed ? 'w-20' : 'w-72'}`}>
-      {/* Header */}
-      <div className={`h-20 flex items-center ${isCollapsed ? 'justify-center px-0' : 'justify-between px-6'} border-b border-slate-700/50 relative`}>
-        {!isCollapsed && (
+    <aside className={`bg-[#f5f6f7] border-r border-slate-200 transition-all duration-300 flex flex-col sticky top-0 h-screen ${isCollapsed ? 'w-20' : 'w-72'}`}>
+      <div className={`h-24 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-5 border-b border-slate-200 relative`}>
+        {!isCollapsed ? (
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
-              <Library size={24} className="text-white" />
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-500 flex items-center justify-center shadow-md">
+              <BookOpen size={22} className="text-white" />
             </div>
-            <div>
-              <div className="font-bold text-white text-lg tracking-tight">NUcleus</div>
-              <div className="text-xs text-slate-400 font-medium">NU Dasmariñas</div>
-            </div>
+            <h1 className="text-3xl leading-none tracking-tight font-black text-slate-800">NUCLEUS</h1>
+          </div>
+        ) : (
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-500 flex items-center justify-center shadow-md">
+            <BookOpen size={22} className="text-white" />
           </div>
         )}
-        
-        {isCollapsed && (
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
-            <Library size={24} className="text-white" />
-          </div>
-        )}
-        
-        <button 
-          onClick={() => setIsCollapsed(!isCollapsed)} 
-          className="absolute -right-3 top-8 w-6 h-6 bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] rounded-full flex items-center justify-center text-white shadow-lg hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all duration-300 z-10 border-2 border-slate-900"
+
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="absolute -right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white border border-slate-200 text-slate-500 shadow-md hover:text-slate-700 transition-colors flex items-center justify-center"
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          <ChevronLeft size={14} className={isCollapsed ? '' : 'rotate-180'} />
+          <ChevronLeft size={18} className={isCollapsed ? 'rotate-180' : ''} />
         </button>
       </div>
 
-      {/* User Profile Section */}
       {!isCollapsed && (
-        <div className="px-5 py-6 border-b border-slate-700/50">
-          <div className="flex items-center gap-3">
-            <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${roleConfig.color} flex items-center justify-center shadow-lg`}>
-              <RoleIcon size={24} className="text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white truncate">{user?.fullName || 'User'}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`inline-block px-3 py-1 text-xs font-bold rounded-full border ${roleConfig.badgeColor}`}>
-                  {roleConfig.name}
-                </span>
-                {totalNotifications > 0 && (
-                  <span className="relative">
-                    <Bell size={14} className="text-amber-400" />
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                      {totalNotifications}
-                    </span>
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          {/* Quick Stats */}
-          {(user?.role === 'staff' || user?.role === 'admin') && (
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className="bg-slate-800/50 rounded-lg p-2 text-center">
-                <div className="text-lg font-bold text-white">{stats.staffPending}</div>
-                <div className="text-xs text-slate-400">Pending</div>
-              </div>
-              <div className="bg-slate-800/50 rounded-lg p-2 text-center">
-                <div className="text-lg font-bold text-emerald-400">{stats.adminPending}</div>
-                <div className="text-xs text-slate-400">In Review</div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {isCollapsed && (
-        <div className="px-4 py-6 border-b border-slate-700/50">
-          <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${roleConfig.color} flex items-center justify-center mx-auto`}>
-            <RoleIcon size={20} className="text-white" />
+        <div className="px-6 py-6 border-b border-slate-200">
+          <p className="text-2xl leading-tight font-extrabold text-slate-800 truncate">{user?.fullName || 'User'}</p>
+          <p className="text-base leading-tight text-slate-600 truncate mt-1">{user?.email || 'No email'}</p>
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-200 text-slate-700 font-black text-xs tracking-[0.08em]">
+            <Shield size={14} className="text-emerald-500" />
+            {roleLabel}
           </div>
         </div>
       )}
 
-      {/* Navigation Menu */}
-      <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-2">
-        {menuItems.map((item) => {
-          const isActive = location.pathname.startsWith(item.path);
+      <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
+        {primaryMenuItems.map((item) => {
+          const [itemPathname, itemQuery] = item.path.split('?');
+          const isPathMatch = location.pathname.startsWith(itemPathname);
+          const isQueryMatch = !itemQuery || location.search.includes(itemQuery);
+          const isActive = isPathMatch && isQueryMatch;
           const Icon = item.icon;
-          
           return (
-            <Link 
-              key={item.name} 
-              to={item.path} 
-              className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative ${
-                isActive 
-                  ? 'bg-gradient-to-r from-[#1C4D8D]/20 to-[#2563eb]/20 border border-[#1C4D8D]/30 text-white shadow-lg' 
-                  : 'text-slate-300 hover:bg-slate-800/50 hover:text-white hover:shadow-md'
+            <Link
+              key={item.name}
+              to={item.path}
+              className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} px-3 py-3.5 rounded-2xl transition-colors ${
+                isActive
+                  ? 'bg-white text-slate-800 border border-slate-200 shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
               }`}
             >
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isActive ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb]' : 'bg-slate-800/50 group-hover:bg-slate-700/50'}`}>
-                <Icon size={20} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'} />
-              </div>
-              
-              {!isCollapsed && (
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-sm">{item.name}</span>
-                    {item.badge && (
-                      <span className="px-2 py-0.5 text-xs font-bold bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-slate-400 truncate">{item.description}</div>
-                </div>
-              )}
-              
-              {isCollapsed && item.badge && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-lg">
+              <Icon size={22} className="flex-shrink-0" />
+              {!isCollapsed && <span className="text-lg leading-none font-semibold">{item.name === 'Browse Repository' ? 'Repository' : item.name}</span>}
+              {!isCollapsed && item.badge ? (
+                <span className="ml-auto min-w-[22px] h-[22px] px-1.5 rounded-full bg-rose-500 text-white text-xs font-bold flex items-center justify-center">
                   {item.badge}
                 </span>
-              )}
-              
-              {/* Tooltip for collapsed state */}
+              ) : null}
               {isCollapsed && (
-                <div className="absolute left-full ml-3 px-3 py-2 bg-gradient-to-r from-slate-800 to-slate-900 text-white text-sm rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 shadow-2xl border border-slate-700">
-                  <div className="font-medium">{item.name}</div>
-                  {item.description && (
-                    <div className="text-xs text-slate-300 mt-0.5">{item.description}</div>
-                  )}
-                  {item.badge && (
-                    <div className="mt-1 px-2 py-0.5 text-xs bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-full inline-block">
-                      {item.badge} pending
-                    </div>
-                  )}
+                <div className="absolute left-full ml-3 px-3 py-1.5 bg-slate-800 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+                  {item.name}
                 </div>
               )}
             </Link>
@@ -513,89 +516,53 @@ const Sidebar = () => {
         })}
       </nav>
 
-      {/* Quick Actions */}
-      {!isCollapsed && (
-        <div className="px-4 py-4 border-t border-slate-700/50">
-          <div className="bg-gradient-to-r from-slate-800/50 to-slate-900/50 rounded-xl p-4 border border-slate-700">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles size={16} className="text-amber-400" />
-              <span className="text-sm font-bold text-white">Quick Actions</span>
-            </div>
-            <div className="space-y-2">
-              {user?.role === 'student' && (
-                <>
-                  <button 
-                    onClick={() => navigate('/student/submit')}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] hover:from-[#163a6b] hover:to-[#1C4D8D] text-white rounded-lg transition-all duration-200"
-                  >
-                    <PlusCircle size={16} />
-                    Submit Paper
-                  </button>
-                  <button 
-                    onClick={() => navigate('/student/browse')}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-slate-300 rounded-lg transition-all duration-200 border border-slate-700"
-                  >
-                    <Search size={16} />
-                    Browse Papers
-                  </button>
-                </>
-              )}
-              {(user?.role === 'staff' || user?.role === 'admin') && (
-                <button 
-                  onClick={() => navigate(user.role === 'staff' ? '/staff/review' : '/admin/papers')}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white rounded-lg transition-all duration-200"
-                >
-                  <FileCheck size={16} />
-                  Review Papers
-                  {(stats.staffPending > 0 || stats.adminPending > 0) && (
-                    <span className="ml-auto px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
-                      {user.role === 'staff' ? stats.staffPending : stats.adminPending}
-                    </span>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="border-t border-slate-200 px-4 py-5 space-y-1">
+        <Link
+          to="/notifications"
+          className={`w-full relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} px-3 py-3.5 rounded-2xl transition-colors ${
+            location.pathname.startsWith('/notifications')
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          }`}
+        >
+          <Bell size={22} />
+          {!isCollapsed && <span className="text-lg leading-none font-semibold">Notifications</span>}
+          {totalNotifications > 0 && (
+            <span className="absolute right-3 min-w-[22px] h-[22px] px-1.5 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">
+              {totalNotifications}
+            </span>
+          )}
+        </Link>
 
-      {/* Bottom Section */}
-      <div className="border-t border-slate-700/50">
-        {/* Help & Support */}
-        <div className="p-4">
-          <Link
-            to="/help"
-            className={`flex items-center gap-3 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800/50 rounded-xl transition-all duration-200 group relative ${isCollapsed ? 'justify-center' : ''}`}
-          >
-            <div className="w-10 h-10 rounded-lg bg-slate-800/50 flex items-center justify-center group-hover:bg-slate-700/50">
-              <HelpCircle size={20} />
+        <Link
+          to="/profile"
+          className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} px-3 py-3.5 rounded-2xl transition-colors ${
+            location.pathname.startsWith('/profile')
+              ? 'bg-white text-slate-800 border border-slate-200 shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          }`}
+        >
+          <User size={22} />
+          {!isCollapsed && <span className="text-lg leading-none font-semibold">Profile</span>}
+          {isCollapsed && (
+            <div className="absolute left-full ml-3 px-3 py-1.5 bg-slate-800 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+              Profile
             </div>
-            {!isCollapsed && <span className="font-medium">Help Center</span>}
-            {isCollapsed && (
-              <div className="absolute left-full ml-3 px-3 py-2 bg-gradient-to-r from-slate-800 to-slate-900 text-white text-sm rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 shadow-2xl border border-slate-700">
-                Help Center
-              </div>
-            )}
-          </Link>
-        </div>
+          )}
+        </Link>
 
-        {/* Logout Button */}
-        <div className="p-4 pt-0">
-          <button 
-            onClick={handleLogout} 
-            className={`flex items-center gap-3 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-gradient-to-r hover:from-red-500/10 hover:to-pink-500/10 rounded-xl transition-all duration-200 group relative w-full ${isCollapsed ? 'justify-center' : ''}`}
-          >
-            <div className="w-10 h-10 rounded-lg bg-slate-800/50 flex items-center justify-center group-hover:bg-gradient-to-br group-hover:from-red-500/20 group-hover:to-pink-500/20">
-              <LogOut size={20} />
+        <button
+          onClick={handleLogout}
+          className={`group relative w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} px-3 py-3.5 rounded-2xl text-rose-600 hover:bg-rose-50 transition-colors`}
+        >
+          <LogOut size={22} />
+          {!isCollapsed && <span className="text-lg leading-none font-semibold">Sign Out</span>}
+          {isCollapsed && (
+            <div className="absolute left-full ml-3 px-3 py-1.5 bg-slate-800 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+              Sign Out
             </div>
-            {!isCollapsed && <span className="font-medium">Sign Out</span>}
-            {isCollapsed && (
-              <div className="absolute left-full ml-3 px-3 py-2 bg-gradient-to-r from-slate-800 to-slate-900 text-white text-sm rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 shadow-2xl border border-slate-700">
-                Sign Out
-              </div>
-            )}
-          </button>
-        </div>
+          )}
+        </button>
       </div>
     </aside>
   );

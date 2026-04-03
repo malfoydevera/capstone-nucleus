@@ -3,6 +3,7 @@ const supabase = require('../config/supabase');
 const PUBLIC_STATUSES = new Set(['approved', 'published']);
 const SIGNED_URL_TTL_SECONDS = Number.parseInt(process.env.SIGNED_URL_TTL_SECONDS || '3600', 10);
 const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'research-papers';
+const seenSignedUrlErrors = new Set();
 
 function isPublicPaperStatus(status) {
   return PUBLIC_STATUSES.has(status);
@@ -40,16 +41,52 @@ function extractStoragePathFromUrl(fileUrl) {
   }
 }
 
+function normalizeStoragePath(input) {
+  if (!input || typeof input !== 'string') return null;
+
+  let value = input.trim();
+  if (!value) return null;
+
+  // Legacy rows may store a full URL in file_storage_path. Try extracting a bucket-relative path.
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    const extracted = extractStoragePathFromUrl(value);
+    return extracted || null;
+  }
+
+  // Remove query string if any leaked into stored path.
+  value = value.split('?')[0];
+
+  // Normalize common accidental prefixes.
+  if (value.startsWith(`/${STORAGE_BUCKET}/`)) {
+    value = value.slice(STORAGE_BUCKET.length + 2);
+  }
+
+  if (value.startsWith(`${STORAGE_BUCKET}/`)) {
+    value = value.slice(STORAGE_BUCKET.length + 1);
+  }
+
+  // Strip leading slashes and decode URL-encoded path.
+  value = value.replace(/^\/+/, '');
+  try {
+    value = decodeURIComponent(value);
+  } catch (_err) {
+    // Keep original value if it is not valid URI-encoded text.
+  }
+
+  return value || null;
+}
+
 async function createSignedUrl(storagePath, expiresInSeconds = SIGNED_URL_TTL_SECONDS) {
-  if (!storagePath) return null;
+  const normalizedPath = normalizeStoragePath(storagePath);
+  if (!normalizedPath) return null;
 
   if (typeof supabase.createSignedFileUrl === 'function') {
-    return supabase.createSignedFileUrl(storagePath, expiresInSeconds, STORAGE_BUCKET);
+    return supabase.createSignedFileUrl(normalizedPath, expiresInSeconds, STORAGE_BUCKET);
   }
 
   const { data, error } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .createSignedUrl(storagePath, expiresInSeconds);
+    .createSignedUrl(normalizedPath, expiresInSeconds);
 
   if (error) {
     throw error;
@@ -65,7 +102,7 @@ async function resolvePaperFileUrl(paper) {
     return paper.file_url || null;
   }
 
-  const storagePath = paper.file_storage_path || extractStoragePathFromUrl(paper.file_url);
+  const storagePath = normalizeStoragePath(paper.file_storage_path) || extractStoragePathFromUrl(paper.file_url);
 
   if (!storagePath) {
     return paper.file_url || null;
@@ -75,7 +112,12 @@ async function resolvePaperFileUrl(paper) {
     const signedUrl = await createSignedUrl(storagePath);
     return signedUrl || paper.file_url || null;
   } catch (error) {
-    console.error('Failed to create signed URL:', error.message);
+    // Avoid spamming identical errors every polling cycle.
+    const key = `${paper.id || 'unknown'}:${storagePath}:${error.message}`;
+    if (!seenSignedUrlErrors.has(key)) {
+      seenSignedUrlErrors.add(key);
+      console.error('Failed to create signed URL:', error.message, { paperId: paper.id, storagePath });
+    }
     return paper.file_url || null;
   }
 }

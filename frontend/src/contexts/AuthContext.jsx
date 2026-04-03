@@ -62,11 +62,23 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (email, password, fullName, role, program, department) => {
+  const register = async ({ email, password, firstName, middleName, lastName, role, program, programId, department, departmentId }) => {
     try {
       setError(null);
-      // Pass 'program' into the object sent to the API
-      const response = await authAPI.register({ email, password, fullName, role, program, department });
+      const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      const response = await authAPI.register({
+        email,
+        password,
+        firstName,
+        middleName,
+        lastName,
+        fullName,
+        role,
+        program,
+        programId,
+        department,
+        departmentId,
+      });
       const { token, user } = response.data;
       sessionStorage.setItem('token', token);
       localStorage.removeItem('token');

@@ -18,6 +18,7 @@ import {
   Users
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 const DeanChairReview = () => {
   const navigate = useNavigate();
@@ -85,7 +86,7 @@ const DeanChairReview = () => {
       filtered = filtered.filter(p =>
         p.title?.toLowerCase().includes(lc) ||
         p.abstract?.toLowerCase().includes(lc) ||
-        p.users?.full_name?.toLowerCase().includes(lc) ||
+        formatFullName(p.users).toLowerCase().includes(lc) ||
         p.keywords?.some(k => k.toLowerCase().includes(lc))
       );
     }
@@ -332,7 +333,7 @@ const DeanChairReview = () => {
                       <div className="flex items-center gap-2">
                         <User size={16} className="text-slate-400" />
                         <span className="text-slate-700 font-semibold">
-                          {paper.users?.full_name || 'Unknown Author'}
+                          {formatFullName(paper.users) || 'Unknown Author'}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">

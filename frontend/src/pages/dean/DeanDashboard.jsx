@@ -6,12 +6,15 @@ import {
   BookOpen, Award, Users, AlertTriangle, Shield, Activity,
   BarChart3, Search, Bell
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { notificationsAPI, researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 const DeanDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [monitorData, setMonitorData] = useState(null);
+  const [deptComparison, setDeptComparison] = useState(null);
+  const [escalationAlerts, setEscalationAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { fetchDashboard(); }, []);
@@ -19,8 +22,18 @@ const DeanDashboard = () => {
   const fetchDashboard = async () => {
     try {
       setLoading(true);
-      const res = await researchAPI.getDeanActivityMonitor();
-      setMonitorData(res.data);
+      const [monitorRes, notificationRes, comparisonRes] = await Promise.all([
+        researchAPI.getDeanActivityMonitor(),
+        notificationsAPI.getMine({ limit: 80 }),
+        researchAPI.getDepartmentComparison(),
+      ]);
+
+      setMonitorData(monitorRes.data);
+      setDeptComparison(comparisonRes.data);
+      const escalation = (notificationRes.data.notifications || [])
+        .filter((item) => item.type === 'escalation_alert')
+        .slice(0, 5);
+      setEscalationAlerts(escalation);
     } catch (error) {
       console.error('Failed to fetch Dean dashboard:', error);
     } finally {
@@ -44,6 +57,52 @@ const DeanDashboard = () => {
     return map[action] || { bg: 'bg-slate-100 text-slate-700', label: action };
   };
 
+  const s = monitorData?.summary || {};
+  const inactivityAlerts = monitorData?.inactivityAlerts || [];
+  const recentLogs = (monitorData?.auditLogs || []).slice(0, 10);
+  const papers = monitorData?.papers || [];
+
+  const trendSeries = useMemo(() => {
+    const months = [];
+    const now = new Date();
+
+    for (let i = 5; i >= 0; i -= 1) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        label: d.toLocaleDateString('en-US', { month: 'short' }),
+        submissions: 0,
+        approved: 0,
+      });
+    }
+
+    const monthMap = new Map(months.map((m) => [m.key, m]));
+
+    papers.forEach((paper) => {
+      const created = new Date(paper.created_at || paper.submission_date || paper.updated_at);
+      if (!Number.isNaN(created.getTime())) {
+        const key = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`;
+        const row = monthMap.get(key);
+        if (row) row.submissions += 1;
+      }
+
+      if (paper.status === 'approved' || paper.status === 'published') {
+        const approvedDate = new Date(paper.published_date || paper.updated_at || paper.created_at);
+        if (!Number.isNaN(approvedDate.getTime())) {
+          const key = `${approvedDate.getFullYear()}-${String(approvedDate.getMonth() + 1).padStart(2, '0')}`;
+          const row = monthMap.get(key);
+          if (row) row.approved += 1;
+        }
+      }
+    });
+
+    return months;
+  }, [papers]);
+
+  const trendMax = Math.max(1, ...trendSeries.map((m) => Math.max(m.submissions, m.approved)));
+  const departmentRows = deptComparison?.departments || [];
+  const departmentMax = Math.max(1, ...departmentRows.map((row) => row.total || 0));
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
@@ -55,10 +114,6 @@ const DeanDashboard = () => {
       </div>
     );
   }
-
-  const s = monitorData?.summary || {};
-  const inactivityAlerts = monitorData?.inactivityAlerts || [];
-  const recentLogs = (monitorData?.auditLogs || []).slice(0, 10);
 
   return (
     <div className="min-h-screen bg-slate-50/50">
@@ -95,7 +150,33 @@ const DeanDashboard = () => {
                 <div key={paper.id} onClick={() => navigate(`/dean/review/${paper.id}`)} className="bg-white rounded-xl p-4 border border-amber-200 flex items-center justify-between cursor-pointer hover:shadow-md transition-all">
                   <div>
                     <p className="font-bold text-slate-900 line-clamp-1">{paper.title}</p>
-                    <p className="text-sm text-slate-500">{paper.users?.full_name} &middot; Pending for <span className="font-bold text-amber-700">{paper.daysStale} days</span></p>
+                    <p className="text-sm text-slate-500">{formatFullName(paper.users) || 'Unknown'} &middot; Pending for <span className="font-bold text-amber-700">{paper.daysStale} days</span></p>
+                  </div>
+                  <ChevronRight size={18} className="text-slate-400" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Escalation Notification Alerts */}
+        {escalationAlerts.length > 0 && (
+          <div className="mb-8 bg-gradient-to-r from-rose-50 to-red-50 border-2 border-rose-200 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Bell size={22} className="text-rose-600" />
+              <h2 className="text-lg font-bold text-rose-800">Escalation Notifications</h2>
+              <span className="px-2 py-0.5 bg-rose-200 text-rose-800 text-xs font-bold rounded-full">{escalationAlerts.length}</span>
+            </div>
+            <div className="space-y-3">
+              {escalationAlerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  onClick={() => alert.research_id && navigate(`/dean/review/${alert.research_id}`)}
+                  className="bg-white rounded-xl p-4 border border-rose-200 flex items-center justify-between cursor-pointer hover:shadow-md transition-all"
+                >
+                  <div>
+                    <p className="font-bold text-slate-900 line-clamp-1">{alert.title || 'Escalation Alert'}</p>
+                    <p className="text-sm text-slate-600 line-clamp-1">{alert.message}</p>
                   </div>
                   <ChevronRight size={18} className="text-slate-400" />
                 </div>
@@ -136,6 +217,87 @@ const DeanDashboard = () => {
           <button onClick={() => navigate('/dean/audit-logs')} className="bg-gradient-to-r from-slate-700 to-slate-800 text-white px-6 py-4 rounded-2xl font-bold flex items-center gap-3 hover:from-slate-800 hover:to-slate-900 transition-all shadow-lg">
             <Shield size={24} /> Audit Logs <ChevronRight className="ml-auto" size={20} />
           </button>
+        </div>
+
+        {/* Cross-Department Comparison */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-10">
+          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Users size={20} className="text-violet-600" />
+              <h2 className="text-lg font-bold text-slate-900">Cross-Department Comparison</h2>
+            </div>
+            <div className="text-xs text-slate-500 font-semibold">
+              {deptComparison?.totalDepartments || 0} departments · {deptComparison?.totalPapers || 0} papers
+            </div>
+          </div>
+
+          {departmentRows.length === 0 ? (
+            <div className="p-12 text-center text-slate-400">
+              <Users size={34} className="mx-auto mb-3" />
+              <p className="font-medium">No department comparison data available</p>
+            </div>
+          ) : (
+            <div className="p-6 space-y-4">
+              {departmentRows.slice(0, 8).map((row) => (
+                <div key={row.department} className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="font-bold text-slate-900 line-clamp-1">{row.department}</p>
+                    <div className="text-xs text-slate-600 flex items-center gap-3">
+                      <span>Total: <strong>{row.total}</strong></span>
+                      <span>Approval: <strong>{row.approvalRate}%</strong></span>
+                      <span>Avg turnaround: <strong>{row.avgTurnaroundDays}d</strong></span>
+                    </div>
+                  </div>
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-3">
+                    <div
+                      className="h-full bg-gradient-to-r from-violet-500 to-purple-600 rounded-full"
+                      style={{ width: `${Math.max(6, (row.total / departmentMax) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                    <span className="px-2 py-1 rounded bg-sky-50 text-sky-700 font-semibold">Pending: {row.pending}</span>
+                    <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold">Approved: {row.approved}</span>
+                    <span className="px-2 py-1 rounded bg-red-50 text-red-700 font-semibold">Rejected: {row.rejected}</span>
+                    <span className="px-2 py-1 rounded bg-amber-50 text-amber-700 font-semibold">Revision: {row.revisionRequired}</span>
+                    <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-700 font-semibold">To Editor: {row.forwardedToEditor}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Submission Trend */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-10">
+          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
+            <BarChart3 size={20} className="text-violet-600" />
+            <h2 className="text-lg font-bold text-slate-900">Submission Trend (Last 6 Months)</h2>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-6 gap-3 items-end h-56">
+              {trendSeries.map((point) => (
+                <div key={point.key} className="flex flex-col items-center gap-2">
+                  <div className="w-full flex items-end justify-center gap-1 h-44">
+                    <div
+                      className="w-4 rounded-t-md bg-blue-500"
+                      style={{ height: `${Math.max(6, (point.submissions / trendMax) * 160)}px` }}
+                      title={`Submissions: ${point.submissions}`}
+                    />
+                    <div
+                      className="w-4 rounded-t-md bg-emerald-500"
+                      style={{ height: `${Math.max(6, (point.approved / trendMax) * 160)}px` }}
+                      title={`Approved: ${point.approved}`}
+                    />
+                  </div>
+                  <p className="text-xs font-semibold text-slate-600">{point.label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center gap-6 text-xs text-slate-600">
+              <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-blue-500" /> Submissions</span>
+              <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-emerald-500" /> Approved</span>
+            </div>
+          </div>
         </div>
 
         {/* Recent Audit Trail */}

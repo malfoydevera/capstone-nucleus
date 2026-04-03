@@ -23,10 +23,13 @@ import {
   Highlighter,
   StickyNote,
   Trash2,
-  MessageSquare
+  MessageSquare,
+  CornerDownRight
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import supabase from '../../config/supabase';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
+import { formatFullName } from '../../utils/names';
 
 const ReviewDetail = () => {
   const { id } = useParams();
@@ -38,16 +41,52 @@ const ReviewDetail = () => {
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [showReturnToAuthorModal, setShowReturnToAuthorModal] = useState(false);
+  const [showMetadataModal, setShowMetadataModal] = useState(false);
+  const [showChecklistModal, setShowChecklistModal] = useState(false);
   const [comments, setComments] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectionCategory, setRejectionCategory] = useState('methodology');
   const [revisionNotes, setRevisionNotes] = useState('');
+  const [returnToAuthorNotes, setReturnToAuthorNotes] = useState('');
+  const [metadataForm, setMetadataForm] = useState({
+    title: '',
+    abstract: '',
+    keywords: '',
+    category: '',
+    coAuthors: '',
+  });
   const [deanChairList, setDeanChairList] = useState([]);
   const [selectedTargetId, setSelectedTargetId] = useState('');
   const [selectedTargetRole, setSelectedTargetRole] = useState('');
   const [showBypassModal, setShowBypassModal] = useState(false);
   const [bypassReason, setBypassReason] = useState('');
   const [bypassTarget, setBypassTarget] = useState('approved');
+  const [showDeadlineModal, setShowDeadlineModal] = useState(false);
+  const [deadlineValue, setDeadlineValue] = useState('');
+  const [showAssignFacultyModal, setShowAssignFacultyModal] = useState(false);
+  const [facultyMembers, setFacultyMembers] = useState([]);
+  const [selectedFacultyId, setSelectedFacultyId] = useState('');
+  const [assignNotes, setAssignNotes] = useState('');
+  const [editorialChecklist, setEditorialChecklist] = useState({
+    formatting: false,
+    citations: false,
+    references: false,
+  });
+  const [editorialNotes, setEditorialNotes] = useState('');
+  const [editorialCompletedAt, setEditorialCompletedAt] = useState(null);
+  const [plagiarism, setPlagiarism] = useState({
+    status: 'not_checked',
+    score: null,
+    checkedAt: null,
+    provider: null,
+    summary: null,
+    report: null,
+  });
+  const [plagiarismLoading, setPlagiarismLoading] = useState(false);
   const [annotations, setAnnotations] = useState([]);
+  const [replyingToId, setReplyingToId] = useState(null);
+  const [replyText, setReplyText] = useState('');
 
   // Fetch Dean/Program Chair members when adviser is reviewing
   useEffect(() => {
@@ -69,12 +108,106 @@ const ReviewDetail = () => {
     return () => clearInterval(interval);
   }, [id]);
 
+  useEffect(() => {
+    if (!id || !supabase) return;
+
+    const channel = supabase
+      .channel(`research_comments:${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'research_comments',
+          filter: `research_id=eq.${id}`,
+        },
+        async () => {
+          try {
+            const response = await researchAPI.getAnnotations(id);
+            setAnnotations(response.data.annotations || []);
+          } catch (error) {
+            console.error('Realtime annotation refresh failed:', error);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [id]);
+
+  useEffect(() => {
+    const canAssignBackToFaculty = ['dean', 'program_chair'].includes(user?.role);
+    if (!canAssignBackToFaculty) return;
+
+    const loadFaculty = async () => {
+      try {
+        const scoped = await researchAPI.getFacultyMembers(paper?.department || undefined);
+        let members = scoped?.data?.facultyMembers || [];
+
+        if ((!members || members.length === 0) && paper?.department) {
+          const fallback = await researchAPI.getFacultyMembers();
+          members = fallback?.data?.facultyMembers || [];
+        }
+
+        setFacultyMembers(members);
+      } catch (err) {
+        console.error('Failed to load faculty members:', err);
+      }
+    };
+
+    loadFaculty();
+  }, [paper?.department, user?.role]);
+
   const fetchPaperDetail = async () => {
     try {
       const response = await researchAPI.getResearchById(id);
       setPaper(response.data.paper);
+      setMetadataForm({
+        title: response.data.paper?.title || '',
+        abstract: response.data.paper?.abstract || '',
+        keywords: (response.data.paper?.keywords || []).join(', '),
+        category: response.data.paper?.category || '',
+        coAuthors: response.data.paper?.co_authors || '',
+      });
+
+      if (user?.role === 'staff' || user?.role === 'admin') {
+        try {
+          const checklistResponse = await researchAPI.getEditorialChecklist(id);
+          const checklist = checklistResponse?.data?.checklist;
+          if (checklist?.items) {
+            setEditorialChecklist({
+              formatting: Boolean(checklist.items.formatting),
+              citations: Boolean(checklist.items.citations),
+              references: Boolean(checklist.items.references),
+            });
+          }
+          setEditorialNotes(checklist?.notes || '');
+          setEditorialCompletedAt(checklist?.completed_at || null);
+        } catch (checklistError) {
+          console.error('Failed to fetch editorial checklist:', checklistError);
+        }
+      }
+
       const annotationResponse = await researchAPI.getAnnotations(id);
       setAnnotations(annotationResponse.data.annotations || []);
+
+      if (['staff', 'admin'].includes(user?.role)) {
+        try {
+          const plagResponse = await researchAPI.getPlagiarismReport(id);
+          setPlagiarism(plagResponse?.data?.plagiarism || {
+            status: 'not_checked',
+            score: null,
+            checkedAt: null,
+            provider: null,
+            summary: null,
+            report: null,
+          });
+        } catch (plagError) {
+          console.error('Failed to fetch plagiarism report:', plagError);
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch paper:', error);
     } finally {
@@ -112,11 +245,43 @@ const ReviewDetail = () => {
     }
   }, [id]);
 
+  const handleSubmitReply = useCallback(async (annotation) => {
+    const trimmed = replyText.trim();
+    if (!trimmed) return;
+
+    try {
+      await researchAPI.addAnnotation(id, {
+        note: trimmed,
+        pageNumber: annotation.pageNumber || null,
+        selectedText: '',
+        annotationType: 'comment',
+        highlightColor: null,
+        parentId: annotation.id,
+      });
+      const res = await researchAPI.getAnnotations(id);
+      setAnnotations(res.data.annotations || []);
+      setReplyingToId(null);
+      setReplyText('');
+      toast.success('Reply posted');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to post reply');
+    }
+  }, [id, replyText]);
+
   const handleApprove = async () => {
     if (!comments.trim()) {
       toast.error('Please provide approval comments', { icon: '📝' });
       return;
     }
+
+    if (user?.role === 'staff') {
+      const checklistComplete = editorialChecklist.formatting && editorialChecklist.citations && editorialChecklist.references;
+      if (!checklistComplete) {
+        toast.error('Complete the editorial checklist before approving this paper', { icon: '✅' });
+        return;
+      }
+    }
+
     // Adviser must pick a Dean or Program Chair
     if (user?.role === 'faculty' && (!selectedTargetId || !selectedTargetRole)) {
       toast.error('Please select a Dean or Program Chair to forward the paper to', { icon: '👤' });
@@ -159,7 +324,7 @@ const ReviewDetail = () => {
       const annotationSummary = annotations.length > 0
         ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
         : '';
-      await researchAPI.rejectResearch(id, `${rejectionReason}${annotationSummary}`);
+      await researchAPI.rejectResearch(id, `${rejectionReason}${annotationSummary}`, rejectionCategory);
       toast.success('Research rejected', { id: loadingToast, icon: '❌' });
       const reviewPath = user?.role === 'faculty' ? '/faculty/review'
         : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
@@ -170,6 +335,8 @@ const ReviewDetail = () => {
     } finally {
       setActionLoading(false);
       setShowRejectModal(false);
+      setRejectionReason('');
+      setRejectionCategory('methodology');
     }
   };
 
@@ -205,6 +372,133 @@ const ReviewDetail = () => {
     } finally {
       setActionLoading(false);
       setShowRevisionModal(false);
+    }
+  };
+
+  const handleAssignFacultyReviewer = async () => {
+    if (!selectedFacultyId) {
+      toast.error('Please select a faculty reviewer', { icon: '👤' });
+      return;
+    }
+
+    setActionLoading(true);
+    const loadingToast = toast.loading('Assigning faculty reviewer...');
+    try {
+      await researchAPI.assignFacultyReviewer(id, selectedFacultyId, assignNotes.trim());
+      toast.success('Faculty reviewer assigned successfully', { id: loadingToast });
+      setShowAssignFacultyModal(false);
+      setAssignNotes('');
+      setSelectedFacultyId('');
+      navigate('/dean/review');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to assign faculty reviewer', { id: loadingToast });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSetReviewDeadline = async () => {
+    if (!deadlineValue) {
+      toast.error('Please select a deadline date and time', { icon: '⏰' });
+      return;
+    }
+
+    setActionLoading(true);
+    const loadingToast = toast.loading('Setting review deadline...');
+    try {
+      await researchAPI.setProgramChairReviewDeadline(id, new Date(deadlineValue).toISOString());
+      toast.success('Review deadline set successfully', { id: loadingToast });
+      setShowDeadlineModal(false);
+      fetchPaperDetail();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to set review deadline', { id: loadingToast });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReturnToAuthor = async () => {
+    if (!returnToAuthorNotes.trim()) {
+      toast.error('Please provide return notes for the author', { icon: '📝' });
+      return;
+    }
+
+    setActionLoading(true);
+    const loadingToast = toast.loading('Returning paper to author...');
+    try {
+      await researchAPI.returnToAuthor(id, returnToAuthorNotes.trim());
+      toast.success('Paper returned to author successfully', { id: loadingToast, duration: 3000 });
+      setShowReturnToAuthorModal(false);
+      setReturnToAuthorNotes('');
+      navigate('/staff/review');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to return paper to author', { id: loadingToast });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCorrectMetadata = async () => {
+    if (!metadataForm.title.trim() || !metadataForm.abstract.trim()) {
+      toast.error('Title and abstract are required', { icon: '📝' });
+      return;
+    }
+
+    setActionLoading(true);
+    const loadingToast = toast.loading('Saving metadata corrections...');
+    try {
+      const payload = {
+        title: metadataForm.title.trim(),
+        abstract: metadataForm.abstract.trim(),
+        keywords: metadataForm.keywords,
+        category: metadataForm.category,
+        co_authors: metadataForm.coAuthors,
+      };
+
+      const response = await researchAPI.correctMetadata(id, payload);
+      setPaper(response.data.paper);
+      setShowMetadataModal(false);
+      toast.success('Metadata corrected successfully', { id: loadingToast, duration: 3000 });
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to correct metadata', { id: loadingToast });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSaveEditorialChecklist = async () => {
+    setActionLoading(true);
+    const loadingToast = toast.loading('Saving editorial checklist...');
+
+    try {
+      const payload = {
+        items: editorialChecklist,
+        notes: editorialNotes,
+      };
+
+      const response = await researchAPI.saveEditorialChecklist(id, payload);
+      const saved = response?.data?.checklist;
+      setEditorialCompletedAt(saved?.completed_at || null);
+      toast.success(response?.message || 'Editorial checklist saved', { id: loadingToast });
+      setShowChecklistModal(false);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to save editorial checklist', { id: loadingToast });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRunPlagiarismScan = async () => {
+    setPlagiarismLoading(true);
+    const loadingToast = toast.loading('Running plagiarism scan...');
+    try {
+      const response = await researchAPI.runPlagiarismScan(id);
+      setPlagiarism(response?.data?.plagiarism || plagiarism);
+      toast.success('Plagiarism scan completed', { id: loadingToast });
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to run plagiarism scan', { id: loadingToast });
+    } finally {
+      setPlagiarismLoading(false);
     }
   };
 
@@ -468,7 +762,7 @@ const ReviewDetail = () => {
                   <User size={20} className="text-blue-600 mt-1" />
                   <div>
                     <p className="text-sm font-semibold text-slate-900">Primary Author</p>
-                    <p className="text-lg font-bold text-slate-900">{paper.users?.full_name || 'Researcher'}</p>
+                    <p className="text-lg font-bold text-slate-900">{formatFullName(paper.users) || 'Researcher'}</p>
                     <p className="text-sm text-slate-600">{paper.users?.email}</p>
                   </div>
                 </div>
@@ -571,7 +865,10 @@ const ReviewDetail = () => {
                       <div key={pageLabel}>
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">{pageLabel}</div>
                         <div className="space-y-2">
-                          {pageAnnotations.map(annotation => {
+                          {pageAnnotations.filter((annotation) => !annotation.parentId).map(annotation => {
+                            const replies = pageAnnotations
+                              .filter((item) => item.parentId === annotation.id)
+                              .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
                             const tc = ANNOTATION_TYPES[annotation.annotationType] || ANNOTATION_TYPES.comment;
                             const TypeIcon = tc.icon;
                             return (
@@ -601,6 +898,55 @@ const ReviewDetail = () => {
                                     </button>
                                   )}
                                 </div>
+
+                                <div className="mt-2 flex items-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      if (replyingToId === annotation.id) {
+                                        setReplyingToId(null);
+                                        setReplyText('');
+                                      } else {
+                                        setReplyingToId(annotation.id);
+                                        setReplyText('');
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-[#1C4D8D]"
+                                  >
+                                    <CornerDownRight size={12} /> Reply
+                                  </button>
+                                </div>
+
+                                {replyingToId === annotation.id && (
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={replyText}
+                                      onChange={(e) => setReplyText(e.target.value)}
+                                      placeholder="Write a reply..."
+                                      className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                                    />
+                                    <button
+                                      onClick={() => handleSubmitReply(annotation)}
+                                      className="px-3 py-2 bg-[#1C4D8D] text-white rounded-lg text-xs font-bold"
+                                    >
+                                      Send
+                                    </button>
+                                  </div>
+                                )}
+
+                                {replies.length > 0 && (
+                                  <div className="mt-3 space-y-2 border-l-2 border-slate-200 pl-3">
+                                    {replies.map((reply) => (
+                                      <div key={reply.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                                        <div className="flex items-center justify-between gap-2 mb-1">
+                                          <span className="text-xs font-bold text-slate-600">{reply.reviewerName}</span>
+                                          <span className="text-xs text-slate-400">{new Date(reply.createdAt).toLocaleString()}</span>
+                                        </div>
+                                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{reply.note}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -648,9 +994,74 @@ const ReviewDetail = () => {
                 <button onClick={() => setShowRevisionModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-all font-bold shadow-lg">
                   <AlertCircle size={20} /> Request Revision
                 </button>
-                <button onClick={() => setShowRejectModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-bold shadow-lg">
-                  <XCircle size={20} /> Reject Paper
-                </button>
+
+                {user?.role === 'staff' && ['pending_editor', 'under_review'].includes(paper.status) && (
+                  <button
+                    onClick={() => setShowChecklistModal(true)}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-cyan-600 text-white rounded-xl hover:bg-cyan-700 transition-all font-bold shadow-lg"
+                  >
+                    <FileCheck size={20} /> Editorial Checklist
+                  </button>
+                )}
+
+                {user?.role === 'staff' && ['pending_editor', 'under_review', 'pending_admin'].includes(paper.status) && (
+                  <button
+                    onClick={handleRunPlagiarismScan}
+                    disabled={plagiarismLoading}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-slate-700 text-white rounded-xl hover:bg-slate-800 transition-all font-bold shadow-lg disabled:opacity-60"
+                  >
+                    <ShieldCheck size={20} /> {plagiarismLoading ? 'Scanning...' : 'Run Plagiarism Scan'}
+                  </button>
+                )}
+
+                {user?.role === 'staff' && ['pending_editor', 'under_review'].includes(paper.status) && (
+                  <button
+                    onClick={() => setShowMetadataModal(true)}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg"
+                  >
+                    <FileText size={20} /> Correct Metadata
+                  </button>
+                )}
+
+                {user?.role === 'staff' && ['pending_editor', 'under_review'].includes(paper.status) && (
+                  <button
+                    onClick={() => setShowReturnToAuthorModal(true)}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-fuchsia-600 text-white rounded-xl hover:bg-fuchsia-700 transition-all font-bold shadow-lg"
+                  >
+                    <CornerDownRight size={20} /> Return to Author
+                  </button>
+                )}
+
+                {user?.role !== 'program_chair' && (
+                  <button onClick={() => setShowRejectModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-bold shadow-lg">
+                    <XCircle size={20} /> Reject Paper
+                  </button>
+                )}
+
+                {['dean', 'program_chair'].includes(user?.role) && ['pending_dean', 'pending_program_chair', 'revision_required'].includes(paper.status) && (
+                  <button
+                    onClick={() => setShowAssignFacultyModal(true)}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-bold shadow-lg"
+                  >
+                    <User size={20} /> Assign to Faculty Reviewer
+                  </button>
+                )}
+
+                {user?.role === 'program_chair' && !['approved', 'published', 'rejected'].includes(paper.status) && (
+                  <button
+                    onClick={() => {
+                      const existing = paper?.review_deadline_at ? new Date(paper.review_deadline_at) : null;
+                      const initial = existing && !Number.isNaN(existing.getTime())
+                        ? new Date(existing.getTime() - existing.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+                        : '';
+                      setDeadlineValue(initial);
+                      setShowDeadlineModal(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-all font-bold shadow-lg"
+                  >
+                    <Clock size={20} /> Set Review Deadline
+                  </button>
+                )}
 
                 {/* Dean Bypass Button — only shown for Dean role and when paper is NOT at pending_dean */}
                 {user?.role === 'dean' && paper.status !== 'pending_dean' && !['approved', 'published'].includes(paper.status) && (
@@ -681,8 +1092,59 @@ const ReviewDetail = () => {
                 <span className="text-slate-500">File Size</span>
                 <span className="font-bold text-slate-900">{(paper.file_size / 1024 / 1024).toFixed(2)} MB</span>
               </div>
+              {paper.review_deadline_at && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500">Review Deadline</span>
+                  <span className="font-bold text-orange-700">{new Date(paper.review_deadline_at).toLocaleString()}</span>
+                </div>
+              )}
+              {paper.doi && (
+                <div className="flex justify-between items-center text-sm gap-3">
+                  <span className="text-slate-500">DOI</span>
+                  <span className="font-bold text-slate-900 text-right break-all">{paper.doi}</span>
+                </div>
+              )}
+              {paper.citation_key && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500">Citation Key</span>
+                  <span className="font-bold text-slate-900">{paper.citation_key}</span>
+                </div>
+              )}
             </div>
           </div>
+
+          {['staff', 'admin'].includes(user?.role) && (
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 space-y-4">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                <ShieldCheck size={20} className="text-slate-700" />
+                <h3 className="font-bold text-slate-900">Plagiarism Check</h3>
+              </div>
+              <div className="text-sm space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Status</span>
+                  <span className="font-bold text-slate-900">{plagiarism.status || 'not_checked'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Similarity Score</span>
+                  <span className="font-bold text-slate-900">{plagiarism.score === null ? 'N/A' : `${plagiarism.score}%`}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Provider</span>
+                  <span className="font-bold text-slate-900">{plagiarism.provider || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Checked At</span>
+                  <span className="font-bold text-slate-900">{plagiarism.checkedAt ? new Date(plagiarism.checkedAt).toLocaleString() : 'N/A'}</span>
+                </div>
+              </div>
+              {plagiarism.summary && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold text-slate-500 mb-1">Summary</p>
+                  <p className="text-sm text-slate-700">{plagiarism.summary}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -719,7 +1181,7 @@ const ReviewDetail = () => {
                       <option value="">-- Select reviewer --</option>
                       {deanChairList.map(m => (
                         <option key={m.id} value={m.id}>
-                          {m.full_name} ({m.role === 'dean' ? 'Dean' : 'Program Chair'})
+                          {formatFullName(m)} ({m.role === 'dean' ? 'Dean' : 'Program Chair'})
                         </option>
                       ))}
                     </select>
@@ -747,6 +1209,19 @@ const ReviewDetail = () => {
               <h3 className="text-xl font-bold text-slate-900">Reject Research</h3>
             </div>
             <div className="p-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Rejection Category</label>
+              <select
+                value={rejectionCategory}
+                onChange={(e) => setRejectionCategory(e.target.value)}
+                className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-red-500 outline-none mb-3"
+              >
+                <option value="methodology">Methodology Issue</option>
+                <option value="insufficient_evidence">Insufficient Evidence</option>
+                <option value="scope_mismatch">Scope Mismatch</option>
+                <option value="ethical_concern">Ethical Concern</option>
+                <option value="formatting_quality">Formatting/Quality</option>
+                <option value="other">Other</option>
+              </select>
               <textarea value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder="Enter rejection reason..." rows={4} className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-red-500 outline-none mb-4" />
               <div className="flex gap-3">
                 <button onClick={() => setShowRejectModal(false)} className="flex-1 py-3 border rounded-xl font-medium">Cancel</button>
@@ -773,6 +1248,205 @@ const ReviewDetail = () => {
                 <button onClick={() => setShowRevisionModal(false)} className="flex-1 py-3 border rounded-xl font-medium">Cancel</button>
                 <button onClick={handleRequestRevision} disabled={actionLoading} className="flex-1 py-3 bg-amber-600 text-white rounded-xl font-bold">
                   {actionLoading ? 'Processing...' : 'Request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Author Modal */}
+      {showReturnToAuthorModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border">
+            <div className="px-6 py-4 bg-fuchsia-50 border-b border-fuchsia-100 flex items-center gap-3">
+              <CornerDownRight size={20} className="text-fuchsia-600" />
+              <h3 className="text-xl font-bold text-slate-900">Return to Author</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-fuchsia-50 p-3 rounded-xl border border-fuchsia-100">
+                <p className="text-sm text-fuchsia-800 font-medium">
+                  This will send the paper directly back to the student for revision without rejecting it.
+                </p>
+              </div>
+              <textarea
+                value={returnToAuthorNotes}
+                onChange={(e) => setReturnToAuthorNotes(e.target.value)}
+                placeholder="Enter revision instructions for the author..."
+                rows={4}
+                className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-fuchsia-500 outline-none"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowReturnToAuthorModal(false);
+                    setReturnToAuthorNotes('');
+                  }}
+                  className="flex-1 py-3 border rounded-xl font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleReturnToAuthor}
+                  disabled={actionLoading || !returnToAuthorNotes.trim()}
+                  className="flex-1 py-3 bg-fuchsia-600 text-white rounded-xl font-bold disabled:opacity-50"
+                >
+                  {actionLoading ? 'Returning...' : 'Return to Author'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Correct Metadata Modal */}
+      {showMetadataModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border">
+            <div className="px-6 py-4 bg-indigo-50 border-b border-indigo-100 flex items-center gap-3">
+              <FileText size={20} className="text-indigo-600" />
+              <h3 className="text-xl font-bold text-slate-900">Correct Paper Metadata</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Title</label>
+                <input
+                  value={metadataForm.title}
+                  onChange={(e) => setMetadataForm((prev) => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Abstract</label>
+                <textarea
+                  value={metadataForm.abstract}
+                  onChange={(e) => setMetadataForm((prev) => ({ ...prev, abstract: e.target.value }))}
+                  rows={5}
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Keywords</label>
+                  <input
+                    value={metadataForm.keywords}
+                    onChange={(e) => setMetadataForm((prev) => ({ ...prev, keywords: e.target.value }))}
+                    placeholder="Comma-separated keywords"
+                    className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Category</label>
+                  <input
+                    value={metadataForm.category}
+                    onChange={(e) => setMetadataForm((prev) => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Co-authors</label>
+                <input
+                  value={metadataForm.coAuthors}
+                  onChange={(e) => setMetadataForm((prev) => ({ ...prev, coAuthors: e.target.value }))}
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowMetadataModal(false)}
+                  className="flex-1 py-3 border rounded-xl font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCorrectMetadata}
+                  disabled={actionLoading}
+                  className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50"
+                >
+                  {actionLoading ? 'Saving...' : 'Save Corrections'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Editorial Checklist Modal */}
+      {showChecklistModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border">
+            <div className="px-6 py-4 bg-cyan-50 border-b border-cyan-100 flex items-center gap-3">
+              <FileCheck size={20} className="text-cyan-700" />
+              <h3 className="text-xl font-bold text-slate-900">Editorial Checklist</h3>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600">
+                Complete all checklist items before approving this paper for Admin review.
+              </p>
+
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={editorialChecklist.formatting}
+                  onChange={(e) => setEditorialChecklist((prev) => ({ ...prev, formatting: e.target.checked }))}
+                  className="h-4 w-4"
+                />
+                <span className="text-slate-800 font-medium">Formatting requirements verified</span>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={editorialChecklist.citations}
+                  onChange={(e) => setEditorialChecklist((prev) => ({ ...prev, citations: e.target.checked }))}
+                  className="h-4 w-4"
+                />
+                <span className="text-slate-800 font-medium">Citations are complete and consistent</span>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={editorialChecklist.references}
+                  onChange={(e) => setEditorialChecklist((prev) => ({ ...prev, references: e.target.checked }))}
+                  className="h-4 w-4"
+                />
+                <span className="text-slate-800 font-medium">Reference list matches in-text citations</span>
+              </label>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Editorial Notes (Optional)</label>
+                <textarea
+                  value={editorialNotes}
+                  onChange={(e) => setEditorialNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Add internal editorial notes..."
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-cyan-500 outline-none"
+                />
+              </div>
+
+              {editorialCompletedAt && (
+                <p className="text-xs text-emerald-700 font-semibold">
+                  Checklist completed on {new Date(editorialCompletedAt).toLocaleString()}
+                </p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowChecklistModal(false)}
+                  className="flex-1 py-3 border rounded-xl font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEditorialChecklist}
+                  disabled={actionLoading}
+                  className="flex-1 py-3 bg-cyan-600 text-white rounded-xl font-bold disabled:opacity-50"
+                >
+                  {actionLoading ? 'Saving...' : 'Save Checklist'}
                 </button>
               </div>
             </div>
@@ -843,6 +1517,116 @@ const ReviewDetail = () => {
                   className="flex-1 py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-bold disabled:opacity-50"
                 >
                   {actionLoading ? 'Processing...' : 'Bypass Approve'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Faculty Modal */}
+      {showAssignFacultyModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border">
+            <div className="px-6 py-4 bg-blue-50 border-b border-blue-100 flex items-center gap-3">
+              <User size={20} className="text-blue-600" />
+              <h3 className="text-xl font-bold text-slate-900">Assign Faculty Reviewer</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Select Faculty <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedFacultyId}
+                  onChange={(e) => setSelectedFacultyId(e.target.value)}
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-900"
+                >
+                  <option value="">-- Select faculty reviewer --</option>
+                  {facultyMembers.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {formatFullName(member)}{member.department ? ` (${member.department})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {facultyMembers.length === 0 && (
+                  <p className="mt-2 text-sm text-amber-700">No faculty accounts found for assignment.</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Notes (Optional)</label>
+                <textarea
+                  value={assignNotes}
+                  onChange={(e) => setAssignNotes(e.target.value)}
+                  placeholder="Add context for the assigned faculty reviewer..."
+                  rows={3}
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowAssignFacultyModal(false);
+                    setSelectedFacultyId('');
+                    setAssignNotes('');
+                  }}
+                  className="flex-1 py-3 border rounded-xl font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssignFacultyReviewer}
+                  disabled={actionLoading || !selectedFacultyId}
+                  className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold disabled:opacity-50"
+                >
+                  {actionLoading ? 'Assigning...' : 'Assign'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Set Review Deadline Modal */}
+      {showDeadlineModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border">
+            <div className="px-6 py-4 bg-orange-50 border-b border-orange-100 flex items-center gap-3">
+              <Clock size={20} className="text-orange-600" />
+              <h3 className="text-xl font-bold text-slate-900">Set Program Review Deadline</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Deadline Date and Time <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={deadlineValue}
+                  onChange={(e) => setDeadlineValue(e.target.value)}
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
+                />
+              </div>
+
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                <p className="text-xs text-orange-800">Automatic reminder notifications will be sent as this deadline approaches.</p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeadlineModal(false)}
+                  className="flex-1 py-3 border rounded-xl font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSetReviewDeadline}
+                  disabled={actionLoading || !deadlineValue}
+                  className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-bold disabled:opacity-50"
+                >
+                  {actionLoading ? 'Saving...' : 'Save Deadline'}
                 </button>
               </div>
             </div>

@@ -45,6 +45,17 @@ describe('workflowPolicy', () => {
     expect(result).toEqual({ ok: true });
   });
 
+  test('validateWorkflowAction blocks program chair direct reject', () => {
+    const result = validateWorkflowAction(
+      'reject',
+      { id: 'pc-1', role: 'program_chair' },
+      { status: 'pending_program_chair', dean_chair_id: 'pc-1' }
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe(403);
+  });
+
   test('dean bypass policy includes approved target and blocks finalized statuses', () => {
     expect(WORKFLOW_POLICY.deanBypass.validTargets).toContain('approved');
     expect(WORKFLOW_POLICY.deanBypass.blockedStatuses).toContain('rejected');

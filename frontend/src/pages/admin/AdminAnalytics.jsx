@@ -27,6 +27,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { researchAPI, authAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 const AdminAnalytics = () => {
   const navigate = useNavigate();
@@ -319,7 +320,7 @@ const AdminAnalytics = () => {
     papers.forEach(p => {
       lines.push(
         `"${(p.title || '').replace(/"/g, '""')}"${sep}` +
-        `"${(p.users?.full_name || 'Unknown').replace(/"/g, '""')}"${sep}` +
+        `"${(formatFullName(p.users) || 'Unknown').replace(/"/g, '""')}"${sep}` +
         `"${(p.category || 'N/A').replace(/"/g, '""')}"${sep}` +
         `${p.status}${sep}` +
         `${p.view_count || 0}${sep}` +
@@ -355,7 +356,7 @@ const AdminAnalytics = () => {
       papers: papers.map(p => ({
         id: p.id,
         title: p.title,
-        author: p.users?.full_name || 'Unknown',
+        author: formatFullName(p.users) || 'Unknown',
         category: p.category || 'N/A',
         status: p.status,
         views: p.view_count || 0,
@@ -833,7 +834,7 @@ const AdminAnalytics = () => {
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors line-clamp-1">{paper.title}</p>
-                      <p className="text-xs text-slate-500 mt-1">{paper.users?.full_name || 'Unknown'}</p>
+                      <p className="text-xs text-slate-500 mt-1">{formatFullName(paper.users) || 'Unknown'}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
                         <span className="flex items-center gap-1"><Eye size={12} /> {(paper.view_count || 0).toLocaleString()}</span>
                         <span className="flex items-center gap-1"><Download size={12} /> {(paper.download_count || 0).toLocaleString()}</span>
@@ -887,7 +888,7 @@ const AdminAnalytics = () => {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-900 truncate">{paper.title || 'Untitled'}</p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {paper.users?.full_name || 'Unknown'} · {formatRelativeTime(paper.updated_at || paper.created_at)}
+                        {formatFullName(paper.users) || 'Unknown'} · {formatRelativeTime(paper.updated_at || paper.created_at)}
                       </p>
                     </div>
                     <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full whitespace-nowrap ${badge.cls}`}>

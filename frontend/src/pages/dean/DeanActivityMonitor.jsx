@@ -6,6 +6,7 @@ import {
   Award, FileText, Filter, BarChart3, AlertCircle
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
 
 const DeanActivityMonitor = () => {
   const navigate = useNavigate();
@@ -81,7 +82,7 @@ const DeanActivityMonitor = () => {
   const filteredPapers = searchTerm
     ? papers.filter(p =>
         p.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.users?.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
+        formatFullName(p.users).toLowerCase().includes(searchTerm.toLowerCase())
       )
     : papers;
 
@@ -217,7 +218,7 @@ const DeanActivityMonitor = () => {
                 <div key={paper.id} onClick={() => navigate(`/dean/review/${paper.id}`)} className="bg-white rounded-xl border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group">
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-900 line-clamp-1">{paper.title}</p>
-                    <p className="text-xs text-slate-500 mt-1">{paper.users?.full_name || 'Unknown'} &middot; {formatDate(paper.updated_at || paper.created_at)}</p>
+                    <p className="text-xs text-slate-500 mt-1">{formatFullName(paper.users) || 'Unknown'} &middot; {formatDate(paper.updated_at || paper.created_at)}</p>
                   </div>
                   {paper.bypass_reason && (
                     <span className="px-2 py-1 bg-violet-100 text-violet-700 text-xs font-bold rounded-lg">Bypassed</span>
@@ -245,7 +246,7 @@ const DeanActivityMonitor = () => {
               <div key={action.id || i} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-900">
-                    {action.reviewer?.full_name || 'Unknown'} <span className="text-slate-400">({action.reviewer_role})</span>
+                    {formatFullName(action.reviewer) || 'Unknown'} <span className="text-slate-400">({action.reviewer_role})</span>
                   </p>
                   <p className="text-xs text-slate-500">Status: {action.status} &middot; {action.comments ? `"${action.comments.substring(0, 100)}"` : 'No comments'}</p>
                 </div>
@@ -289,7 +290,7 @@ const DeanActivityMonitor = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-900 line-clamp-1">{paper.title}</p>
-                    <p className="text-sm text-slate-500">{paper.users?.full_name || 'Unknown'}</p>
+                    <p className="text-sm text-slate-500">{formatFullName(paper.users) || 'Unknown'}</p>
                     <p className="text-xs text-amber-700 font-semibold mt-1">
                       Pending for {paper.daysStale} days
                     </p>
