@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { 
-  FileText, 
-  Clock, 
-  CheckCircle, 
-  AlertCircle, 
-  Upload, 
-  Search, 
+import {
+  FileText,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Upload,
+  Search,
   BookOpen,
   ChevronRight,
   Calendar,
@@ -66,7 +66,7 @@ const DonutChart = ({ data, colors, size = 80 }) => {
 const MiniBarChart = ({ data, maxHeight = 100 }) => {
   const maxValue = Math.max(...data.map(d => d.value), 1);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
+
   return (
     <div className="flex items-end gap-2 h-full">
       {data.map((item, index) => {
@@ -74,12 +74,11 @@ const MiniBarChart = ({ data, maxHeight = 100 }) => {
         const isCurrentMonth = index === new Date().getMonth();
         return (
           <div key={index} className="flex flex-col items-center gap-1 flex-1">
-            <div 
-              className={`w-full rounded-t-sm transition-all duration-500 ${
-                isCurrentMonth 
-                  ? 'bg-gradient-to-t from-blue-600 to-blue-400' 
-                  : 'bg-gradient-to-t from-blue-200 to-blue-100 hover:from-blue-300 hover:to-blue-200'
-              }`}
+            <div
+              className={`w-full rounded-t-sm transition-all duration-500 ${isCurrentMonth
+                ? 'bg-gradient-to-t from-blue-600 to-blue-400'
+                : 'bg-gradient-to-t from-blue-200 to-blue-100 hover:from-blue-300 hover:to-blue-200'
+                }`}
               style={{ height: `${Math.max(height, 4)}px` }}
             />
             <span className="text-[10px] text-slate-400 font-medium">{months[index]}</span>
@@ -169,11 +168,11 @@ const StudentDashboard = () => {
 
       setStats(statistics);
 
-      const sortedPapers = [...papers].sort((a, b) => 
+      const sortedPapers = [...papers].sort((a, b) =>
         new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at)
       );
       setRecentPapers(sortedPapers.slice(0, 5));
-      
+
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
       setStats({ total: 0, pending: 0, underReview: 0, approved: 0, rejected: 0, revisionRequired: 0 });
@@ -272,7 +271,7 @@ const StudentDashboard = () => {
               <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Moon size={16} /></button>
             </div>
             <div className="flex items-center gap-2">
-              <img 
+              <img
                 src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'User')}&background=3b82f6&color=fff`}
                 alt="Profile"
                 className="w-9 h-9 rounded-full"
@@ -397,7 +396,7 @@ const StudentDashboard = () => {
           <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-semibold text-slate-900">Submission Activity</h3>
-              <select 
+              <select
                 value={selectedYear}
                 onChange={(e) => setSelectedYear(Number(e.target.value))}
                 className="text-sm text-slate-600 bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -498,7 +497,7 @@ const StudentDashboard = () => {
               <RefreshCw size={16} className="text-slate-400" />
             </button>
           </div>
-          
+
           {recentPapers.length === 0 ? (
             <div className="px-5 py-12 text-center">
               <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -527,8 +526,8 @@ const StudentDashboard = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {recentPapers.map((paper) => (
-                    <tr 
-                      key={paper.id} 
+                    <tr
+                      key={paper.id}
                       className="hover:bg-slate-50 cursor-pointer transition-colors"
                       onClick={() => navigate(`/student/my-research/${paper.id}`)}
                     >

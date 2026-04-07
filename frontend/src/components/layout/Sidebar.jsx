@@ -3,64 +3,295 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { notificationsAPI, researchAPI } from '../../utils/api';
 import supabase from '../../config/supabase';
-import { 
-  LayoutDashboard, 
-  BarChart3, 
-  BookOpen, 
-  LogOut, 
-  ChevronLeft, 
-  Menu,
+import nuLogoLeft from '../../assets/left.png';
+import {
+  LayoutDashboard,
+  BookOpen,
+  LogOut,
+  ChevronLeft,
   FileSearch,
-  CalendarDays,
   Users,
   FileText,
   Upload,
   Bell,
-  HelpCircle,
   User,
   Shield,
   Database,
   Award,
-  TrendingUp,
   FileCheck,
-  CheckCircle,
-  Clock,
-  Home,
   Grid,
-  Library,
-  PenTool,
-  Search,
-  FolderOpen,
   PieChart,
   UserCog,
   FileEdit,
-  Calendar,
-  Download,
   Eye,
   PlusCircle,
-  ExternalLink,
-  Sparkles,
-  BellDot,
-  ChevronRight,
-  MoreVertical,
+  Search,
   GraduationCap,
   Trash2,
   UserPlus
 } from 'lucide-react';
 
-const Sidebar = () => {
-  const { user, logout } = useAuth();
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [stats, setStats] = useState({ staffPending: 0, adminPending: 0 });
-  const [notifications, setNotifications] = useState([]);
-  const navigate = useNavigate();
-  const location = useLocation();
+/* ─────────────────────────────────────────────────────────
+   STYLE CONSTANTS  (Apple design tokens via CSS vars)
+───────────────────────────────────────────────────────── */
 
+const S = {
+  // Sidebar containers
+  aside: (collapsed) => ({
+    background: 'var(--color-light-gray)',          // #f5f5f7
+    borderRight: '1px solid rgba(0,0,0,0.1)',
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'sticky',
+    top: 0,
+    height: '100vh',
+    width: collapsed ? 72 : 264,
+    transition: 'width 0.3s cubic-bezier(0.4,0,0.2,1)',
+    overflow: 'hidden',
+    flexShrink: 0,
+  }),
+
+  // Header strip
+  header: (collapsed) => ({
+    height: 80,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: collapsed ? 'center' : 'space-between',
+    padding: collapsed ? '0 16px' : '0 20px',
+    borderBottom: '1px solid rgba(0,0,0,0.08)',
+    position: 'relative',
+    flexShrink: 0,
+  }),
+
+  // NUCLEUS wordmark
+  wordmark: {
+    fontFamily: 'var(--font-display)',
+    fontSize: '1.31rem',               // 21px – card title size
+    fontWeight: 600,
+    letterSpacing: 'var(--tracking-card)',
+    lineHeight: 'var(--leading-card)',
+    color: 'var(--color-near-black)',
+  },
+
+  // Collapse toggle button
+  collapseBtn: {
+    position: 'absolute',
+    right: -18,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: 36,
+    height: 36,
+    borderRadius: 'var(--radius-circle)',
+    background: 'var(--color-overlay)',     // rgba(210,210,215,0.64) — Apple media control
+    border: 'none',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'var(--color-text-tertiary)',
+    zIndex: 20,
+    transition: 'background 0.2s, color 0.2s',
+  },
+
+  // User profile section
+  profileSection: {
+    padding: '18px 20px',
+    borderBottom: '1px solid rgba(0,0,0,0.08)',
+    flexShrink: 0,
+  },
+
+  userName: {
+    fontFamily: 'var(--font-body)',
+    fontWeight: 600,
+    fontSize: 'var(--text-link)',             // 14px body emphasis
+    letterSpacing: 'var(--tracking-link)',
+    color: 'var(--color-near-black)',
+    lineHeight: 1.4,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  userEmail: {
+    fontFamily: 'var(--font-body)',
+    fontSize: 'var(--text-nano)',              // 10px
+    letterSpacing: 'var(--tracking-nano)',
+    color: 'var(--color-text-tertiary)',
+    marginTop: 2,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  roleBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+    padding: '3px 10px',
+    borderRadius: 'var(--radius-pill)',
+    background: 'rgba(0,113,227,0.08)',
+    border: '1px solid rgba(0,113,227,0.15)',
+    fontFamily: 'var(--font-body)',
+    fontSize: 'var(--text-nano)',
+    fontWeight: 600,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--color-apple-blue)',
+  },
+
+  // Nav scroll area
+  nav: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '12px 10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+  },
+
+  // Nav item base
+  navItem: (active, collapsed) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: collapsed ? 0 : 12,
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    padding: collapsed ? '10px' : '9px 12px',
+    borderRadius: 'var(--radius-standard)',
+    textDecoration: 'none',
+    fontFamily: 'var(--font-body)',
+    fontSize: 'var(--text-link)',
+    fontWeight: active ? 600 : 400,
+    letterSpacing: 'var(--tracking-link)',
+    color: active ? 'var(--color-apple-blue)' : 'var(--color-text-secondary)',
+    background: active ? 'rgba(0,113,227,0.08)' : 'transparent',
+    transition: 'background 0.15s, color 0.15s',
+    cursor: 'pointer',
+    border: 'none',
+    width: '100%',
+    textAlign: 'left',
+    position: 'relative',
+  }),
+
+  // Badge pill on nav item
+  badge: {
+    marginLeft: 'auto',
+    minWidth: 20,
+    height: 20,
+    padding: '0 6px',
+    borderRadius: 'var(--radius-pill)',
+    background: 'var(--color-apple-blue)',
+    color: '#fff',
+    fontFamily: 'var(--font-body)',
+    fontSize: 10,
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+
+  // Bottom zone (notifications, profile, logout)
+  bottomZone: {
+    borderTop: '1px solid rgba(0,0,0,0.08)',
+    padding: '10px 10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    flexShrink: 0,
+  },
+
+  // Tooltip for collapsed state
+  tooltip: {
+    position: 'absolute',
+    left: 'calc(100% + 12px)',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'var(--color-near-black)',
+    color: '#fff',
+    fontFamily: 'var(--font-body)',
+    fontSize: 'var(--text-nano)',
+    letterSpacing: 'var(--tracking-micro)',
+    padding: '5px 10px',
+    borderRadius: 'var(--radius-micro)',
+    whiteSpace: 'nowrap',
+    pointerEvents: 'none',
+    zIndex: 100,
+    opacity: 0,
+    transition: 'opacity 0.15s',
+  },
+};
+
+/* ─────────────────────────────────────────────────────────
+   NavItem component
+───────────────────────────────────────────────────────── */
+
+const NavItem = ({ to, onClick, icon: Icon, label, badge, active, collapsed, notifType }) => {
+  const [hover, setHover] = useState(false);
+
+  const containerStyle = {
+    ...S.navItem(active, collapsed),
+    background: active
+      ? 'rgba(0,113,227,0.08)'
+      : hover ? 'rgba(0,0,0,0.04)' : 'transparent',
+    color: active ? 'var(--color-apple-blue)' : 'var(--color-text-secondary)',
+  };
+
+  const content = (
+    <>
+      <Icon
+        size={18}
+        style={{ flexShrink: 0, color: active ? 'var(--color-apple-blue)' : 'inherit' }}
+      />
+      {!collapsed && (
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {label}
+        </span>
+      )}
+      {!collapsed && badge ? (
+        <span style={S.badge}>{badge}</span>
+      ) : null}
+      {collapsed && (
+        <span
+          className="apple-nav-tooltip"
+          style={{ ...S.tooltip, opacity: hover ? 1 : 0 }}
+        >
+          {label}
+        </span>
+      )}
+    </>
+  );
+
+  const sharedProps = {
+    style: containerStyle,
+    onMouseEnter: () => setHover(true),
+    onMouseLeave: () => setHover(false),
+  };
+
+  if (onClick) {
+    return <button {...sharedProps} onClick={onClick}>{content}</button>;
+  }
+
+  return <Link to={to} {...sharedProps}>{content}</Link>;
+};
+
+/* ─────────────────────────────────────────────────────────
+   SIDEBAR
+───────────────────────────────────────────────────────── */
+
+const Sidebar = () => {
+  const { user, logout }   = useAuth();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [stats, setStats]  = useState({ staffPending: 0, adminPending: 0 });
+  const [notifications, setNotifications] = useState([]);
+  const navigate   = useNavigate();
+  const location   = useLocation();
+
+  // ── Data fetching ──────────────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
 
     fetchNotifications();
-
     if (['staff', 'admin', 'faculty', 'dean', 'program_chair'].includes(user.role)) {
       fetchBadgeStats();
     }
@@ -77,492 +308,194 @@ const Sidebar = () => {
 
   useEffect(() => {
     if (!user?.id || !supabase) return;
-
     const channel = supabase
       .channel(`notifications:${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          fetchNotifications();
-        }
-      )
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'notifications',
+        filter: `user_id=eq.${user.id}`,
+      }, () => fetchNotifications())
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, [user?.id]);
 
   const fetchBadgeStats = async () => {
     try {
       if (user?.role === 'faculty') {
-        const response = await researchAPI.getFacultyAssignedPapers();
-        const papers = response.data.papers;
-        const pendingCount = papers.filter(p => p.status === 'pending_faculty').length;
-        setStats({ facultyPending: pendingCount });
+        const res = await researchAPI.getFacultyAssignedPapers();
+        const cnt = res.data.papers.filter(p => p.status === 'pending_faculty').length;
+        setStats({ facultyPending: cnt });
       } else if (user?.role === 'dean' || user?.role === 'program_chair') {
-        const response = await researchAPI.getDeanChairAssignedPapers();
-        const papers = response.data.papers;
-        const pendingStatus = user.role === 'dean' ? 'pending_dean' : 'pending_program_chair';
-        const pendingCount = papers.filter(p => p.status === pendingStatus).length;
-        setStats({ deanChairPending: pendingCount });
+        const res = await researchAPI.getDeanChairAssignedPapers();
+        const status = user.role === 'dean' ? 'pending_dean' : 'pending_program_chair';
+        const cnt = res.data.papers.filter(p => p.status === status).length;
+        setStats({ deanChairPending: cnt });
       } else {
-        const response = await researchAPI.getAllResearch();
-        const papers = response.data.papers;
-        
-        const staffCount = papers.filter(p => p.status === 'pending_editor' || p.status === 'under_review').length;
-        const adminCount = papers.filter(p => p.status === 'pending_admin' || p.status === 'under_review').length;
-        
+        const res = await researchAPI.getAllResearch();
+        const papers = res.data.papers;
         setStats({
-          staffPending: staffCount,
-          adminPending: adminCount
+          staffPending: papers.filter(p => p.status === 'pending_editor' || p.status === 'under_review').length,
+          adminPending: papers.filter(p => p.status === 'pending_admin'  || p.status === 'under_review').length,
         });
       }
-    } catch (error) {
-      console.error('Failed to fetch sidebar stats:', error);
-    }
+    } catch { /* silent */ }
   };
 
   const fetchNotifications = async () => {
     try {
-      const response = await notificationsAPI.getMine({ limit: 30 });
-      const rows = response.data.notifications || [];
-
-      const groupedUnread = rows.reduce((acc, notif) => {
-        if (notif.is_read) return acc;
-        const key = notif.type || 'general';
+      const res  = await notificationsAPI.getMine({ limit: 30 });
+      const rows = res.data.notifications || [];
+      const grouped = rows.reduce((acc, n) => {
+        if (n.is_read) return acc;
+        const key = n.type || 'general';
         acc[key] = (acc[key] || 0) + 1;
         return acc;
       }, {});
-
-      const summary = Object.entries(groupedUnread).map(([type, count], index) => ({
-        id: `${type}-${index}`,
-        type,
-        count,
-      }));
-
-      setNotifications(summary);
-    } catch (error) {
-      console.error('Failed to fetch notifications:', error);
-    }
+      setNotifications(Object.entries(grouped).map(([type, count], i) => ({ id: `${type}-${i}`, type, count })));
+    } catch { /* silent */ }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const handleLogout = () => { logout(); navigate('/login'); };
 
-  const getRoleConfig = (role) => {
-    const configs = {
-      admin: {
-        color: 'from-red-500 to-pink-500',
-        badgeColor: 'bg-red-100 text-red-700 border-red-200',
-        icon: Shield,
-        name: 'Administrator'
-      },
-      faculty: {
-        color: 'from-[#1C4D8D] to-[#2563eb]',
-        badgeColor: 'bg-[#1C4D8D]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
-        icon: GraduationCap,
-        name: 'Adviser'
-      },
-      dean: {
-        color: 'from-violet-600 to-purple-600',
-        badgeColor: 'bg-violet-100 text-violet-700 border-violet-200',
-        icon: Award,
-        name: 'Dean'
-      },
-      program_chair: {
-        color: 'from-teal-600 to-cyan-600',
-        badgeColor: 'bg-teal-100 text-teal-700 border-teal-200',
-        icon: Users,
-        name: 'Program Chair'
-      },
-      staff: {
-        color: 'from-[#2563eb] to-[#1C4D8D]',
-        badgeColor: 'bg-[#2563eb]/10 text-[#2563eb] border-[#2563eb]/20',
-        icon: Award,
-        name: 'Research Editor'
-      },
-      student: {
-        color: 'from-[#1C4D8D] to-[#2563eb]',
-        badgeColor: 'bg-[#1C4D8D]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
-        icon: BookOpen,
-        name: 'Student Scholar'
-      }
-    };
-    return configs[role] || { color: 'from-gray-500 to-slate-500', badgeColor: 'bg-gray-100 text-gray-700', icon: User, name: 'User' };
-  };
-
+  // ── Menu config ────────────────────────────────────────
   const menuConfig = {
     admin: [
-      { 
-        name: 'Dashboard', 
-        icon: LayoutDashboard, 
-        path: '/dashboard',
-        badge: null,
-        description: 'Overview & Analytics'
-      },
-      { 
-        name: 'User Management', 
-        icon: UserCog, 
-        path: '/admin/users',
-        badge: null,
-        description: 'Manage system users'
-      },
-      { 
-        name: 'Research Papers', 
-        icon: FileEdit, 
-        path: '/admin/papers',
-        badge: stats.adminPending > 0 ? stats.adminPending : null,
-        description: 'Review & approve papers'
-      },
-      {
-        name: 'Recycle Bin',
-        icon: Trash2,
-        path: '/admin/papers?recycleBin=1',
-        badge: null,
-        description: 'Restore deleted papers'
-      },
-      { 
-        name: 'Analytics', 
-        icon: PieChart, 
-        path: '/admin/analytics',
-        badge: null,
-        description: 'System insights'
-      },
-      {
-        name: 'System Health',
-        icon: Database,
-        path: '/admin/health',
-        badge: null,
-        description: 'API, storage, AI metrics'
-      },
-      {
-        name: 'System Settings',
-        icon: Grid,
-        path: '/admin/settings',
-        badge: null,
-        description: 'Upload and policy controls'
-      },
-      { 
-        name: 'Profile', 
-        icon: User, 
-        path: '/profile',
-        badge: null,
-        description: 'Profile & exports'
-      },
+      { name: 'Dashboard',    icon: LayoutDashboard, path: '/dashboard',         description: 'Overview & Analytics' },
+      { name: 'User Management', icon: UserCog,      path: '/admin/users',       badge: null },
+      { name: 'Research Papers', icon: FileEdit,     path: '/admin/papers',      badge: stats.adminPending > 0 ? stats.adminPending : null },
+      { name: 'Recycle Bin', icon: Trash2,            path: '/admin/papers?recycleBin=1', badge: null },
+      { name: 'Analytics',   icon: PieChart,          path: '/admin/analytics',  badge: null },
+      { name: 'System Health', icon: Database,        path: '/admin/health',     badge: null },
+      { name: 'Settings',    icon: Grid,              path: '/admin/settings',   badge: null },
     ],
     staff: [
-      { 
-        name: 'Dashboard', 
-        icon: LayoutDashboard, 
-        path: '/dashboard',
-        badge: null,
-        description: 'Overview'
-      },
-      { 
-        name: 'Editorial Workspace', 
-        icon: FileCheck, 
-        path: '/staff/review',
-        badge: stats.staffPending > 0 ? stats.staffPending : null,
-        description: 'ST1-ST4 editorial tools'
-      },
-      { 
-        name: 'Browse Repository', 
-        icon: BookOpen, 
-        path: '/staff/repository',
-        badge: null,
-        description: 'Browse research papers'
-      },
-      { 
-        name: 'Profile', 
-        icon: User, 
-        path: '/profile',
-        badge: null,
-        description: 'Profile & exports'
-      },
+      { name: 'Dashboard',            icon: LayoutDashboard, path: '/dashboard' },
+      { name: 'Editorial Workspace',  icon: FileCheck,       path: '/staff/review', badge: stats.staffPending > 0 ? stats.staffPending : null },
+      { name: 'Repository',           icon: BookOpen,        path: '/staff/repository' },
     ],
     faculty: [
-      { 
-        name: 'Dashboard', 
-        icon: LayoutDashboard, 
-        path: '/dashboard',
-        badge: null,
-        description: 'Overview'
-      },
-      { 
-        name: 'Review Submissions', 
-        icon: FileCheck, 
-        path: '/faculty/review',
-        badge: stats.facultyPending > 0 ? stats.facultyPending : null,
-        description: 'Review assigned papers'
-      },
-      { 
-        name: 'Browse Repository', 
-        icon: Search, 
-        path: '/faculty/repository',
-        badge: null,
-        description: 'Explore papers'
-      },
-      { 
-        name: 'Profile', 
-        icon: User, 
-        path: '/profile',
-        badge: null,
-        description: 'Account settings'
-      },
+      { name: 'Dashboard',            icon: LayoutDashboard, path: '/dashboard' },
+      { name: 'Review Submissions',   icon: FileCheck,       path: '/faculty/review', badge: stats.facultyPending > 0 ? stats.facultyPending : null },
+      { name: 'Repository',           icon: Search,          path: '/faculty/repository' },
     ],
     dean: [
-      { 
-        name: 'Dashboard', 
-        icon: LayoutDashboard, 
-        path: '/dashboard',
-        badge: null,
-        description: 'Overview & Monitoring'
-      },
-      { 
-        name: 'Review Submissions', 
-        icon: FileCheck, 
-        path: '/dean/review',
-        badge: stats.deanChairPending > 0 ? stats.deanChairPending : null,
-        description: 'Review assigned papers'
-      },
-      { 
-        name: 'Activity Monitor', 
-        icon: Eye, 
-        path: '/dean/activity-monitor',
-        badge: null,
-        description: 'Monitor all accounts'
-      },
-      { 
-        name: 'Audit Logs', 
-        icon: Shield, 
-        path: '/dean/audit-logs',
-        badge: null,
-        description: 'System activity trail'
-      },
-      { 
-        name: 'Browse Repository', 
-        icon: Search, 
-        path: '/dean/repository',
-        badge: null,
-        description: 'Explore papers'
-      },
-      {
-        name: 'Profile',
-        icon: User,
-        path: '/profile',
-        badge: null,
-        description: 'Profile & exports'
-      },
+      { name: 'Dashboard',            icon: LayoutDashboard, path: '/dashboard' },
+      { name: 'Review Submissions',   icon: FileCheck,       path: '/dean/review', badge: stats.deanChairPending > 0 ? stats.deanChairPending : null },
+      { name: 'Activity Monitor',     icon: Eye,             path: '/dean/activity-monitor' },
+      { name: 'Audit Logs',           icon: Shield,          path: '/dean/audit-logs' },
+      { name: 'Repository',           icon: Search,          path: '/dean/repository' },
     ],
     program_chair: [
-      { 
-        name: 'Program Analytics', 
-        icon: LayoutDashboard, 
-        path: '/program-chair/analytics',
-        badge: null,
-        description: 'PC1 and PC3 insights'
-      },
-      { 
-        name: 'Assign Faculty', 
-        icon: FileCheck, 
-        path: '/program-chair/review',
-        badge: stats.deanChairPending > 0 ? stats.deanChairPending : null,
-        description: 'PC2 reassignment queue'
-      },
-      { 
-        name: 'Browse Repository', 
-        icon: Search, 
-        path: '/program-chair/repository',
-        badge: null,
-        description: 'Explore papers'
-      },
-      {
-        name: 'Profile',
-        icon: User,
-        path: '/profile',
-        badge: null,
-        description: 'Profile & exports'
-      },
+      { name: 'Program Analytics',    icon: LayoutDashboard, path: '/program-chair/analytics' },
+      { name: 'Assign Faculty',       icon: FileCheck,       path: '/program-chair/review', badge: stats.deanChairPending > 0 ? stats.deanChairPending : null },
+      { name: 'Repository',           icon: Search,          path: '/program-chair/repository' },
     ],
     student: [
-      { 
-        name: 'Dashboard', 
-        icon: LayoutDashboard, 
-        path: '/dashboard',
-        badge: null,
-        description: 'Overview'
-      },
-      { 
-        name: 'Portfolio', 
-        icon: FileText, 
-        path: '/student/portfolio',
-        badge: null,
-        description: 'Your papers and timeline'
-      },
-      { 
-        name: 'Submit Research', 
-        icon: PlusCircle, 
-        path: '/student/submit',
-        badge: null,
-        description: 'Upload new paper'
-      },
-      {
-        name: 'Co-author Invites',
-        icon: UserPlus,
-        path: '/student/co-author-invitations',
-        badge: null,
-        description: 'Accept or decline invites'
-      },
-      { 
-        name: 'Browse Repository', 
-        icon: Search, 
-        path: '/student/browse',
-        badge: null,
-        description: 'Explore papers'
-      },
-      { 
-        name: 'Profile', 
-        icon: User, 
-        path: '/profile',
-        badge: null,
-        description: 'Account settings'
-      },
-    ]
+      { name: 'Dashboard',            icon: LayoutDashboard, path: '/dashboard' },
+      { name: 'Portfolio',            icon: FileText,        path: '/student/portfolio' },
+      { name: 'Submit Research',      icon: PlusCircle,      path: '/student/submit' },
+      { name: 'Co-author Invites',    icon: UserPlus,        path: '/student/co-author-invitations' },
+      { name: 'Repository',           icon: Search,          path: '/student/browse' },
+    ],
   };
 
   const menuItems = menuConfig[user?.role] || [];
-  const roleConfig = getRoleConfig(user?.role);
-  const primaryMenuItems = menuItems.filter((item) => item.path !== '/profile');
   const roleLabel = (user?.role || 'user').replace('_', ' ').toUpperCase();
+  const totalNotifications = notifications.reduce((s, n) => s + n.count, 0);
 
-  const totalNotifications = notifications.reduce((sum, notif) => sum + notif.count, 0);
+  // Active check helper
+  const isActive = (path) => {
+    const [pathname, query] = path.split('?');
+    return location.pathname.startsWith(pathname) && (!query || location.search.includes(query));
+  };
 
   return (
-    <aside className={`bg-[#f5f6f7] border-r border-slate-200 transition-all duration-300 flex flex-col sticky top-0 h-screen ${isCollapsed ? 'w-20' : 'w-72'}`}>
-      <div className={`h-24 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-5 border-b border-slate-200 relative`}>
-        {!isCollapsed ? (
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-500 flex items-center justify-center shadow-md">
-              <BookOpen size={22} className="text-white" />
-            </div>
-            <h1 className="text-3xl leading-none tracking-tight font-black text-slate-800">NUCLEUS</h1>
-          </div>
-        ) : (
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-500 flex items-center justify-center shadow-md">
-            <BookOpen size={22} className="text-white" />
-          </div>
+    <aside style={S.aside(isCollapsed)}>
+
+      {/* ── Header ── */}
+      <div style={S.header(isCollapsed)}>
+        {!isCollapsed && (
+          <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
+            <img src={nuLogoLeft} alt="NUCLEUS" style={{ height: 40, width: 'auto', objectFit: 'contain' }} />
+          </Link>
+        )}
+        {isCollapsed && (
+          <Link to="/" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
+            <img src={nuLogoLeft} alt="N" style={{ height: 28, width: 'auto', objectFit: 'contain' }} />
+          </Link>
         )}
 
+        {/* Collapse toggle — Apple media control style */}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute -right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white border border-slate-200 text-slate-500 shadow-md hover:text-slate-700 transition-colors flex items-center justify-center"
+          style={S.collapseBtn}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.12)'; e.currentTarget.style.color = 'var(--color-near-black)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-overlay)'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          <ChevronLeft size={18} className={isCollapsed ? 'rotate-180' : ''} />
+          <ChevronLeft
+            size={14}
+            style={{ transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}
+          />
         </button>
       </div>
 
+      {/* ── User profile ── */}
       {!isCollapsed && (
-        <div className="px-6 py-6 border-b border-slate-200">
-          <p className="text-2xl leading-tight font-extrabold text-slate-800 truncate">{user?.fullName || 'User'}</p>
-          <p className="text-base leading-tight text-slate-600 truncate mt-1">{user?.email || 'No email'}</p>
-          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-200 text-slate-700 font-black text-xs tracking-[0.08em]">
-            <Shield size={14} className="text-emerald-500" />
+        <div style={S.profileSection}>
+          <div style={S.userName}>{user?.fullName || 'User'}</div>
+          <div style={S.userEmail}>{user?.email || ''}</div>
+          <div style={S.roleBadge}>
+            <Shield size={10} style={{ color: 'var(--color-apple-blue)' }} />
             {roleLabel}
           </div>
         </div>
       )}
 
-      <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
-        {primaryMenuItems.map((item) => {
-          const [itemPathname, itemQuery] = item.path.split('?');
-          const isPathMatch = location.pathname.startsWith(itemPathname);
-          const isQueryMatch = !itemQuery || location.search.includes(itemQuery);
-          const isActive = isPathMatch && isQueryMatch;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.name}
-              to={item.path}
-              className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} px-3 py-3.5 rounded-2xl transition-colors ${
-                isActive
-                  ? 'bg-white text-slate-800 border border-slate-200 shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
-              }`}
-            >
-              <Icon size={22} className="flex-shrink-0" />
-              {!isCollapsed && <span className="text-lg leading-none font-semibold">{item.name === 'Browse Repository' ? 'Repository' : item.name}</span>}
-              {!isCollapsed && item.badge ? (
-                <span className="ml-auto min-w-[22px] h-[22px] px-1.5 rounded-full bg-rose-500 text-white text-xs font-bold flex items-center justify-center">
-                  {item.badge}
-                </span>
-              ) : null}
-              {isCollapsed && (
-                <div className="absolute left-full ml-3 px-3 py-1.5 bg-slate-800 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
-                  {item.name}
-                </div>
-              )}
-            </Link>
-          );
-        })}
+      {/* ── Primary nav ── */}
+      <nav style={S.nav} aria-label="Main navigation">
+        {menuItems.map((item) => (
+          <NavItem
+            key={item.name}
+            to={item.path}
+            icon={item.icon}
+            label={item.name}
+            badge={item.badge}
+            active={isActive(item.path)}
+            collapsed={isCollapsed}
+          />
+        ))}
       </nav>
 
-      <div className="border-t border-slate-200 px-4 py-5 space-y-1">
-        <Link
+      {/* ── Bottom zone ── */}
+      <div style={S.bottomZone}>
+        {/* Notifications */}
+        <NavItem
           to="/notifications"
-          className={`w-full relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} px-3 py-3.5 rounded-2xl transition-colors ${
-            location.pathname.startsWith('/notifications')
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
-          }`}
-        >
-          <Bell size={22} />
-          {!isCollapsed && <span className="text-lg leading-none font-semibold">Notifications</span>}
-          {totalNotifications > 0 && (
-            <span className="absolute right-3 min-w-[22px] h-[22px] px-1.5 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">
-              {totalNotifications}
-            </span>
-          )}
-        </Link>
+          icon={Bell}
+          label="Notifications"
+          badge={totalNotifications > 0 ? totalNotifications : null}
+          active={location.pathname.startsWith('/notifications')}
+          collapsed={isCollapsed}
+        />
 
-        <Link
+        {/* Profile */}
+        <NavItem
           to="/profile"
-          className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} px-3 py-3.5 rounded-2xl transition-colors ${
-            location.pathname.startsWith('/profile')
-              ? 'bg-white text-slate-800 border border-slate-200 shadow-sm'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
-          }`}
-        >
-          <User size={22} />
-          {!isCollapsed && <span className="text-lg leading-none font-semibold">Profile</span>}
-          {isCollapsed && (
-            <div className="absolute left-full ml-3 px-3 py-1.5 bg-slate-800 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
-              Profile
-            </div>
-          )}
-        </Link>
+          icon={User}
+          label="Profile"
+          active={location.pathname.startsWith('/profile')}
+          collapsed={isCollapsed}
+        />
 
-        <button
+        {/* Sign out */}
+        <NavItem
           onClick={handleLogout}
-          className={`group relative w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'} px-3 py-3.5 rounded-2xl text-rose-600 hover:bg-rose-50 transition-colors`}
-        >
-          <LogOut size={22} />
-          {!isCollapsed && <span className="text-lg leading-none font-semibold">Sign Out</span>}
-          {isCollapsed && (
-            <div className="absolute left-full ml-3 px-3 py-1.5 bg-slate-800 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
-              Sign Out
-            </div>
-          )}
-        </button>
+          icon={LogOut}
+          label="Sign Out"
+          active={false}
+          collapsed={isCollapsed}
+          style={{ color: 'var(--color-text-tertiary)' }}
+        />
       </div>
     </aside>
   );

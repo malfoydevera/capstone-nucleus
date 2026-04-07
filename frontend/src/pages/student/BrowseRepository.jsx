@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Search, 
-  Filter, 
-  Download, 
-  Eye, 
-  Calendar, 
-  User, 
-  Tag, 
-  FileText, 
+import {
+  Search,
+  Filter,
+  Download,
+  Eye,
+  Calendar,
+  User,
+  Tag,
+  FileText,
   ExternalLink,
   Grid,
   List,
@@ -73,10 +73,10 @@ const BrowseRepository = () => {
         researchAPI.getPublishedResearch(),
         researchAPI.getCategories()
       ]);
-      
+
       setPapers(papersRes.data.papers);
       setCategories(categoriesRes.data.categories || []);
-      
+
       // Extract unique years from papers
       const years = [...new Set(
         papersRes.data.papers
@@ -84,12 +84,12 @@ const BrowseRepository = () => {
           .filter(year => !isNaN(year))
       )].sort((a, b) => b - a);
       setAvailableYears(years);
-      
+
       // Calculate stats
       const uniqueAuthors = new Set(papersRes.data.papers.map(p => p.users?.id));
       const totalDownloads = papersRes.data.papers.reduce((sum, p) => sum + (p.download_count || 0), 0);
       const totalViews = papersRes.data.papers.reduce((sum, p) => sum + (p.view_count || 0), 0);
-      
+
       setStats({
         totalPapers: papersRes.data.papers.length,
         totalAuthors: uniqueAuthors.size,
@@ -111,7 +111,7 @@ const BrowseRepository = () => {
       filtered = filtered.filter(paper =>
         paper.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         paper.abstract.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.keywords?.some(keyword => 
+        paper.keywords?.some(keyword =>
           keyword.toLowerCase().includes(searchTerm.toLowerCase())
         )
       );
@@ -126,7 +126,7 @@ const BrowseRepository = () => {
           return true;
         }
         // Check co-authors
-        if (paper.co_authors?.some(ca => 
+        if (paper.co_authors?.some(ca =>
           formatFullName(ca.author).toLowerCase().includes(authorName)
         )) {
           return true;
@@ -175,12 +175,12 @@ const BrowseRepository = () => {
     const now = new Date();
     const diffTime = Math.abs(now - date);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays} days ago`;
     if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-    
+
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -286,11 +286,11 @@ const BrowseRepository = () => {
             <Sparkles size={16} />
             National University Dasmariñas
           </div>
-          
+
           <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-4">
             Research <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Repository</span>
           </h1>
-          
+
           <p className="text-xl text-slate-600 max-w-3xl mx-auto mb-10">
             Discover, explore, and download published academic research from our university community
           </p>
@@ -340,7 +340,7 @@ const BrowseRepository = () => {
                 )}
               </div>
             </div>
-            
+
             {/* Search Tips */}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-slate-500">
               <span className="flex items-center gap-2">
@@ -484,22 +484,20 @@ const BrowseRepository = () => {
                 <div className="flex bg-slate-100 rounded-lg p-1">
                   <button
                     onClick={() => setViewMode('grid')}
-                    className={`p-2 rounded-md transition-all ${
-                      viewMode === 'grid' 
-                        ? 'bg-white text-slate-900 shadow-sm' 
+                    className={`p-2 rounded-md transition-all ${viewMode === 'grid'
+                        ? 'bg-white text-slate-900 shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                      }`}
                     title="Grid view"
                   >
                     <Grid size={18} />
                   </button>
                   <button
                     onClick={() => setViewMode('list')}
-                    className={`p-2 rounded-md transition-all ${
-                      viewMode === 'list' 
-                        ? 'bg-white text-slate-900 shadow-sm' 
+                    className={`p-2 rounded-md transition-all ${viewMode === 'list'
+                        ? 'bg-white text-slate-900 shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                      }`}
                     title="List view"
                   >
                     <List size={18} />
@@ -539,7 +537,7 @@ const BrowseRepository = () => {
                   <X size={20} />
                 </button>
               </div>
-              
+
               <div className="space-y-6">
                 {/* Categories */}
                 <div>
@@ -550,11 +548,10 @@ const BrowseRepository = () => {
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => handleCategorySelect('')}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        selectedCategory === '' 
-                          ? 'bg-[#1C4D8D] text-white' 
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedCategory === ''
+                          ? 'bg-[#1C4D8D] text-white'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
+                        }`}
                     >
                       All
                     </button>
@@ -562,11 +559,10 @@ const BrowseRepository = () => {
                       <button
                         key={category.id}
                         onClick={() => handleCategorySelect(category.id)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          selectedCategory === category.id 
-                            ? 'bg-[#1C4D8D] text-white' 
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedCategory === category.id
+                            ? 'bg-[#1C4D8D] text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
+                          }`}
                       >
                         {category.name}
                       </button>
@@ -587,11 +583,10 @@ const BrowseRepository = () => {
                         <button
                           key={option.value}
                           onClick={() => handleSortSelect(option.value)}
-                          className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${
-                            sortBy === option.value 
-                              ? 'border-[#1C4D8D] bg-[#1C4D8D]/10 text-[#1C4D8D]' 
+                          className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${sortBy === option.value
+                              ? 'border-[#1C4D8D] bg-[#1C4D8D]/10 text-[#1C4D8D]'
                               : 'border-slate-200 hover:border-slate-300'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-3">
                             <Icon size={18} />
@@ -612,22 +607,20 @@ const BrowseRepository = () => {
                   <div className="flex bg-slate-100 rounded-xl p-1">
                     <button
                       onClick={() => setViewMode('grid')}
-                      className={`flex-1 p-3 rounded-lg text-center transition-all ${
-                        viewMode === 'grid' 
-                          ? 'bg-white text-slate-900 shadow-sm' 
+                      className={`flex-1 p-3 rounded-lg text-center transition-all ${viewMode === 'grid'
+                          ? 'bg-white text-slate-900 shadow-sm'
                           : 'text-slate-600 hover:text-slate-900'
-                      }`}
+                        }`}
                     >
                       <Grid size={20} className="mx-auto mb-1" />
                       <span className="text-xs">Grid</span>
                     </button>
                     <button
                       onClick={() => setViewMode('list')}
-                      className={`flex-1 p-3 rounded-lg text-center transition-all ${
-                        viewMode === 'list' 
-                          ? 'bg-white text-slate-900 shadow-sm' 
+                      className={`flex-1 p-3 rounded-lg text-center transition-all ${viewMode === 'list'
+                          ? 'bg-white text-slate-900 shadow-sm'
                           : 'text-slate-600 hover:text-slate-900'
-                      }`}
+                        }`}
                     >
                       <List size={20} className="mx-auto mb-1" />
                       <span className="text-xs">List</span>
@@ -797,7 +790,7 @@ const BrowseRepository = () => {
                               </span>
                             </div>
                           </div>
-                          
+
                           <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-[#1C4D8D] transition-colors">
                             {paper.title}
                           </h3>

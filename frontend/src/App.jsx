@@ -2,6 +2,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
+import ForgotPassword from './components/auth/ForgotPassword';
+import ResetPassword from './components/auth/ResetPassword';
 import CoAuthorInvitations from './pages/student/CoAuthorInvitations';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import Sidebar from './components/layout/Sidebar';
@@ -25,7 +27,7 @@ import DeanActivityMonitor from './pages/dean/DeanActivityMonitor';
 import DeanAuditLogs from './pages/dean/DeanAuditLogs';
 
 // NEW IMPORTS
-import Landing from './pages/Landing'; 
+import Landing from './pages/Landing';
 import UserManagement from './pages/admin/UserManagement';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
 import AdminSystemHealth from './pages/admin/AdminSystemHealth';
@@ -110,16 +112,18 @@ function App() {
         <Routes>
           {/* Landing Page as the default route - Users see this first */}
           <Route path="/" element={<Landing />} />
-          
+
           {/* Public Authentication Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
-          
+
           {/* Protected Routes: Only accessible after login */}
           <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<DashboardRouter />} />
-            
+
             {/* Student Specific Routes */}
             <Route path="/student/my-research" element={
               <ProtectedRoute allowedRoles={['student']}>
@@ -158,7 +162,7 @@ function App() {
             } />
             <Route path="/student/profile" element={<Navigate to="/profile" replace />} />
             <Route path="/faculty/profile" element={<Navigate to="/profile" replace />} />
-            
+
             {/* Research Detail View - Accessible to all authenticated users */}
             <Route path="/research/:id" element={
               <ProtectedRoute allowedRoles={['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin']}>

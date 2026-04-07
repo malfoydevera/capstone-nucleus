@@ -1,8 +1,10 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
 const { attachFullName, buildFullName, splitFullName } = require('../utils/name');
 const { sendSuccess, sendError } = require('../utils/response');
+const { sendTransactionalEmail } = require('../utils/mailer');
 const { getSystemPolicy, updateSystemPolicy, SUPPORTED_FILE_TYPES } = require('../utils/systemPolicy');
 
 const BULK_IMPORT_ALLOWED_ROLES = ['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin'];
@@ -43,6 +45,10 @@ function parseCsvLine(line) {
 
   cells.push(current.trim());
   return cells;
+}
+
+function hashResetToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
 // Register new user
@@ -268,6 +274,164 @@ exports.login = async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     return sendError(res, { status: 500, code: 'LOGIN_FAILED', message: 'Server error' });
+  }
+};
+
+// Request password reset
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Email is required' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const { data: user } = await supabase
+      .from('users')
+      .select('id, email, recovery_email')
+      .or(`email.eq.${normalizedEmail},recovery_email.eq.${normalizedEmail}`)
+      .maybeSingle();
+
+    // Prevent account enumeration by returning a generic success response either way.
+    if (!user) {
+      const diagnostics = process.env.NODE_ENV !== 'production'
+        ? { emailDelivery: { delivered: false, skipped: true, reason: 'ACCOUNT_NOT_FOUND' } }
+        : {};
+
+      return sendSuccess(res, {
+        message: 'If an account exists for that email, a password reset link has been generated.',
+        data: diagnostics,
+      });
+    }
+
+    const ttlMinutesRaw = Number(process.env.RESET_PASSWORD_TOKEN_TTL_MINUTES || 30);
+    const ttlMinutes = Number.isFinite(ttlMinutesRaw) ? Math.max(5, ttlMinutesRaw) : 30;
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = hashResetToken(token);
+    const expiresAt = new Date(Date.now() + (ttlMinutes * 60 * 1000)).toISOString();
+
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used_at: new Date().toISOString() })
+      .eq('user_id', user.id)
+      .is('used_at', null);
+
+    const { error: tokenInsertError } = await supabase
+      .from('password_reset_tokens')
+      .insert([{
+        user_id: user.id,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+      }]);
+
+    if (tokenInsertError) {
+      throw tokenInsertError;
+    }
+
+    const frontendBaseUrl = (process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+    const resetLink = `${frontendBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+
+    const resetRecipient = (user.recovery_email || user.email || '').trim();
+
+    const emailResult = await sendTransactionalEmail({
+      to: resetRecipient,
+      subject: 'NUCLEUS Password Reset',
+      text: [
+        'Hello,',
+        '',
+        'We received a request to reset your password.',
+        `Reset link: ${resetLink}`,
+        `This link expires in ${ttlMinutes} minutes.`,
+        '',
+        'If you did not request this, you can ignore this email.',
+      ].join('\n'),
+    });
+
+    if (process.env.NODE_ENV !== 'production' || process.env.EXPOSE_RESET_TOKEN === 'true') {
+      return sendSuccess(res, {
+        message: 'If an account exists for that email, a password reset link has been generated.',
+        data: {
+          resetLink,
+          emailDelivery: emailResult,
+        },
+      });
+    }
+
+    return sendSuccess(res, {
+      message: 'If an account exists for that email, a password reset link has been generated.',
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return sendError(res, { status: 500, code: 'FORGOT_PASSWORD_FAILED', message: 'Server error' });
+  }
+};
+
+// Reset password
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Token and new password are required' });
+    }
+
+    if (newPassword.length < 8) {
+      return sendError(res, { status: 400, code: 'WEAK_PASSWORD', message: 'Password must be at least 8 characters long' });
+    }
+
+    const tokenHash = hashResetToken(token);
+
+    const { data: resetRecord, error: resetRecordError } = await supabase
+      .from('password_reset_tokens')
+      .select('id, user_id, expires_at, used_at')
+      .eq('token_hash', tokenHash)
+      .is('used_at', null)
+      .maybeSingle();
+
+    if (resetRecordError || !resetRecord) {
+      return sendError(res, { status: 400, code: 'INVALID_RESET_TOKEN', message: 'Reset token is invalid or expired' });
+    }
+
+    const isExpired = new Date(resetRecord.expires_at).getTime() <= Date.now();
+    if (isExpired) {
+      return sendError(res, { status: 400, code: 'INVALID_RESET_TOKEN', message: 'Reset token is invalid or expired' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update({
+        password: hashedPassword,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', resetRecord.user_id)
+      .select('id')
+      .maybeSingle();
+
+    if (updateError || !updatedUser) {
+      return sendError(res, { status: 400, code: 'INVALID_RESET_TOKEN', message: 'Reset token is invalid or expired' });
+    }
+
+    try {
+      await supabase
+        .from('password_reset_tokens')
+        .update({ used_at: new Date().toISOString() })
+        .eq('user_id', resetRecord.user_id)
+        .is('used_at', null);
+
+      await supabase.from('refresh_tokens').delete().eq('user_id', resetRecord.user_id);
+    } catch (refreshDeleteError) {
+      console.log('Refresh token invalidation skipped:', refreshDeleteError.message);
+    }
+
+    return sendSuccess(res, {
+      message: 'Password has been reset successfully',
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return sendError(res, { status: 500, code: 'RESET_PASSWORD_FAILED', message: 'Server error' });
   }
 };
 

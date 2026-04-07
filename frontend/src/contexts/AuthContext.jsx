@@ -16,6 +16,8 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const getStoredToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -29,15 +31,13 @@ export const AuthProvider = ({ children }) => {
   };
 
   const checkAuth = async () => {
-    // CHANGE: Use sessionStorage
-    const token = sessionStorage.getItem('token');
-    localStorage.removeItem('token');
+    const token = getStoredToken();
     if (token) {
       try {
         const response = await authAPI.getCurrentUser();
         setUser(response.data.user);
       } catch (err) {
-        // CHANGE: Use sessionStorage
+        localStorage.removeItem('token');
         sessionStorage.removeItem('token');
         setUser(null);
       }
@@ -45,14 +45,20 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   };
 
-  const login = async (email, password) => {
+  const login = async (email, password, rememberMe = false) => {
     try {
       setError(null);
       const response = await authAPI.login({ email, password });
       const { token, user } = response.data;
-      // CHANGE: Use sessionStorage
-      sessionStorage.setItem('token', token);
-      localStorage.removeItem('token');
+
+      if (rememberMe) {
+        localStorage.setItem('token', token);
+        sessionStorage.removeItem('token');
+      } else {
+        sessionStorage.setItem('token', token);
+        localStorage.removeItem('token');
+      }
+
       setUser(user);
       return { success: true };
     } catch (err) {
@@ -92,9 +98,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    // CHANGE: Use sessionStorage
-    sessionStorage.removeItem('token');
     localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     setUser(null);
   };
 

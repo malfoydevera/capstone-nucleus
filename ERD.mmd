@@ -1,0 +1,242 @@
+%% Source: backend/migrations/schema_full.sql + additive migrations
+erDiagram
+	USERS {
+		uuid id PK
+		varchar email
+		varchar role
+		varchar first_name
+		varchar last_name
+		uuid department_id FK
+		uuid program_id FK
+		timestamptz created_at
+	}
+
+	PROFILES {
+		uuid id PK,FK
+		text role
+	}
+
+	RESEARCH_CATEGORIES {
+		uuid id PK
+		varchar name
+		text description
+	}
+
+	DEPARTMENTS {
+		uuid id PK
+		varchar name
+		varchar code
+		boolean is_active
+	}
+
+	PROGRAMS {
+		uuid id PK
+		uuid department_id FK
+		varchar name
+		varchar code
+		boolean is_active
+	}
+
+	RESEARCH_PAPERS {
+		uuid id PK
+		uuid author_id FK
+		uuid faculty_id FK
+		uuid dean_chair_id FK
+		uuid department_id FK
+		uuid bypassed_by FK
+		varchar title
+		text abstract
+		varchar category
+		varchar status
+		text file_url
+		text file_storage_path
+		timestamptz review_deadline_at
+		varchar plagiarism_status
+		numeric plagiarism_score
+		timestamptz created_at
+	}
+
+	RESEARCH_AUTHORS {
+		uuid id PK
+		uuid research_id FK
+		uuid user_id FK
+		int author_order
+		boolean is_primary
+	}
+
+	RESEARCH_COMMENTS {
+		uuid id PK
+		uuid research_id FK
+		uuid user_id FK
+		uuid parent_id FK
+		text comment
+		boolean is_internal
+	}
+
+	FACULTY_REVIEWS {
+		uuid id PK
+		uuid research_id FK
+		uuid faculty_id FK
+		varchar status
+		text comments
+		timestamptz reviewed_at
+	}
+
+	APPROVAL_WORKFLOW {
+		uuid id PK
+		uuid research_id FK
+		uuid reviewer_id FK
+		varchar reviewer_role
+		varchar status
+		text comments
+		timestamptz reviewed_at
+	}
+
+	NOTIFICATIONS {
+		uuid id PK
+		uuid user_id FK
+		uuid research_id FK
+		varchar type
+		varchar title
+		boolean is_read
+		timestamptz created_at
+	}
+
+	PAPER_VIEWS {
+		uuid id PK
+		uuid paper_id FK
+		uuid user_id FK
+		timestamptz viewed_at
+	}
+
+	PAPER_DOWNLOADS {
+		uuid id PK
+		uuid paper_id FK
+		uuid user_id FK
+		timestamptz downloaded_at
+	}
+
+	AUDIT_LOGS {
+		uuid id PK
+		uuid user_id FK
+		varchar user_role
+		varchar action
+		varchar target_type
+		uuid target_id
+		jsonb details
+		timestamptz created_at
+	}
+
+	CO_AUTHOR_INVITATIONS {
+		uuid id PK
+		uuid research_id FK
+		uuid inviter_id FK
+		uuid invitee_id FK
+		varchar invitee_email
+		varchar token
+		varchar status
+		timestamptz expires_at
+	}
+
+	FACULTY_CONFLICT_DECLARATIONS {
+		uuid id PK
+		uuid faculty_id FK
+		uuid research_id FK
+		text reason
+		timestamptz declared_at
+	}
+
+	SUBMISSION_DRAFTS {
+		uuid id PK
+		uuid user_id FK
+		uuid paper_id FK
+		jsonb draft_data
+		timestamptz updated_at
+	}
+
+	SYSTEM_POLICY_SETTINGS {
+		boolean id PK
+		int max_file_size_mb
+		text[] allowed_file_types
+		uuid updated_by FK
+		timestamptz updated_at
+	}
+
+	WORKFLOW_STAGES {
+		bigint id PK
+		varchar code
+		varchar label
+		varchar reviewer_role
+		int position
+		boolean is_active
+	}
+
+	REFRESH_TOKENS {
+		uuid token PK
+		uuid user_id FK
+		timestamptz expires_at
+		timestamptz created_at
+	}
+
+	PASSWORD_RESET_TOKENS {
+		uuid id PK
+		uuid user_id FK
+		varchar token_hash
+		timestamptz expires_at
+		timestamptz used_at
+	}
+
+	AUTH_USERS {
+		uuid id PK
+	}
+
+	USERS ||--o{ RESEARCH_PAPERS : author_id
+	USERS ||--o{ RESEARCH_PAPERS : faculty_id
+	USERS ||--o{ RESEARCH_PAPERS : dean_chair_id
+	USERS ||--o{ RESEARCH_PAPERS : bypassed_by
+
+	DEPARTMENTS ||--o{ USERS : department_id
+	PROGRAMS ||--o{ USERS : program_id
+	DEPARTMENTS ||--o{ PROGRAMS : department_id
+	DEPARTMENTS ||--o{ RESEARCH_PAPERS : department_id
+
+	RESEARCH_PAPERS ||--o{ RESEARCH_AUTHORS : research_id
+	USERS ||--o{ RESEARCH_AUTHORS : user_id
+
+	RESEARCH_PAPERS ||--o{ RESEARCH_COMMENTS : research_id
+	USERS ||--o{ RESEARCH_COMMENTS : user_id
+	RESEARCH_COMMENTS ||--o{ RESEARCH_COMMENTS : parent_id
+
+	RESEARCH_PAPERS ||--o{ FACULTY_REVIEWS : research_id
+	USERS ||--o{ FACULTY_REVIEWS : faculty_id
+
+	RESEARCH_PAPERS ||--o{ APPROVAL_WORKFLOW : research_id
+	USERS ||--o{ APPROVAL_WORKFLOW : reviewer_id
+
+	USERS ||--o{ NOTIFICATIONS : user_id
+	RESEARCH_PAPERS ||--o{ NOTIFICATIONS : research_id
+
+	RESEARCH_PAPERS ||--o{ PAPER_VIEWS : paper_id
+	USERS ||--o{ PAPER_VIEWS : user_id
+
+	RESEARCH_PAPERS ||--o{ PAPER_DOWNLOADS : paper_id
+	USERS ||--o{ PAPER_DOWNLOADS : user_id
+
+	USERS ||--o{ AUDIT_LOGS : user_id
+
+	RESEARCH_PAPERS ||--o{ CO_AUTHOR_INVITATIONS : research_id
+	USERS ||--o{ CO_AUTHOR_INVITATIONS : inviter_id
+	USERS ||--o{ CO_AUTHOR_INVITATIONS : invitee_id
+
+	USERS ||--o{ FACULTY_CONFLICT_DECLARATIONS : faculty_id
+	RESEARCH_PAPERS ||--o{ FACULTY_CONFLICT_DECLARATIONS : research_id
+
+	USERS ||--o{ SUBMISSION_DRAFTS : user_id
+	RESEARCH_PAPERS ||--o{ SUBMISSION_DRAFTS : paper_id
+
+	USERS ||--o| SYSTEM_POLICY_SETTINGS : updated_by
+
+	USERS ||--o{ REFRESH_TOKENS : user_id
+	USERS ||--o{ PASSWORD_RESET_TOKENS : user_id
+
+	AUTH_USERS ||--o| PROFILES : id

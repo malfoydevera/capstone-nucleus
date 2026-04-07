@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { 
-  BookOpen, 
-  Lock, 
-  Mail, 
-  Eye, 
+import {
+  BookOpen,
+  Lock,
+  Mail,
+  Eye,
   EyeOff,
   GraduationCap,
   ArrowRight,
@@ -20,6 +20,7 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState({
@@ -29,17 +30,31 @@ const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const rememberedEmail = localStorage.getItem('rememberedEmail');
+    if (rememberedEmail) {
+      setEmail(rememberedEmail);
+      setRememberMe(true);
+    }
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     const loadingToast = toast.loading('Signing in...');
-    const result = await login(email, password);
-    
+    const result = await login(email, password, rememberMe);
+
     setLoading(false);
-    
+
     if (result.success) {
+      if (rememberMe) {
+        localStorage.setItem('rememberedEmail', email.trim());
+      } else {
+        localStorage.removeItem('rememberedEmail');
+      }
+
       toast.success('Welcome back! 👋', {
         id: loadingToast,
         duration: 2000,
@@ -66,9 +81,9 @@ const Login = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 font-sans overflow-hidden">
       {/* Background Image with Overlay - Smooth parallax effect */}
       <div className="fixed inset-0 z-0 animate-fadeIn">
-        <img 
-          src={nuBuildingImg} 
-          alt="NU Building Background" 
+        <img
+          src={nuBuildingImg}
+          alt="NU Building Background"
           className="w-full h-full object-cover transition-transform duration-30000 ease-linear transform hover:scale-105"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#1C4D8D]/70 via-[#1C4D8D]/50 to-[#1C4D8D]/40 transition-all duration-1000" />
@@ -96,8 +111,8 @@ const Login = () => {
         <div className="flex flex-col lg:flex-row items-center justify-center gap-12">
           {/* Left Side - Branding and Info */}
           <div className="w-full lg:w-1/2 text-white space-y-8 animate-slideInLeft">
-            <Link 
-              to="/" 
+            <Link
+              to="/"
               className="flex items-center gap-3 mb-8 group hover:opacity-90 transition-all duration-500"
             >
               <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-indigo-500/25 transition-all duration-500 group-hover:scale-105 group-hover:rotate-3">
@@ -114,14 +129,14 @@ const Login = () => {
                 <GraduationCap size={16} className="text-indigo-300 transition-transform duration-500 hover:rotate-12" />
                 Academic Portal Access
               </div>
-              
+
               <h1 className="text-5xl md:text-6xl font-black leading-tight animate-fadeIn">
                 Welcome Back, <br />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-blue-300 to-indigo-300 animate-gradient">
                   Scholar
                 </span>
               </h1>
-              
+
               <p className="text-lg text-slate-200 max-w-md leading-relaxed font-medium transition-all duration-500 hover:text-slate-100">
                 Access your research dashboard, collaborate with peers, and contribute to the academic repository of National University Dasmariñas.
               </p>
@@ -270,6 +285,8 @@ const Login = () => {
                   <input
                     type="checkbox"
                     id="remember"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
                     className="w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500 focus:ring-2 transition-all duration-300 hover:scale-110"
                   />
                   <label htmlFor="remember" className="text-sm text-slate-600 transition-all duration-300">
