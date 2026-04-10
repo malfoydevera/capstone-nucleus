@@ -3,7 +3,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { notificationsAPI, researchAPI } from '../../utils/api';
 import supabase from '../../config/supabase';
-import nuLogoLeft from '../../assets/left.png';
 import {
   LayoutDashboard,
   BookOpen,
@@ -280,12 +279,12 @@ const NavItem = ({ to, onClick, icon: Icon, label, badge, active, collapsed, not
 ───────────────────────────────────────────────────────── */
 
 const Sidebar = () => {
-  const { user, logout }   = useAuth();
+  const { user, logout } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [stats, setStats]  = useState({ staffPending: 0, adminPending: 0 });
+  const [stats, setStats] = useState({ staffPending: 0, adminPending: 0 });
   const [notifications, setNotifications] = useState([]);
-  const navigate   = useNavigate();
-  const location   = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // ── Data fetching ──────────────────────────────────────
   useEffect(() => {
@@ -334,7 +333,7 @@ const Sidebar = () => {
         const papers = res.data.papers;
         setStats({
           staffPending: papers.filter(p => p.status === 'pending_editor' || p.status === 'under_review').length,
-          adminPending: papers.filter(p => p.status === 'pending_admin'  || p.status === 'under_review').length,
+          adminPending: papers.filter(p => p.status === 'pending_admin' || p.status === 'under_review').length,
         });
       }
     } catch { /* silent */ }
@@ -342,7 +341,7 @@ const Sidebar = () => {
 
   const fetchNotifications = async () => {
     try {
-      const res  = await notificationsAPI.getMine({ limit: 30 });
+      const res = await notificationsAPI.getMine({ limit: 30 });
       const rows = res.data.notifications || [];
       const grouped = rows.reduce((acc, n) => {
         if (n.is_read) return acc;
@@ -359,42 +358,42 @@ const Sidebar = () => {
   // ── Menu config ────────────────────────────────────────
   const menuConfig = {
     admin: [
-      { name: 'Dashboard',    icon: LayoutDashboard, path: '/dashboard',         description: 'Overview & Analytics' },
-      { name: 'User Management', icon: UserCog,      path: '/admin/users',       badge: null },
-      { name: 'Research Papers', icon: FileEdit,     path: '/admin/papers',      badge: stats.adminPending > 0 ? stats.adminPending : null },
-      { name: 'Recycle Bin', icon: Trash2,            path: '/admin/papers?recycleBin=1', badge: null },
-      { name: 'Analytics',   icon: PieChart,          path: '/admin/analytics',  badge: null },
-      { name: 'System Health', icon: Database,        path: '/admin/health',     badge: null },
-      { name: 'Settings',    icon: Grid,              path: '/admin/settings',   badge: null },
+      { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', description: 'Overview & Analytics' },
+      { name: 'User Management', icon: UserCog, path: '/admin/users', badge: null },
+      { name: 'Research Papers', icon: FileEdit, path: '/admin/papers', badge: stats.adminPending > 0 ? stats.adminPending : null },
+      { name: 'Recycle Bin', icon: Trash2, path: '/admin/papers?recycleBin=1', badge: null },
+      { name: 'Analytics', icon: PieChart, path: '/admin/analytics', badge: null },
+      { name: 'System Health', icon: Database, path: '/admin/health', badge: null },
+      { name: 'Settings', icon: Grid, path: '/admin/settings', badge: null },
     ],
     staff: [
-      { name: 'Dashboard',            icon: LayoutDashboard, path: '/dashboard' },
-      { name: 'Editorial Workspace',  icon: FileCheck,       path: '/staff/review', badge: stats.staffPending > 0 ? stats.staffPending : null },
-      { name: 'Repository',           icon: BookOpen,        path: '/staff/repository' },
+      { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+      { name: 'Editorial Workspace', icon: FileCheck, path: '/staff/review', badge: stats.staffPending > 0 ? stats.staffPending : null },
+      { name: 'Repository', icon: BookOpen, path: '/staff/repository' },
     ],
     faculty: [
-      { name: 'Dashboard',            icon: LayoutDashboard, path: '/dashboard' },
-      { name: 'Review Submissions',   icon: FileCheck,       path: '/faculty/review', badge: stats.facultyPending > 0 ? stats.facultyPending : null },
-      { name: 'Repository',           icon: Search,          path: '/faculty/repository' },
+      { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+      { name: 'Review Submissions', icon: FileCheck, path: '/faculty/review', badge: stats.facultyPending > 0 ? stats.facultyPending : null },
+      { name: 'Repository', icon: Search, path: '/faculty/repository' },
     ],
     dean: [
-      { name: 'Dashboard',            icon: LayoutDashboard, path: '/dashboard' },
-      { name: 'Review Submissions',   icon: FileCheck,       path: '/dean/review', badge: stats.deanChairPending > 0 ? stats.deanChairPending : null },
-      { name: 'Activity Monitor',     icon: Eye,             path: '/dean/activity-monitor' },
-      { name: 'Audit Logs',           icon: Shield,          path: '/dean/audit-logs' },
-      { name: 'Repository',           icon: Search,          path: '/dean/repository' },
+      { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+      { name: 'Review Submissions', icon: FileCheck, path: '/dean/review', badge: stats.deanChairPending > 0 ? stats.deanChairPending : null },
+      { name: 'Activity Monitor', icon: Eye, path: '/dean/activity-monitor' },
+      { name: 'Audit Logs', icon: Shield, path: '/dean/audit-logs' },
+      { name: 'Repository', icon: Search, path: '/dean/repository' },
     ],
     program_chair: [
-      { name: 'Program Analytics',    icon: LayoutDashboard, path: '/program-chair/analytics' },
-      { name: 'Assign Faculty',       icon: FileCheck,       path: '/program-chair/review', badge: stats.deanChairPending > 0 ? stats.deanChairPending : null },
-      { name: 'Repository',           icon: Search,          path: '/program-chair/repository' },
+      { name: 'Program Analytics', icon: LayoutDashboard, path: '/program-chair/analytics' },
+      { name: 'Assign Faculty', icon: FileCheck, path: '/program-chair/review', badge: stats.deanChairPending > 0 ? stats.deanChairPending : null },
+      { name: 'Repository', icon: Search, path: '/program-chair/repository' },
     ],
     student: [
-      { name: 'Dashboard',            icon: LayoutDashboard, path: '/dashboard' },
-      { name: 'Portfolio',            icon: FileText,        path: '/student/portfolio' },
-      { name: 'Submit Research',      icon: PlusCircle,      path: '/student/submit' },
-      { name: 'Co-author Invites',    icon: UserPlus,        path: '/student/co-author-invitations' },
-      { name: 'Repository',           icon: Search,          path: '/student/browse' },
+      { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+      { name: 'Portfolio', icon: FileText, path: '/student/portfolio' },
+      { name: 'Submit Research', icon: PlusCircle, path: '/student/submit' },
+      { name: 'Co-author Invites', icon: UserPlus, path: '/student/co-author-invitations' },
+      { name: 'Repository', icon: Search, path: '/student/browse' },
     ],
   };
 
@@ -414,14 +413,26 @@ const Sidebar = () => {
       {/* ── Header ── */}
       <div style={S.header(isCollapsed)}>
         {!isCollapsed && (
-          <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-            <img src={nuLogoLeft} alt="NUCLEUS" style={{ height: 40, width: 'auto', objectFit: 'contain' }} />
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 'var(--radius-standard)',
+              background: 'var(--color-apple-blue)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <BookOpen size={16} style={{ color: '#fff' }} />
+            </div>
+            <span style={S.wordmark}>NUCLEUS</span>
+          </div>
         )}
         {isCollapsed && (
-          <Link to="/" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
-            <img src={nuLogoLeft} alt="N" style={{ height: 28, width: 'auto', objectFit: 'contain' }} />
-          </Link>
+          <div style={{
+            width: 32, height: 32, borderRadius: 'var(--radius-standard)',
+            background: 'var(--color-apple-blue)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <BookOpen size={16} style={{ color: '#fff' }} />
+          </div>
         )}
 
         {/* Collapse toggle — Apple media control style */}
