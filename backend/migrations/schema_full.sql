@@ -150,7 +150,6 @@ CREATE TABLE public.research_papers (
   abstract          text        NOT NULL,
   keywords          text[],                            -- array of keyword strings
   author_id         uuid        NOT NULL,              -- primary submitting student
-  co_authors        text,                              -- legacy: co-author names as plain text
   category          varchar     NOT NULL,
   file_url          text        NOT NULL,              -- Supabase Storage URL
   file_name         varchar     NOT NULL,
@@ -200,13 +199,12 @@ COMMENT ON COLUMN public.research_papers.dean_chair_id IS 'Dean or Program Chair
 COMMENT ON COLUMN public.research_papers.last_reviewer_role IS 'Role of the last person who took action. Used for routing revisions back to correct stage.';
 COMMENT ON COLUMN public.research_papers.previous_status IS 'Status before a revision was requested. Used to route resubmissions back to the right stage.';
 COMMENT ON COLUMN public.research_papers.keywords IS 'Postgres text array, e.g. {machine learning, deep learning}';
-COMMENT ON COLUMN public.research_papers.co_authors IS 'Legacy plain-text field. Structured co-authors are in research_authors table.';
 
 
 -- =============================================================================
 -- 6. RESEARCH AUTHORS
 -- =============================================================================
--- Structured co-author join table (replaces the legacy co_authors text column).
+-- Structured co-author join table.
 -- Supports author ordering and primary author flag.
 
 CREATE TABLE public.research_authors (
@@ -222,7 +220,7 @@ CREATE TABLE public.research_authors (
   CONSTRAINT research_authors_user_id_fkey     FOREIGN KEY (user_id)     REFERENCES public.users(id)
 );
 
-COMMENT ON TABLE  public.research_authors IS 'Structured co-author records. Replaces the legacy co_authors text column on research_papers.';
+COMMENT ON TABLE  public.research_authors IS 'Structured co-author records for research papers.';
 COMMENT ON COLUMN public.research_authors.author_order IS '1 = first author, 2 = second, etc.';
 COMMENT ON COLUMN public.research_authors.is_primary IS 'True for the main submitting author (mirrors research_papers.author_id)';
 
@@ -456,9 +454,8 @@ CREATE INDEX IF NOT EXISTS idx_paper_downloads_paper_id ON public.paper_download
 --   - previous_status and last_reviewer_role columns track where to route resubmissions.
 --
 -- CO-AUTHORS
---   - Legacy: co_authors (text) on research_papers stores a comma-separated or JSON string.
---   - New: research_authors table provides structured co-author records with ordering.
---   - Both exist simultaneously; new submissions should use research_authors.
+--   - Structured co-authors are stored in research_authors with ordering and primary flags.
+--   - external_author_notes on research_papers stores freeform notes for non-system collaborators.
 --
 -- ANALYTICS
 --   - paper_views and paper_downloads store raw events.

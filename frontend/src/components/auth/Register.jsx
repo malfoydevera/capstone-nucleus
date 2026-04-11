@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { departmentAPI } from '../../utils/api';
+import { departmentAPI, unwrapApiData } from '../../utils/api';
 import { 
   BookOpen, 
   UserPlus, 
@@ -48,7 +48,7 @@ const Register = () => {
     const fetchDepartments = async () => {
       try {
         const response = await departmentAPI.getAllDepartments();
-        const list = response.data.departments || [];
+        const list = unwrapApiData(response).departments || [];
         setDepartments(list);
       } catch (apiError) {
         console.error('Failed to fetch departments:', apiError);
@@ -66,7 +66,7 @@ const Register = () => {
 
     try {
       const response = await departmentAPI.getProgramsByDepartment(departmentId);
-      setPrograms(response.data.programs || []);
+      setPrograms(unwrapApiData(response).programs || []);
     } catch (apiError) {
       console.error('Failed to fetch programs:', apiError);
       setPrograms([]);

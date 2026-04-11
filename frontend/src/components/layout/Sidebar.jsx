@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { notificationsAPI, researchAPI } from '../../utils/api';
-import supabase from '../../config/supabase';
+import { notificationsAPI, researchAPI, unwrapApiData } from '../../utils/api';
 import {
   LayoutDashboard,
   BookOpen,
@@ -305,35 +304,25 @@ const Sidebar = () => {
     return () => clearInterval(interval);
   }, [user]);
 
-  useEffect(() => {
-    if (!user?.id || !supabase) return;
-    const channel = supabase
-      .channel(`notifications:${user.id}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'notifications',
-        filter: `user_id=eq.${user.id}`,
-      }, () => fetchNotifications())
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [user?.id]);
-
   const fetchBadgeStats = async () => {
     try {
       if (user?.role === 'faculty') {
         const res = await researchAPI.getFacultyAssignedPapers();
-        const cnt = res.data.papers.filter(p => p.status === 'pending_faculty').length;
+        const papers = unwrapApiData(res).papers || [];
+        const cnt = papers.filter(p => p.status === 'pending_faculty').length;
         setStats({ facultyPending: cnt });
       } else if (user?.role === 'dean' || user?.role === 'program_chair') {
         const res = await researchAPI.getDeanChairAssignedPapers();
         const status = user.role === 'dean' ? 'pending_dean' : 'pending_program_chair';
-        const cnt = res.data.papers.filter(p => p.status === status).length;
+        const papers = unwrapApiData(res).papers || [];
+        const cnt = papers.filter(p => p.status === status).length;
         setStats({ deanChairPending: cnt });
       } else {
         const res = await researchAPI.getAllResearch();
-        const papers = res.data.papers;
+        const papers = unwrapApiData(res).papers || [];
         setStats({
-          staffPending: papers.filter(p => p.status === 'pending_editor' || p.status === 'under_review').length,
-          adminPending: papers.filter(p => p.status === 'pending_admin' || p.status === 'under_review').length,
+          staffPending: papers.filter(p => p.status === 'pending_editor').length,
+          adminPending: papers.filter(p => p.status === 'pending_admin').length,
         });
       }
     } catch { /* silent */ }

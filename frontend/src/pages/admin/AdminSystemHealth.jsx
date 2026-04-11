@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Activity, AlertTriangle, CheckCircle2, Database, RefreshCw, Server, Sparkles } from 'lucide-react';
 import { authAPI } from '../../utils/api';
 
@@ -37,6 +38,7 @@ const HealthCard = ({ title, value, subtitle, icon: Icon, tone = 'slate' }) => {
 };
 
 const AdminSystemHealth = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -82,6 +84,48 @@ const AdminSystemHealth = () => {
     if (success < 92 && Number(health?.ai?.requests30d || 0) > 0) return 'amber';
     return 'violet';
   }, [health?.ai?.successRate30d, health?.ai?.requests30d]);
+
+  const cleanupTone = useMemo(() => {
+    const unresolvedUsers = Number(health?.cleanup?.usersMissingDepartment || 0) + Number(health?.cleanup?.scopedUsersMissingProgram || 0);
+    const nameReviewUsers = Number(health?.cleanup?.usersNeedingNameReview || 0);
+    const unresolvedCategories = Number(health?.cleanup?.unresolvedCategoryPapers || 0);
+    const legacyWorkflowStatuses = Number(health?.cleanup?.legacyWorkflowStatusPapers || 0);
+    const authorNoteMismatches = Number(health?.cleanup?.externalAuthorNoteMismatches || 0);
+    if (unresolvedUsers > 4 || nameReviewUsers > 3 || unresolvedCategories > 10 || legacyWorkflowStatuses > 0 || authorNoteMismatches > 0) return 'red';
+    if (unresolvedUsers > 0 || nameReviewUsers > 0 || unresolvedCategories > 0) return 'amber';
+    return 'green';
+  }, [health?.cleanup?.usersMissingDepartment, health?.cleanup?.scopedUsersMissingProgram, health?.cleanup?.usersNeedingNameReview, health?.cleanup?.unresolvedCategoryPapers, health?.cleanup?.legacyWorkflowStatusPapers, health?.cleanup?.externalAuthorNoteMismatches]);
+
+  const openOrgCleanup = (entry = null) => {
+    const params = new URLSearchParams();
+    params.set('orgGaps', '1');
+    params.set('edit', '1');
+    if (entry?.email) {
+      params.set('email', entry.email);
+    }
+    if (entry?.role) {
+      params.set('role', entry.role);
+    }
+    navigate(`/admin/users?${params.toString()}`);
+  };
+
+  const openNameCleanup = (entry = null) => {
+    const params = new URLSearchParams();
+    params.set('nameReview', '1');
+    params.set('edit', '1');
+    if (entry?.email) {
+      params.set('email', entry.email);
+    }
+    if (entry?.role) {
+      params.set('role', entry.role);
+    }
+    navigate(`/admin/users?${params.toString()}`);
+  };
+
+  const openLegacyWorkflowPaper = (entry) => {
+    if (!entry?.id) return;
+    navigate(`/admin/review/${entry.id}`);
+  };
 
   if (loading) {
     return (
@@ -163,6 +207,44 @@ const AdminSystemHealth = () => {
         />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        <HealthCard
+          title="Required Users Missing Department"
+          value={health?.cleanup?.usersMissingDepartment || 0}
+          subtitle="Department-scoped roles still missing canonical org scope"
+          icon={AlertTriangle}
+          tone={cleanupTone}
+        />
+        <HealthCard
+          title="Scoped Users Missing Program"
+          value={health?.cleanup?.scopedUsersMissingProgram || 0}
+          subtitle="Students or program chairs still missing canonical program scope"
+          icon={AlertTriangle}
+          tone={cleanupTone}
+        />
+        <HealthCard
+          title="Orphaned Unresolved Users"
+          value={health?.cleanup?.orphanedUnresolvedUsers || 0}
+          subtitle="Unresolved accounts with no paper, draft, invite, or notification footprint"
+          icon={Database}
+          tone={cleanupTone}
+        />
+        <HealthCard
+          title="Users Needing Name Review"
+          value={health?.cleanup?.usersNeedingNameReview || 0}
+          subtitle="Rows with incomplete split-name data that still need account quality review"
+          icon={AlertTriangle}
+          tone={cleanupTone}
+        />
+        <HealthCard
+          title="Legacy Workflow Status Rows"
+          value={health?.cleanup?.legacyWorkflowStatusPapers || 0}
+          subtitle="Papers still using deprecated statuses like pending or under_review"
+          icon={AlertTriangle}
+          tone={cleanupTone}
+        />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <h2 className="text-xl font-bold text-slate-900 mb-4">AI Quota</h2>
@@ -207,6 +289,258 @@ const AdminSystemHealth = () => {
             </div>
           </div>
         </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Legacy Workflow Status Cleanup</h2>
+              <p className="text-sm text-slate-500">Deprecated paper statuses still blocking final workflow-state cleanup.</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {Array.isArray(health?.cleanup?.legacyWorkflowStatuses) && health.cleanup.legacyWorkflowStatuses.length > 0 ? (
+              health.cleanup.legacyWorkflowStatuses.map((entry) => (
+                <button
+                  key={entry.id}
+                  onClick={() => openLegacyWorkflowPaper(entry)}
+                  className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left hover:bg-rose-100 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{entry.title || entry.id}</p>
+                      <p className="text-sm text-slate-600">{entry.id}</p>
+                    </div>
+                    <div className="text-right text-xs font-bold text-rose-700 uppercase">
+                      {entry.status}
+                    </div>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-700 font-medium">
+                No deprecated workflow-status rows detected.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Name Cleanup</h2>
+              <p className="text-sm text-slate-500">Split-name fields are canonical. This list highlights accounts that still need manual name quality review.</p>
+            </div>
+            {Number(health?.cleanup?.usersNeedingNameReview || 0) > 0 && (
+              <button
+                onClick={() => openNameCleanup()}
+                className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50"
+              >
+                Review Users
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {Array.isArray(health?.cleanup?.nameReviewUsers) && health.cleanup.nameReviewUsers.length > 0 ? (
+              health.cleanup.nameReviewUsers.map((entry) => (
+                <button
+                  key={entry.id}
+                  onClick={() => openNameCleanup(entry)}
+                  className="w-full text-left rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{entry.currentDisplayName || entry.email}</p>
+                      <p className="text-sm text-slate-600">{entry.email} • {entry.role}</p>
+                    </div>
+                    <div className="text-right text-xs font-bold text-amber-700">
+                      {entry.missingFirstName ? <div>Missing first name</div> : null}
+                      {entry.missingLastName ? <div>Missing last name</div> : null}
+                    </div>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-700 font-medium">
+                No remaining split-name cleanup blockers detected.
+              </div>
+            )}
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Compatibility window: {health?.cleanup?.fullNameCompatibilityWindowActive ? 'active' : 'closed'}.
+              Retirement blocked: {health?.cleanup?.fullNameRetirementBlocked ? 'yes' : 'no'}.
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900 mb-4">Legacy Table Residue</h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">faculty_reviews</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.legacyTableRows?.facultyReviews || 0}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">author_invitations</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.legacyTableRows?.authorInvitations || 0}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">system_policies</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.legacyTableRows?.systemPolicies || 0}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900 mb-4">Data Cleanup Backlog</h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">Users missing department</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.usersMissingDepartment || 0}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">Scoped users missing program</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.scopedUsersMissingProgram || 0}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">Papers with legacy categories</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.unresolvedCategoryPapers || 0}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">Orphaned unresolved users</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.orphanedUnresolvedUsers || 0}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">Papers using external author notes</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.papersUsingExternalAuthorNotes || 0}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <span className="text-slate-700 font-semibold">External note mirror mismatches</span>
+              <span className="text-slate-900 font-black">{health?.cleanup?.externalAuthorNoteMismatches || 0}</span>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Admin accounts are not currently treated as department-scoped cleanup blockers.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900 mb-4">Legacy Category Values</h2>
+          {health?.cleanup?.unresolvedCategoryValues?.length > 0 ? (
+            <div className="space-y-3">
+              {health.cleanup.unresolvedCategoryValues.slice(0, 8).map((entry) => (
+                <div key={entry.value} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                  <span className="text-slate-700 font-semibold break-all">{entry.value}</span>
+                  <span className="text-slate-900 font-black">{entry.count}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-600">No unresolved legacy category values detected.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm mt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-xl font-bold text-slate-900">Users Requiring Manual Org Cleanup</h2>
+          <button
+            onClick={() => openOrgCleanup()}
+            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
+          >
+            Open In User Management
+          </button>
+        </div>
+        {health?.cleanup?.unresolvedUsers?.length > 0 ? (
+          <div className="space-y-3">
+            {health.cleanup.unresolvedUsers.map((entry) => (
+              <div key={entry.email} className="flex flex-col gap-1 rounded-xl bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 break-all">{entry.email}</p>
+                  <p className="text-xs text-slate-500">{entry.role}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {entry.missingDepartment && (
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                      Missing department
+                    </span>
+                  )}
+                  {entry.missingProgram && (
+                    <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">
+                      Missing program
+                    </span>
+                  )}
+                  {entry.orphaned && (
+                    <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      No activity footprint
+                    </span>
+                  )}
+                  <button
+                    onClick={() => openOrgCleanup(entry)}
+                    className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
+                  >
+                    Resolve
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-slate-600">No unresolved user organization assignments detected.</p>
+        )}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm mt-6">
+        <h2 className="text-xl font-bold text-slate-900 mb-4">External Author Notes Retirement Status</h2>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+            <span className="text-slate-700 font-semibold">Compatibility window active</span>
+            <span className="text-slate-900 font-black">
+              {health?.cleanup?.coAuthorsCompatibilityWindowActive ? 'Yes' : 'No'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+            <span className="text-slate-700 font-semibold">Retirement currently blocked</span>
+            <span className="text-slate-900 font-black">
+              {health?.cleanup?.coAuthorsRetirementBlocked ? 'Yes' : 'No'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+            <span className="text-slate-700 font-semibold">Rows still using external author notes</span>
+            <span className="text-slate-900 font-black">{health?.cleanup?.papersUsingExternalAuthorNotes || 0}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+            <span className="text-slate-700 font-semibold">Mirror mismatches to resolve first</span>
+            <span className="text-slate-900 font-black">{health?.cleanup?.externalAuthorNoteMismatches || 0}</span>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          The legacy co-author mirror has been retired. external_author_notes remains the only metadata note field.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm mt-6">
+        <h2 className="text-xl font-bold text-slate-900 mb-4">Redundant Table Retirement Readiness</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-sm font-semibold text-slate-700">faculty_reviews</p>
+            <p className="text-2xl font-black text-slate-900">{health?.cleanup?.legacyTableRows?.facultyReviews || 0}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-sm font-semibold text-slate-700">author_invitations</p>
+            <p className="text-2xl font-black text-slate-900">{health?.cleanup?.legacyTableRows?.authorInvitations || 0}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-sm font-semibold text-slate-700">system_policies</p>
+            <p className="text-2xl font-black text-slate-900">{health?.cleanup?.legacyTableRows?.systemPolicies || 0}</p>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          These counts help confirm whether the final cleanup release can retire redundant tables without losing active records.
+        </p>
       </div>
 
       <div className="mt-6 flex items-center gap-2 text-sm text-slate-600">

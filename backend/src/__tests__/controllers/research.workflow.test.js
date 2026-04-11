@@ -17,7 +17,7 @@ jest.mock('uuid', () => ({
 
 const supabase = require('../../config/supabase');
 const { logAuditEvent } = require('../../utils/audit');
-const researchController = require('../../controllers/research.controller');
+const reviewController = require('../../controllers/review.controller');
 
 function createRes() {
   return {
@@ -66,7 +66,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.approveResearch(req, res);
+    await reviewController.approveResearch(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     const payload = res.json.mock.calls[0][0];
@@ -82,7 +82,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.rejectResearch(req, res);
+    await reviewController.rejectResearch(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     const payload = res.json.mock.calls[0][0];
@@ -106,7 +106,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.requestRevision(req, res);
+    await reviewController.requestRevision(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     const payload = res.json.mock.calls[0][0];
@@ -129,7 +129,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.deanBypassApprove(req, res);
+    await reviewController.deanBypassApprove(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     const payload = res.json.mock.calls[0][0];
@@ -198,7 +198,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.rejectResearch(req, res);
+    await reviewController.rejectResearch(req, res);
 
     expect(res.json).toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
@@ -215,7 +215,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.assignFacultyReviewer(req, res);
+    await reviewController.assignFacultyReviewer(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     const payload = res.json.mock.calls[0][0];
@@ -256,7 +256,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.assignFacultyReviewer(req, res);
+    await reviewController.assignFacultyReviewer(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
     const payload = res.json.mock.calls[0][0];
@@ -337,7 +337,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.assignFacultyReviewer(req, res);
+    await reviewController.assignFacultyReviewer(req, res);
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
@@ -355,7 +355,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.returnToAuthor(req, res);
+    await reviewController.returnToAuthor(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     const payload = res.json.mock.calls[0][0];
@@ -414,7 +414,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.returnToAuthor(req, res);
+    await reviewController.returnToAuthor(req, res);
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
@@ -431,7 +431,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.correctMetadata(req, res);
+    await reviewController.correctMetadata(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     const payload = res.json.mock.calls[0][0];
@@ -452,7 +452,6 @@ describe('research workflow endpoints', () => {
                   abstract: 'Old abstract',
                   keywords: ['old'],
                   category: 'Category',
-                  co_authors: null,
                   status: 'pending_editor',
                   author_id: 'a1',
                 },
@@ -470,7 +469,6 @@ describe('research workflow endpoints', () => {
                     abstract: 'New abstract',
                     keywords: ['new', 'keywords'],
                     category: 'Category',
-                    co_authors: null,
                     status: 'pending_editor',
                   },
                   error: null,
@@ -497,7 +495,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.correctMetadata(req, res);
+    await reviewController.correctMetadata(req, res);
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
@@ -562,7 +560,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.approveResearch(req, res);
+    await reviewController.approveResearch(req, res);
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
@@ -578,7 +576,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.setProgramChairReviewDeadline(req, res);
+    await reviewController.setProgramChairReviewDeadline(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     const payload = res.json.mock.calls[0][0];
@@ -653,7 +651,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.setProgramChairReviewDeadline(req, res);
+    await reviewController.setProgramChairReviewDeadline(req, res);
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
@@ -698,7 +696,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.getPlagiarismReport(req, res);
+    await reviewController.getPlagiarismReport(req, res);
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
@@ -755,7 +753,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.runPlagiarismScan(req, res);
+    await reviewController.runPlagiarismScan(req, res);
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
@@ -797,7 +795,7 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.declareConflictOfInterest(req, res);
+    await reviewController.declareConflictOfInterest(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
     const payload = res.json.mock.calls[0][0];
@@ -857,11 +855,11 @@ describe('research workflow endpoints', () => {
     };
     const res = createRes();
 
-    await researchController.declareConflictOfInterest(req, res);
+    await reviewController.declareConflictOfInterest(req, res);
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
-    expect(payload.data.status).toBe('pending');
+    expect(payload.data.status).toBe('pending_editor');
     expect(logAuditEvent).toHaveBeenCalledTimes(1);
   });
 });

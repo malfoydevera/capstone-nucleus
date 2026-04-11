@@ -35,6 +35,47 @@ import {
 import { researchAPI } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const getPaperAuthors = (paper) => {
+  if (Array.isArray(paper?.structured_authors) && paper.structured_authors.length > 0) {
+    return paper.structured_authors;
+  }
+
+  const fallbackAuthors = [];
+
+  if (paper?.users) {
+    fallbackAuthors.push({ author: paper.users, is_primary: true, author_order: 0 });
+  }
+
+  const compatibilityAuthors = paper?.external_author_notes;
+  if (Array.isArray(compatibilityAuthors)) {
+    fallbackAuthors.push(...compatibilityAuthors);
+  } else if (compatibilityAuthors) {
+    String(compatibilityAuthors)
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .forEach((name, index) => {
+        fallbackAuthors.push({
+          author: { name },
+          is_primary: false,
+          author_order: index + 1,
+        });
+      });
+  }
+
+  return fallbackAuthors;
+};
+
+const getPrimaryAuthor = (paper) => {
+  const authors = getPaperAuthors(paper);
+  return authors.find((entry) => entry?.is_primary)?.author || authors[0]?.author || paper?.users || null;
+};
+
+const getAdditionalAuthors = (paper) =>
+  getPaperAuthors(paper).filter((entry) => !entry?.is_primary);
+
 const BrowseRepository = () => {
   const navigate = useNavigate();
   const [papers, setPapers] = useState([]);
@@ -86,7 +127,13 @@ const BrowseRepository = () => {
       setAvailableYears(years);
 
       // Calculate stats
-      const uniqueAuthors = new Set(papersRes.data.papers.map(p => p.users?.id));
+      const uniqueAuthors = new Set(
+        papersRes.data.papers.flatMap((paper) =>
+          getPaperAuthors(paper)
+            .map((entry) => entry?.author?.id || formatFullName(entry?.author))
+            .filter(Boolean)
+        )
+      );
       const totalDownloads = papersRes.data.papers.reduce((sum, p) => sum + (p.download_count || 0), 0);
       const totalViews = papersRes.data.papers.reduce((sum, p) => sum + (p.view_count || 0), 0);
 
@@ -121,17 +168,9 @@ const BrowseRepository = () => {
     if (authorSearch) {
       filtered = filtered.filter(paper => {
         const authorName = authorSearch.toLowerCase();
-        // Check primary author
-        if (formatFullName(paper.users).toLowerCase().includes(authorName)) {
-          return true;
-        }
-        // Check co-authors
-        if (paper.co_authors?.some(ca =>
-          formatFullName(ca.author).toLowerCase().includes(authorName)
-        )) {
-          return true;
-        }
-        return false;
+        return getPaperAuthors(paper).some((entry) =>
+          formatFullName(entry?.author).toLowerCase().includes(authorName)
+        );
       });
     }
 
@@ -191,7 +230,9 @@ const BrowseRepository = () => {
   const getCategoryName = (categoryId) => {
     if (!categoryId) return 'General';
     const category = categories.find(cat => cat.id === categoryId);
-    return category ? category.name : 'General';
+    if (category) return category.name;
+    if (typeof categoryId === 'string' && !UUID_PATTERN.test(categoryId)) return categoryId;
+    return 'General';
   };
 
   const getCategoryColor = (categoryId) => {
@@ -661,6 +702,12 @@ const BrowseRepository = () => {
                 onClick={() => handleViewDetails(paper)}
                 className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-[#1C4D8D]/30 transition-all duration-300 overflow-hidden cursor-pointer"
               >
+                {(() => {
+                  const primaryAuthor = getPrimaryAuthor(paper);
+                  const additionalAuthors = getAdditionalAuthors(paper);
+
+                  return (
+                    <>
                 {/* Category Badge */}
                 <div className={`h-2 bg-gradient-to-r ${getCategoryColor(paper.category)}`}></div>
 
@@ -694,7 +741,10 @@ const BrowseRepository = () => {
                   <div className="flex items-center justify-between text-sm text-slate-500 mb-4">
                     <div className="flex items-center gap-2">
                       <User size={14} />
-                      <span>{formatFullName(paper.users) || 'Researcher'}</span>
+                      <span>{formatFullName(primaryAuthor) || 'Researcher'}</span>
+                      {additionalAuthors.length > 0 && (
+                        <span className="text-slate-400">+{additionalAuthors.length} co-author{additionalAuthors.length === 1 ? '' : 's'}</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       <Calendar size={14} />
@@ -759,6 +809,9 @@ const BrowseRepository = () => {
                     </button>
                   </div>
                 </div>
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -770,6 +823,12 @@ const BrowseRepository = () => {
                 onClick={() => handleViewDetails(paper)}
                 className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-[#1C4D8D]/30 transition-all duration-300 cursor-pointer"
               >
+                {(() => {
+                  const primaryAuthor = getPrimaryAuthor(paper);
+                  const additionalAuthors = getAdditionalAuthors(paper);
+
+                  return (
+                    <>
                 <div className="p-6">
                   <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     <div className="flex-1">
@@ -804,7 +863,10 @@ const BrowseRepository = () => {
                       <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
                         <div className="flex items-center gap-2">
                           <User size={14} />
-                          <span className="font-medium">{formatFullName(paper.users) || 'Researcher'}</span>
+                          <span className="font-medium">{formatFullName(primaryAuthor) || 'Researcher'}</span>
+                          {additionalAuthors.length > 0 && (
+                            <span className="text-slate-400">+{additionalAuthors.length} co-author{additionalAuthors.length === 1 ? '' : 's'}</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           <Calendar size={14} />
@@ -843,6 +905,9 @@ const BrowseRepository = () => {
                     </div>
                   </div>
                 </div>
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>

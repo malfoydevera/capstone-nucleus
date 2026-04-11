@@ -28,7 +28,7 @@ import {
   Bell,
   CalendarDays
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
 const ReviewSubmissions = () => {
@@ -41,7 +41,6 @@ const ReviewSubmissions = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState({
     pending: 0,
-    underReview: 0,
     needsReview: 0,
     approved: 0,
     rejected: 0,
@@ -67,7 +66,7 @@ const ReviewSubmissions = () => {
     if (!silent) setRefreshing(true);
     try {
       const response = await researchAPI.getAllResearch();
-      const allPapers = response.data.papers;
+      const allPapers = unwrapApiData(response).papers || [];
       
       console.log('=== STAFF: All papers fetched ===', allPapers.length);
       console.log('Status breakdown:', {
@@ -84,17 +83,14 @@ const ReviewSubmissions = () => {
       const editorStagePapers = allPapers.filter(p => 
         p.status === 'pending_editor' || 
         p.status === 'pending_admin' ||
-        p.status === 'under_review' ||
         p.status === 'approved' ||
         p.status === 'rejected' ||
-        p.status === 'revision_required' ||
-        p.status === 'pending' // Legacy papers without faculty assignment
+        p.status === 'revision_required'
       );
       
       const statsData = {
-        pending: editorStagePapers.filter(p => p.status === 'pending').length,
-        underReview: editorStagePapers.filter(p => p.status === 'under_review').length,
-        needsReview: editorStagePapers.filter(p => p.status === 'pending_editor' || p.status === 'under_review').length,
+        pending: 0,
+        needsReview: editorStagePapers.filter(p => p.status === 'pending_editor').length,
         approved: editorStagePapers.filter(p => p.status === 'approved').length,
         rejected: editorStagePapers.filter(p => p.status === 'rejected').length,
         revisionRequired: editorStagePapers.filter(p => p.status === 'revision_required').length
@@ -118,8 +114,7 @@ const ReviewSubmissions = () => {
     
     // Apply status filter - Staff should only see papers that passed faculty review
     if (statusFilter === 'needs_review') {
-      // Staff sees papers that are pending_editor or under_review (for legacy papers)
-      filtered = papers.filter(p => p.status === 'pending_editor' || p.status === 'under_review');
+      filtered = papers.filter(p => p.status === 'pending_editor');
       console.log('Filtered for needs_review:', filtered.length);
     } else if (statusFilter !== 'all') {
       filtered = papers.filter(p => p.status === statusFilter);
@@ -172,7 +167,7 @@ const ReviewSubmissions = () => {
         color: 'from-yellow-100 to-amber-50 border-yellow-200',
         text: 'text-yellow-800',
         icon: Clock,
-        label: 'Pending Review',
+        label: 'Legacy Pending',
         badge: 'bg-gradient-to-r from-yellow-500 to-amber-500',
         priority: 'high'
       },
@@ -198,14 +193,6 @@ const ReviewSubmissions = () => {
         icon: AlertCircle,
         label: 'With Admin',
         badge: 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]',
-        priority: 'medium'
-      },
-      under_review: {
-        color: 'from-blue-100 to-cyan-50 border-blue-200',
-        text: 'text-blue-800',
-        icon: Eye,
-        label: 'Under Review',
-        badge: 'bg-gradient-to-r from-blue-500 to-cyan-500',
         priority: 'medium'
       },
       approved: {
@@ -238,8 +225,6 @@ const ReviewSubmissions = () => {
 
   const filterOptions = [
     { id: 'needs_review', label: 'Needs Review', count: stats.needsReview, color: 'from-orange-500 to-amber-500' },
-    { id: 'pending', label: 'Pending', count: stats.pending, color: 'from-yellow-500 to-amber-500' },
-    { id: 'under_review', label: 'Under Review', count: stats.underReview, color: 'from-blue-500 to-cyan-500' },
     { id: 'revision_required', label: 'Revision Required', count: stats.revisionRequired, color: 'from-orange-500 to-red-500' },
     { id: 'approved', label: 'Approved', count: stats.approved, color: 'from-green-500 to-emerald-500' },
     { id: 'rejected', label: 'Rejected', count: stats.rejected, color: 'from-red-500 to-pink-500' },
@@ -306,11 +291,11 @@ const ReviewSubmissions = () => {
             <div className="text-sm text-slate-600 font-medium">Needs Review</div>
           </div>
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-yellow-600 mb-1">{stats.pending}</div>
-            <div className="text-sm text-slate-600 font-medium">Pending</div>
+            <div className="text-2xl font-black text-amber-600 mb-1">{stats.revisionRequired}</div>
+            <div className="text-sm text-slate-600 font-medium">Revisions</div>
           </div>
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-blue-600 mb-1">{stats.underReview}</div>
+            <div className="text-2xl font-black text-blue-600 mb-1">{stats.needsReview}</div>
             <div className="text-sm text-slate-600 font-medium">In Review</div>
           </div>
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
@@ -531,16 +516,6 @@ const ReviewSubmissions = () => {
                       </button>
                     </div>
                   </div>
-
-                  {/* Review Timeline */}
-                  {paper.status === 'pending' && (
-                    <div className="mt-6 pt-6 border-t border-slate-200">
-                      <div className="flex items-center gap-2 text-sm text-amber-600">
-                        <Timer size={14} />
-                        <span className="font-medium">Pending review for 2 days</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             );

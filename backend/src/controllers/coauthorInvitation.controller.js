@@ -11,6 +11,40 @@ const buildInvitationLink = (token) => {
   return `${baseUrl}/student/co-author-invitations?token=${token}`;
 };
 
+const normalizeInvitationRow = (row) => {
+  const respondedAt = row.responded_at || row.accepted_at || row.declined_at || null;
+
+  return {
+    ...row,
+    responded_at: respondedAt,
+    accepted_at: row.accepted_at || (row.status === 'accepted' ? respondedAt : null),
+    declined_at: row.declined_at || (row.status === 'declined' ? respondedAt : null),
+  };
+};
+
+const updateInvitationResponse = async ({ invitationId, status, respondedAt }) => {
+  const primaryResult = await supabase
+    .from('co_author_invitations')
+    .update({ status, responded_at: respondedAt })
+    .eq('id', invitationId);
+
+  if (!primaryResult.error) {
+    return null;
+  }
+
+  if (!String(primaryResult.error.message || '').includes('responded_at')) {
+    return primaryResult.error;
+  }
+
+  const fallbackTimestampColumn = status === 'accepted' ? 'accepted_at' : 'declined_at';
+  const fallbackResult = await supabase
+    .from('co_author_invitations')
+    .update({ status, [fallbackTimestampColumn]: respondedAt })
+    .eq('id', invitationId);
+
+  return fallbackResult.error || null;
+};
+
 exports.createCoAuthorInvitations = async (req, res) => {
   try {
     const { id: researchId } = req.params;
@@ -177,7 +211,7 @@ exports.getMyCoAuthorInvitations = async (req, res) => {
 
     let query = supabase
       .from('co_author_invitations')
-      .select('id, research_id, inviter_id, token, status, expires_at, accepted_at, declined_at, created_at')
+      .select('*')
       .eq('invitee_id', req.user.id)
       .order('created_at', { ascending: false });
 
@@ -208,7 +242,7 @@ exports.getMyCoAuthorInvitations = async (req, res) => {
     const inviterMap = new Map((inviterResult.data || []).map((u) => [u.id, attachFullName(u)]));
 
     const enriched = invitationRows.map((row) => ({
-      ...row,
+      ...normalizeInvitationRow(row),
       research: researchMap.get(row.research_id) || null,
       inviter: inviterMap.get(row.inviter_id) || null,
     }));
@@ -294,10 +328,14 @@ exports.acceptCoAuthorInvitation = async (req, res) => {
       }, { onConflict: 'research_id,user_id' });
     }
 
-    await supabase
-      .from('co_author_invitations')
-      .update({ status: 'accepted', accepted_at: now.toISOString() })
-      .eq('id', invite.id);
+    const acceptError = await updateInvitationResponse({
+      invitationId: invite.id,
+      status: 'accepted',
+      respondedAt: now.toISOString(),
+    });
+    if (acceptError) {
+      throw acceptError;
+    }
 
     try {
       await supabase.from('notifications').insert({
@@ -346,10 +384,14 @@ exports.declineCoAuthorInvitation = async (req, res) => {
       return sendError(res, { status: 400, code: 'INVITATION_NOT_PENDING', message: `Invitation already ${invite.status}` });
     }
 
-    await supabase
-      .from('co_author_invitations')
-      .update({ status: 'declined', declined_at: new Date().toISOString() })
-      .eq('id', invite.id);
+    const declineError = await updateInvitationResponse({
+      invitationId: invite.id,
+      status: 'declined',
+      respondedAt: new Date().toISOString(),
+    });
+    if (declineError) {
+      throw declineError;
+    }
 
     try {
       await supabase.from('notifications').insert({

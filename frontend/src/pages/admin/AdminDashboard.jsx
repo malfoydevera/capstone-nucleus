@@ -175,7 +175,7 @@ const AdminDashboard = () => {
     admin: allUsers.filter(u => u.role === 'admin').length,
   };
 
-  const pendingPapers = papers.filter(p => ['pending', 'pending_faculty', 'pending_editor', 'pending_admin', 'under_review'].includes(p.status));
+  const pendingPapers = papers.filter(p => ['pending_faculty', 'pending_editor', 'pending_admin'].includes(p.status));
   const approvedPapers = papers.filter(p => p.status === 'approved' || p.status === 'published');
   const rejectedPapers = papers.filter(p => p.status === 'rejected');
   const revisionPapers = papers.filter(p => p.status === 'revision_required');
@@ -191,11 +191,9 @@ const AdminDashboard = () => {
 
   const getStatusColor = (status) => {
     const colors = {
-      pending: 'text-amber-600 bg-amber-50',
       pending_faculty: 'text-amber-600 bg-amber-50',
       pending_editor: 'text-cyan-600 bg-cyan-50',
       pending_admin: 'text-indigo-600 bg-indigo-50',
-      under_review: 'text-blue-600 bg-blue-50',
       approved: 'text-emerald-600 bg-emerald-50',
       published: 'text-emerald-600 bg-emerald-50',
       rejected: 'text-red-600 bg-red-50',
@@ -210,8 +208,8 @@ const AdminDashboard = () => {
 
   const getStatusBadge = (status) => {
     const statusMap = {
-      pending: 'Pending', pending_faculty: 'With Faculty', pending_editor: 'With Editor',
-      pending_admin: 'With Admin', under_review: 'In Review', approved: 'Approved',
+      pending_faculty: 'With Faculty', pending_editor: 'With Editor',
+      pending_admin: 'With Admin', approved: 'Approved',
       published: 'Published', rejected: 'Rejected', revision_required: 'Revision'
     };
     return statusMap[status] || status;

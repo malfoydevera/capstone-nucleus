@@ -45,6 +45,17 @@ describe('workflowPolicy', () => {
     expect(result).toEqual({ ok: true });
   });
 
+  test('validateWorkflowAction blocks admin legacy under_review reject', () => {
+    const result = validateWorkflowAction(
+      'reject',
+      { id: 'admin-1', role: 'admin' },
+      { status: 'under_review' }
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe(400);
+  });
+
   test('validateWorkflowAction blocks program chair direct reject', () => {
     const result = validateWorkflowAction(
       'reject',

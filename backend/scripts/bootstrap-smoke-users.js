@@ -83,14 +83,16 @@ function loadEnvFile() {
 async function getDepartmentAndProgram() {
   const { data: programRows, error: programError } = await supabase
     .from('programs')
-    .select('id, name, department_id, departments(name)')
-    .limit(1);
+    .select('id, name, code, department_id, departments(name)');
 
   if (programError) {
     throw new Error(`Failed to query programs: ${programError.message}`);
   }
 
-  const firstProgram = programRows?.[0] || null;
+  const preferredProgram = (programRows || []).find((programRow) =>
+    String(programRow.code || '').toLowerCase() === 'bsit-mwa'
+    || String(programRow.name || '').toLowerCase() === 'bs information technology - mobile and web applications'
+  ) || programRows?.[0] || null;
 
   const { data: departmentRows, error: departmentError } = await supabase
     .from('departments')
@@ -104,15 +106,20 @@ async function getDepartmentAndProgram() {
   const firstDepartment = departmentRows?.[0] || null;
 
   return {
-    departmentId: firstProgram?.department_id || firstDepartment?.id || null,
-    departmentName: firstProgram?.departments?.name || firstDepartment?.name || null,
-    programId: firstProgram?.id || null,
-    programName: firstProgram?.name || null,
+    departmentId: preferredProgram?.department_id || firstDepartment?.id || null,
+    departmentName: preferredProgram?.departments?.name || firstDepartment?.name || null,
+    programId: preferredProgram?.id || null,
+    programName: preferredProgram?.name || null,
   };
 }
 
 async function upsertSmokeUser(spec, sharedScope, hashedPassword) {
   const email = String(process.env[spec.envEmailKey] || spec.defaultEmail).toLowerCase().trim();
+  const requiresProgramScope = ['student', 'program_chair'].includes(spec.role);
+
+  if (requiresProgramScope && !sharedScope.programId) {
+    throw new Error(`Cannot bootstrap ${spec.role} smoke user without at least one canonical program row.`);
+  }
 
   const basePayload = {
     email,
@@ -129,7 +136,7 @@ async function upsertSmokeUser(spec, sharedScope, hashedPassword) {
     updated_at: new Date().toISOString(),
   };
 
-  if (spec.role === 'student') {
+  if (requiresProgramScope) {
     basePayload.program_id = sharedScope.programId;
     basePayload.program = sharedScope.programName;
   } else {

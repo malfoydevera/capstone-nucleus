@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   Search, 
   Filter, 
   Download, 
@@ -33,6 +33,48 @@ import {
   Heart
 } from 'lucide-react';
 import { researchAPI } from '../../utils/api';
+import { formatFullName } from '../../utils/names';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const getPaperAuthors = (paper) => {
+  if (Array.isArray(paper?.structured_authors) && paper.structured_authors.length > 0) {
+    return paper.structured_authors;
+  }
+
+  const fallbackAuthors = [];
+
+  if (paper?.users) {
+    fallbackAuthors.push({ author: paper.users, is_primary: true, author_order: 0 });
+  }
+
+  const compatibilityAuthors = paper?.external_author_notes;
+  if (Array.isArray(compatibilityAuthors)) {
+    fallbackAuthors.push(...compatibilityAuthors);
+  } else if (compatibilityAuthors) {
+    String(compatibilityAuthors)
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .forEach((name, index) => {
+        fallbackAuthors.push({
+          author: { name },
+          is_primary: false,
+          author_order: index + 1,
+        });
+      });
+  }
+
+  return fallbackAuthors;
+};
+
+const getPrimaryAuthor = (paper) => {
+  const authors = getPaperAuthors(paper);
+  return authors.find((entry) => entry?.is_primary)?.author || authors[0]?.author || paper?.users || null;
+};
+
+const getAdditionalAuthors = (paper) =>
+  getPaperAuthors(paper).filter((entry) => !entry?.is_primary);
 
 const FacultyBrowseRepository = () => {
   const navigate = useNavigate();
@@ -60,21 +102,14 @@ const FacultyBrowseRepository = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const response = await researchAPI.getAllResearch();
-      const allPapers = response.data.papers || [];
-      
-      // Only show approved papers
-      const approvedPapers = allPapers.filter(paper => paper.status === 'approved');
+      const [papersResponse, categoriesResponse] = await Promise.all([
+        researchAPI.getPublishedResearch(),
+        researchAPI.getCategories(),
+      ]);
+
+      const approvedPapers = papersResponse.data.papers || [];
       setPapers(approvedPapers);
-      
-      // Extract unique categories
-      const uniqueCategories = [...new Set(
-        approvedPapers
-          .filter(paper => paper.category)
-          .map(paper => paper.category)
-      )];
-      setCategories(uniqueCategories);
-      
+      setCategories(categoriesResponse.data.categories || []);
     } catch (error) {
       console.error('Failed to fetch research papers:', error);
     } finally {
@@ -108,11 +143,11 @@ const FacultyBrowseRepository = () => {
     }
 
     if (authorSearch) {
-      filtered = filtered.filter(paper =>
-        paper.authors?.some(author =>
-          author.name?.toLowerCase().includes(authorSearch.toLowerCase())
-        ) ||
-        paper.student_name?.toLowerCase().includes(authorSearch.toLowerCase())
+      const normalizedAuthorSearch = authorSearch.toLowerCase();
+      filtered = filtered.filter((paper) =>
+        getPaperAuthors(paper).some((entry) =>
+          formatFullName(entry?.author).toLowerCase().includes(normalizedAuthorSearch)
+        )
       );
     }
 
@@ -128,7 +163,7 @@ const FacultyBrowseRepository = () => {
         filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
         break;
       case 'author':
-        filtered.sort((a, b) => (a.student_name || '').localeCompare(b.student_name || ''));
+        filtered.sort((a, b) => formatFullName(getPrimaryAuthor(a)).localeCompare(formatFullName(getPrimaryAuthor(b))));
         break;
       default:
         break;
@@ -171,6 +206,14 @@ const FacultyBrowseRepository = () => {
 
   const handleViewPaper = (paperId) => {
     navigate(`/faculty/research/${paperId}`);
+  };
+
+  const getCategoryName = (categoryId) => {
+    if (!categoryId) return 'General';
+    const category = categories.find((entry) => entry.id === categoryId);
+    if (category) return category.name;
+    if (typeof categoryId === 'string' && !UUID_PATTERN.test(categoryId)) return categoryId;
+    return 'General';
   };
 
   const copyToClipboard = (text) => {
@@ -298,8 +341,8 @@ const FacultyBrowseRepository = () => {
               >
                 <option value="">All Categories</option>
                 {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
+                  <option key={category.id} value={category.id}>
+                    {category.name}
                   </option>
                 ))}
               </select>
@@ -399,6 +442,12 @@ const FacultyBrowseRepository = () => {
                   viewMode === 'list' ? 'flex' : ''
                 }`}
               >
+                {(() => {
+                  const primaryAuthor = getPrimaryAuthor(paper);
+                  const additionalAuthors = getAdditionalAuthors(paper);
+
+                  return (
+                    <>
                 {/* Paper Content */}
                 <div className={`p-6 ${viewMode === 'list' ? 'flex-1' : ''}`}>
                   <div className="flex items-start justify-between mb-4">
@@ -410,7 +459,10 @@ const FacultyBrowseRepository = () => {
                       <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
                         <div className="flex items-center gap-1">
                           <User size={14} />
-                          <span>{paper.student_name || 'Unknown Author'}</span>
+                          <span>{formatFullName(primaryAuthor) || 'Unknown Author'}</span>
+                          {additionalAuthors.length > 0 && (
+                            <span className="text-gray-400">+{additionalAuthors.length} co-author{additionalAuthors.length === 1 ? '' : 's'}</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1">
                           <Calendar size={14} />
@@ -421,7 +473,7 @@ const FacultyBrowseRepository = () => {
                       {paper.category && (
                         <div className="flex items-center gap-2 mb-3">
                           <span className="px-3 py-1 bg-[#1C4D8D]/10 text-[#1C4D8D] text-xs font-medium rounded-full">
-                            {paper.category}
+                            {getCategoryName(paper.category)}
                           </span>
                         </div>
                       )}
@@ -452,21 +504,21 @@ const FacultyBrowseRepository = () => {
                   )}
 
                   {/* Authors */}
-                  {paper.authors && paper.authors.length > 0 && (
+                  {additionalAuthors.length > 0 && (
                     <div className="mb-4">
                       <p className="text-xs text-gray-500 mb-1">Co-authors:</p>
                       <div className="flex flex-wrap gap-1">
-                        {paper.authors.slice(0, 2).map((author, index) => (
+                        {additionalAuthors.slice(0, 2).map((authorEntry, index) => (
                           <span
                             key={index}
                             className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-lg"
                           >
-                            {author.name}
+                            {formatFullName(authorEntry.author)}
                           </span>
                         ))}
-                        {paper.authors.length > 2 && (
+                        {additionalAuthors.length > 2 && (
                           <span className="px-2 py-1 bg-blue-50 text-blue-500 text-xs rounded-lg">
-                            +{paper.authors.length - 2} more
+                            +{additionalAuthors.length - 2} more
                           </span>
                         )}
                       </div>
@@ -504,6 +556,9 @@ const FacultyBrowseRepository = () => {
                     </button>
                   </div>
                 </div>
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>

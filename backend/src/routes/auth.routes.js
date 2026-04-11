@@ -15,6 +15,7 @@ const upload = multer({
 // Public routes
 router.post('/register', authRateLimiter, authController.register);
 router.post('/login', authRateLimiter, authController.login);
+router.post('/refresh', authRateLimiter, authController.refreshSession);
 router.post('/forgot-password', authRateLimiter, authController.forgotPassword);
 router.post('/reset-password', authRateLimiter, authController.resetPassword);
 
@@ -34,6 +35,7 @@ router.get('/students/search', authenticate, authController.searchStudents);
 
 // NEW: Admin Management Routes
 router.get('/users', authenticate, authorize('admin'), authController.getAllUsers);
+router.patch('/users/:id', authenticate, authorize('admin'), authController.updateUser);
 router.delete('/users/:id', authenticate, authorize('admin'), authController.deleteUser);
 router.patch('/users/:id/suspend', authenticate, authorize('admin'), authController.suspendUser);
 router.patch('/users/:id/reactivate', authenticate, authorize('admin'), authController.reactivateUser);

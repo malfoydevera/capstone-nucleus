@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { 
+import {
   ArrowLeft, 
   FileText, 
   User, 
@@ -26,16 +26,18 @@ import {
   MessageSquare,
   CornerDownRight
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
-import supabase from '../../config/supabase';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
 import { formatFullName } from '../../utils/names';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const ReviewDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [paper, setPaper] = useState(null);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
@@ -93,7 +95,7 @@ const ReviewDetail = () => {
   useEffect(() => {
     if (user?.role === 'faculty') {
       researchAPI.getDeanChairMembers()
-        .then(res => setDeanChairList(res.data.members || []))
+        .then(res => setDeanChairList(unwrapApiData(res).members || []))
         .catch(err => console.error('Failed to fetch dean/chair members:', err));
     }
   }, [user]);
@@ -110,76 +112,65 @@ const ReviewDetail = () => {
   }, [id]);
 
   useEffect(() => {
-    if (!id || !supabase) return;
-
-    const channel = supabase
-      .channel(`research_comments:${id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'research_comments',
-          filter: `research_id=eq.${id}`,
-        },
-        async () => {
-          try {
-            const response = await researchAPI.getAnnotations(id);
-            setAnnotations(response.data.annotations || []);
-          } catch (error) {
-            console.error('Realtime annotation refresh failed:', error);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [id]);
-
-  useEffect(() => {
     const canAssignBackToFaculty = ['dean', 'program_chair'].includes(user?.role);
     if (!canAssignBackToFaculty) return;
 
     const loadFaculty = async () => {
       try {
-        const scoped = await researchAPI.getFacultyMembers(paper?.department || undefined);
-        let members = scoped?.data?.facultyMembers || [];
-
-        if ((!members || members.length === 0) && paper?.department) {
-          const fallback = await researchAPI.getFacultyMembers();
-          members = fallback?.data?.facultyMembers || [];
-        }
-
-        setFacultyMembers(members);
+        const scoped = await researchAPI.getFacultyMembers({
+          department: paper?.department_id ? undefined : (paper?.department || undefined),
+          departmentId: paper?.department_id || undefined,
+        });
+        setFacultyMembers(unwrapApiData(scoped).facultyMembers || []);
       } catch (err) {
         console.error('Failed to load faculty members:', err);
       }
     };
 
     loadFaculty();
-  }, [paper?.department, user?.role]);
+  }, [paper?.department, paper?.department_id, user?.role]);
 
   const fetchPaperDetail = async () => {
     try {
-      const response = await researchAPI.getResearchById(id);
-      setPaper(response.data.paper);
+      const [paperResult, annotationResult, categoriesResult] = await Promise.allSettled([
+        researchAPI.getResearchById(id),
+        researchAPI.getAnnotations(id),
+        researchAPI.getCategories(),
+      ]);
+
+      if (paperResult.status !== 'fulfilled') {
+        throw paperResult.reason;
+      }
+
+      const response = paperResult.value;
+      const nextPaper = unwrapApiData(response).paper;
+      setPaper(nextPaper);
       setMetadataForm({
-        title: response.data.paper?.title || '',
-        abstract: response.data.paper?.abstract || '',
-        keywords: (response.data.paper?.keywords || []).join(', '),
-        category: response.data.paper?.category || '',
-        coAuthors: response.data.paper?.co_authors || '',
+        title: nextPaper?.title || '',
+        abstract: nextPaper?.abstract || '',
+        keywords: (nextPaper?.keywords || []).join(', '),
+        category: nextPaper?.category || '',
+        coAuthors: nextPaper?.external_author_notes || '',
       });
 
-      const annotationResponse = await researchAPI.getAnnotations(id);
-      setAnnotations(annotationResponse.data.annotations || []);
+      if (annotationResult.status === 'fulfilled') {
+        setAnnotations(unwrapApiData(annotationResult.value).annotations || []);
+      } else {
+        console.error('Failed to fetch annotations:', annotationResult.reason);
+        setAnnotations([]);
+      }
+
+      if (categoriesResult.status === 'fulfilled') {
+        setCategories(unwrapApiData(categoriesResult.value).categories || []);
+      } else {
+        console.error('Failed to fetch categories:', categoriesResult.reason);
+        setCategories([]);
+      }
 
       if (['staff', 'admin'].includes(user?.role)) {
         try {
           const plagResponse = await researchAPI.getPlagiarismReport(id);
-          setPlagiarism(plagResponse?.data?.plagiarism || {
+          setPlagiarism(unwrapApiData(plagResponse).plagiarism || {
             status: 'not_checked',
             score: null,
             checkedAt: null,
@@ -211,7 +202,7 @@ const ReviewDetail = () => {
         highlightColor: annotationType === 'highlight' ? (color || 'yellow') : null,
       });
       const res = await researchAPI.getAnnotations(id);
-      setAnnotations(res.data.annotations || []);
+      setAnnotations(unwrapApiData(res).annotations || []);
       toast.success(annotationType === 'highlight' ? 'Highlight added ✨' : 'Note added 📝');
     } catch (error) {
       toast.error(getApiErrorMessage(error, 'Failed to save annotation'));
@@ -242,7 +233,7 @@ const ReviewDetail = () => {
         parentId: annotation.id,
       });
       const res = await researchAPI.getAnnotations(id);
-      setAnnotations(res.data.annotations || []);
+      setAnnotations(unwrapApiData(res).annotations || []);
       setReplyingToId(null);
       setReplyText('');
       toast.success('Reply posted');
@@ -427,11 +418,11 @@ const ReviewDetail = () => {
         abstract: metadataForm.abstract.trim(),
         keywords: metadataForm.keywords,
         category: metadataForm.category,
-        co_authors: metadataForm.coAuthors,
+        external_author_notes: metadataForm.coAuthors.trim() || null,
       };
 
-      const response = await researchAPI.correctMetadata(id, payload);
-      setPaper(response.data.paper);
+      await researchAPI.correctMetadata(id, payload);
+      await fetchPaperDetail();
       setShowMetadataModal(false);
       toast.success('Metadata corrected successfully', { id: loadingToast, duration: 3000 });
     } catch (error) {
@@ -470,6 +461,27 @@ const ReviewDetail = () => {
     });
   };
 
+  const getCategoryName = (categoryValue) => {
+    if (!categoryValue) return 'General';
+    const category = categories.find((entry) => entry.id === categoryValue);
+    if (category) return category.name;
+    if (typeof categoryValue === 'string' && !UUID_PATTERN.test(categoryValue)) return categoryValue;
+    return 'General';
+  };
+
+  const getStructuredCoAuthorNames = (paperRecord) => {
+    if (!Array.isArray(paperRecord?.structured_authors)) {
+      return [];
+    }
+
+    return Array.from(new Set(
+      paperRecord.structured_authors
+        .filter((entry) => !entry?.is_primary)
+        .map((entry) => formatFullName(entry.author))
+        .filter(Boolean)
+    ));
+  };
+
   const getStatusConfig = (status) => {
     const configs = {
       pending: {
@@ -495,10 +507,6 @@ const ReviewDetail = () => {
       pending_admin: {
         badgeColor: 'bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
         icon: Shield, label: 'Awaiting Admin Review'
-      },
-      under_review: {
-        badgeColor: 'bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-800 border-blue-200',
-        icon: Eye, label: 'Under Review'
       },
       approved: {
         badgeColor: 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 border-green-200',
@@ -551,6 +559,17 @@ const ReviewDetail = () => {
   const backPath = user?.role === 'faculty' ? '/faculty/review'
                  : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
                  : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
+  const metadataCategoryOptions = !metadataForm.category || categories.some((entry) => entry.id === metadataForm.category)
+    ? categories
+    : [
+        ...categories,
+        {
+          id: metadataForm.category,
+          name: typeof metadataForm.category === 'string' && !UUID_PATTERN.test(metadataForm.category)
+            ? `${metadataForm.category} (legacy)`
+            : 'Current unmapped category',
+        },
+      ];
 
   // Workflow progress tracker
   const getWorkflowStage = () => {
@@ -584,6 +603,7 @@ const ReviewDetail = () => {
   };
 
   const { stages, currentStageIndex } = getWorkflowStage();
+  const structuredCoAuthorNames = getStructuredCoAuthorNames(paper);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -728,6 +748,46 @@ const ReviewDetail = () => {
                   </div>
                 </div>
               </div>
+
+              {paper.category && (
+                <div className="mb-8 flex items-center gap-3 p-4 rounded-xl bg-white border border-slate-200">
+                  <BookOpen size={18} className="text-[#1C4D8D]" />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Category</p>
+                    <p className="text-slate-600">{getCategoryName(paper.category)}</p>
+                  </div>
+                </div>
+              )}
+
+              {(structuredCoAuthorNames.length > 0 || paper.external_author_notes) && (
+                <div className="mb-8 grid grid-cols-1 gap-4">
+                  {structuredCoAuthorNames.length > 0 && (
+                    <div className="flex items-start gap-4 p-4 rounded-xl bg-white border border-slate-200">
+                      <User size={20} className="text-indigo-600 mt-1" />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Canonical Co-authors</p>
+                        <p className="text-slate-700">{structuredCoAuthorNames.join(', ')}</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Managed through canonical authorship records, not metadata text.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {paper.external_author_notes && (
+                    <div className="flex items-start gap-4 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                      <FileText size={20} className="text-amber-700 mt-1" />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">External Author Note</p>
+                        <p className="text-slate-700 whitespace-pre-line">{paper.external_author_notes}</p>
+                        <p className="text-xs text-amber-800 mt-1">
+                          This field is informational and does not control canonical authorship.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Abstract */}
               <div className="mb-8">
@@ -927,11 +987,11 @@ const ReviewDetail = () => {
             if (userRole === 'dean' && paperStatus === 'pending_dean') return true;
             if (userRole === 'program_chair' && paperStatus === 'pending_program_chair') return true;
             
-            // Staff can act on pending_editor, pending (legacy), under_review, revision_required
-            if (userRole === 'staff' && (paperStatus === 'pending_editor' || paperStatus === 'pending' || paperStatus === 'under_review' || paperStatus === 'revision_required')) return true;
+            // Staff can act on pending_editor and revision_required
+            if (userRole === 'staff' && (paperStatus === 'pending_editor' || paperStatus === 'revision_required')) return true;
             
-            // Admin can act on pending_admin, under_review, revision_required
-            if (userRole === 'admin' && (paperStatus === 'pending_admin' || paperStatus === 'under_review' || paperStatus === 'revision_required')) return true;
+            // Admin can act on pending_admin, revision_required
+            if (userRole === 'admin' && (paperStatus === 'pending_admin' || paperStatus === 'revision_required')) return true;
             
             return false;
           })() && (
@@ -948,7 +1008,7 @@ const ReviewDetail = () => {
                   <AlertCircle size={20} /> Request Revision
                 </button>
 
-                {user?.role === 'staff' && ['pending_editor', 'under_review', 'pending_admin'].includes(paper.status) && (
+                {user?.role === 'staff' && ['pending_editor', 'pending_admin'].includes(paper.status) && (
                   <button
                     onClick={handleRunPlagiarismScan}
                     disabled={plagiarismLoading}
@@ -958,7 +1018,7 @@ const ReviewDetail = () => {
                   </button>
                 )}
 
-                {user?.role === 'staff' && ['pending_editor', 'under_review'].includes(paper.status) && (
+                {user?.role === 'staff' && ['pending_editor'].includes(paper.status) && (
                   <button
                     onClick={() => setShowMetadataModal(true)}
                     className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg"
@@ -967,7 +1027,7 @@ const ReviewDetail = () => {
                   </button>
                 )}
 
-                {user?.role === 'staff' && ['pending_editor', 'under_review'].includes(paper.status) && (
+                {user?.role === 'staff' && ['pending_editor'].includes(paper.status) && (
                   <button
                     onClick={() => setShowReturnToAuthorModal(true)}
                     className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-fuchsia-600 text-white rounded-xl hover:bg-fuchsia-700 transition-all font-bold shadow-lg"
@@ -1269,20 +1329,49 @@ const ReviewDetail = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">Category</label>
-                  <input
+                  <select
                     value={metadataForm.category}
                     onChange={(e) => setMetadataForm((prev) => ({ ...prev, category: e.target.value }))}
                     className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  />
+                  >
+                    <option value="">Select category</option>
+                    {metadataCategoryOptions.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                  {metadataForm.category && !categories.some((entry) => entry.id === metadataForm.category) && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      This paper still uses a legacy or unmapped category value. Save a canonical category when correcting metadata.
+                    </p>
+                  )}
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Co-authors</label>
-                <input
-                  value={metadataForm.coAuthors}
-                  onChange={(e) => setMetadataForm((prev) => ({ ...prev, coAuthors: e.target.value }))}
-                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Canonical Co-authors</label>
+                  <div className="w-full px-4 py-3 border-2 rounded-xl bg-slate-50 text-slate-700 min-h-[52px]">
+                    {structuredCoAuthorNames.length > 0
+                      ? structuredCoAuthorNames.join(', ')
+                      : 'No canonical co-authors on this paper.'}
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Canonical authorship is managed through the submission and invitation flow, not this editor form.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Legacy / External Co-author Note</label>
+                  <input
+                    value={metadataForm.coAuthors}
+                    onChange={(e) => setMetadataForm((prev) => ({ ...prev, coAuthors: e.target.value }))}
+                    placeholder="Optional compatibility note for legacy or external co-author text"
+                    className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                  <p className="mt-2 text-xs text-amber-700">
+                    Editing this field does not change canonical author records. Use it only for legacy or external author text that has not been modeled yet.
+                  </p>
+                </div>
               </div>
 
               <div className="flex gap-3">
@@ -1346,12 +1435,10 @@ const ReviewDetail = () => {
                 <button
                   onClick={async () => {
                     if (!bypassReason.trim()) {
-                      const toast = (await import('react-hot-toast')).default;
                       toast.error('Bypass reason is required');
                       return;
                     }
                     setActionLoading(true);
-                    const toast = (await import('react-hot-toast')).default;
                     const loadingToast = toast.loading('Processing bypass approval...');
                     try {
                       await researchAPI.deanBypassApprove(id, bypassReason, bypassTarget);

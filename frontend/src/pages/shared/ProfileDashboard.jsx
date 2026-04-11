@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { departmentAPI, researchAPI } from '../../utils/api';
+import { departmentAPI, researchAPI, unwrapApiData } from '../../utils/api';
 import { Download, FileText, Filter, User } from 'lucide-react';
 
 const roleLabel = {
@@ -41,7 +41,9 @@ const buildFlatRows = (records) => {
     publishedDate: toDateInput(record.publishedDate),
     abstract: record.details?.abstract || '',
     keywords: (record.details?.keywords || []).join('; '),
-    coAuthors: record.details?.coAuthors || '',
+    coAuthors: Array.isArray(record.details?.coAuthors)
+      ? record.details.coAuthors.join('; ')
+      : record.details?.coAuthors || '',
   }));
 };
 
@@ -72,6 +74,7 @@ const ProfileDashboard = () => {
     endDate: '',
     department: '',
     program: '',
+    programId: '',
     status: '',
     departmentId: '',
   });
@@ -80,7 +83,7 @@ const ProfileDashboard = () => {
     const loadDepartments = async () => {
       try {
         const response = await departmentAPI.getAllDepartments();
-        setDepartments(response.data.departments || []);
+        setDepartments(unwrapApiData(response).departments || []);
       } catch (error) {
         console.error('Failed to load departments:', error);
       }
@@ -98,7 +101,7 @@ const ProfileDashboard = () => {
 
       try {
         const response = await departmentAPI.getProgramsByDepartment(filters.departmentId);
-        setPrograms(response.data.programs || []);
+        setPrograms(unwrapApiData(response).programs || []);
       } catch (error) {
         console.error('Failed to load programs:', error);
         setPrograms([]);
@@ -114,8 +117,10 @@ const ProfileDashboard = () => {
       details: filters.details || undefined,
       startDate: filters.startDate || undefined,
       endDate: filters.endDate || undefined,
-      department: filters.department || undefined,
-      program: filters.program || undefined,
+      department: filters.departmentId ? undefined : (filters.department || undefined),
+      departmentId: filters.departmentId || undefined,
+      program: filters.programId ? undefined : (filters.program || undefined),
+      programId: filters.programId || undefined,
       status: filters.status || undefined,
     }),
     [filters]
@@ -125,8 +130,9 @@ const ProfileDashboard = () => {
     setLoading(true);
     try {
       const response = await researchAPI.getProfileData(queryParams);
-      setRecords(response.data.records || []);
-      setStats(response.data.stats || { totalRecords: 0, uploadedCount: 0, publishedCount: 0 });
+      const payload = unwrapApiData(response);
+      setRecords(payload.records || []);
+      setStats(payload.stats || { totalRecords: 0, uploadedCount: 0, publishedCount: 0 });
     } catch (error) {
       console.error('Failed to fetch profile data:', error);
       setRecords([]);
@@ -146,6 +152,16 @@ const ProfileDashboard = () => {
       departmentId,
       department: selectedDepartment?.name || '',
       program: '',
+      programId: '',
+    }));
+  };
+
+  const onProgramChange = (programId) => {
+    const selectedProgram = programs.find((item) => item.id === programId);
+    setFilters((prev) => ({
+      ...prev,
+      programId,
+      program: selectedProgram?.name || '',
     }));
   };
 
@@ -291,14 +307,14 @@ const ProfileDashboard = () => {
             ))}
           </select>
           <select
-            value={filters.program}
-            onChange={(event) => setFilters((prev) => ({ ...prev, program: event.target.value }))}
+            value={filters.programId}
+            onChange={(event) => onProgramChange(event.target.value)}
             className="px-3 py-2.5 border border-slate-300 rounded-xl"
             disabled={!filters.departmentId}
           >
             <option value="">All Programs</option>
             {programs.map((program) => (
-              <option key={program.id} value={program.name}>
+              <option key={program.id} value={program.id}>
                 {program.name}
               </option>
             ))}

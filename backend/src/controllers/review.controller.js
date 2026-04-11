@@ -20,6 +20,107 @@ const { runPlagiarismCheck } = require('../utils/plagiarism');
 const PDFDocument = require('pdfkit');
 
 const FINAL_STATUSES = ['approved', 'published', 'rejected'];
+const WORKFLOW_EVENT_STATUS_BY_ACTION = {
+  approve: 'approved',
+  reject: 'rejected',
+  request_revision: 'revision_required',
+  returned_to_author: 'revision_required',
+};
+
+const resolveWorkflowEventStatus = ({ actionType, newStatus }) => {
+  if (WORKFLOW_EVENT_STATUS_BY_ACTION[actionType]) {
+    return WORKFLOW_EVENT_STATUS_BY_ACTION[actionType];
+  }
+
+  if (['approved', 'published'].includes(newStatus)) {
+    return 'approved';
+  }
+
+  if (newStatus === 'rejected') {
+    return 'rejected';
+  }
+
+  if (newStatus === 'revision_required') {
+    return 'revision_required';
+  }
+
+  return 'pending';
+};
+
+const getDepartmentLookup = async () => {
+  const { data, error } = await supabase.from('departments').select('id, name');
+  if (error) throw error;
+  return new Map((data || []).map((entry) => [entry.id, entry.name]));
+};
+
+const getProgramLookup = async () => {
+  const { data, error } = await supabase.from('programs').select('id, name');
+  if (error) throw error;
+  return new Map((data || []).map((entry) => [entry.id, entry.name]));
+};
+
+const insertApprovalWorkflowEvent = async ({
+  researchId,
+  reviewerId,
+  reviewerRole,
+  actionType,
+  comments = null,
+  previousStatus = null,
+  newStatus = null,
+  metadata = {},
+}) => {
+  const status = resolveWorkflowEventStatus({ actionType, newStatus });
+  const payload = {
+    research_id: researchId,
+    reviewer_id: reviewerId,
+    reviewer_role: reviewerRole,
+    status,
+    comments: comments || null,
+    previous_status: previousStatus,
+    new_status: newStatus,
+    action_type: actionType,
+    metadata,
+  };
+
+  let { error } = await supabase.from('approval_workflow').insert([payload]);
+  if (!error) {
+    return true;
+  }
+
+  const missingExtendedColumns = ['action_type', 'previous_status', 'new_status', 'metadata'].some((column) =>
+    String(error.message || '').includes(column)
+  );
+
+  if (missingExtendedColumns) {
+    const fallbackPayload = {
+      research_id: researchId,
+      reviewer_id: reviewerId,
+      reviewer_role: reviewerRole,
+      status,
+      comments: comments || null,
+    };
+
+    const fallbackResult = await supabase.from('approval_workflow').insert([fallbackPayload]);
+    if (!fallbackResult.error) {
+      return true;
+    }
+
+    error = fallbackResult.error;
+  }
+
+  console.error('Approval workflow insert failed:', {
+    researchId,
+    reviewerId,
+    reviewerRole,
+    actionType,
+    status,
+    previousStatus,
+    newStatus,
+    error: error.message || error,
+  });
+
+  return false;
+};
 
 exports.declareConflictOfInterest = async (req, res) => {
   try {
@@ -98,7 +199,7 @@ exports.declareConflictOfInterest = async (req, res) => {
       .from('research_papers')
       .update({
         faculty_id: null,
-        status: 'pending',
+        status: 'pending_editor',
         updated_at: nowIso,
       })
       .eq('id', id);
@@ -111,15 +212,15 @@ exports.declareConflictOfInterest = async (req, res) => {
       });
     }
 
-    try {
-      await supabase.from('approval_workflow').insert([{
-        research_id: id,
-        reviewer_id: req.user.id,
-        reviewer_role: 'faculty',
-        status: 'conflict_declared',
-        comments: reason.trim(),
-      }]);
-    } catch {}
+    await insertApprovalWorkflowEvent({
+      researchId: id,
+      reviewerId: req.user.id,
+      reviewerRole: 'faculty',
+      actionType: 'conflict_declared',
+      comments: reason.trim(),
+      previousStatus: paper.status,
+      newStatus: 'pending_editor',
+    });
 
     try {
       const { data: staffUsers } = await supabase
@@ -162,7 +263,7 @@ exports.declareConflictOfInterest = async (req, res) => {
     await sendPaperStatusEmail({
       user: paper.author,
       paperTitle: paper.title,
-      statusLabel: 'pending',
+      statusLabel: 'pending_editor',
       message: `A faculty reviewer declared a conflict of interest. Reason: ${reason.trim()}`,
     });
 
@@ -175,7 +276,7 @@ exports.declareConflictOfInterest = async (req, res) => {
       details: {
         paperTitle: paper.title,
         previousStatus: paper.status,
-        newStatus: 'pending',
+        newStatus: 'pending_editor',
       },
       reason: reason.trim(),
     });
@@ -184,7 +285,7 @@ exports.declareConflictOfInterest = async (req, res) => {
       message: 'Conflict declared successfully. Paper removed from your queue.',
       data: {
         paperId: id,
-        status: 'pending',
+        status: 'pending_editor',
       },
     });
   } catch (error) {
@@ -270,7 +371,7 @@ exports.runPlagiarismScan = async (req, res) => {
       return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Paper not found' });
     }
 
-    if (!['pending_editor', 'under_review', 'pending_admin'].includes(paper.status)) {
+    if (!['pending_editor', 'pending_admin'].includes(paper.status)) {
       return sendError(res, {
         status: 400,
         code: 'INVALID_WORKFLOW_TRANSITION',
@@ -428,7 +529,7 @@ exports.approveResearch = async (req, res) => {
       notificationMessage = 'Your research has been approved by the Research Editor and is awaiting final Admin approval';
       const { data: adminUsers } = await supabase.from('users').select('id').eq('role', nextReviewerRole);
       if (adminUsers) nextReviewers = adminUsers.map(a => a.id);
-    } else if (reviewerRole === 'admin' && ['pending_admin', 'under_review'].includes(paper.status)) {
+    } else if (reviewerRole === 'admin' && paper.status === 'pending_admin') {
       const stage = resolveApprovalTransition({
         stages: activeStages,
         currentStatus: paper.status,
@@ -451,7 +552,15 @@ exports.approveResearch = async (req, res) => {
 
     if (updateError) return sendError(res, { status: 500, code: 'UPDATE_PAPER_STATUS_FAILED', message: 'Failed to update paper status' });
 
-    try { await supabase.from('approval_workflow').insert([{ research_id: id, reviewer_id: reviewerId, reviewer_role: reviewerRole, status: 'approved', comments: comments || null }]); } catch {}
+    await insertApprovalWorkflowEvent({
+      researchId: id,
+      reviewerId,
+      reviewerRole,
+      actionType: 'approve',
+      comments: comments || null,
+      previousStatus: paper.status,
+      newStatus,
+    });
     await logAuditEvent({ userId: reviewerId, userRole: reviewerRole, action: 'approve', targetType: 'research_paper', targetId: id, details: { previousStatus: paper.status, newStatus, paperTitle: paper.title } });
     try { await supabase.from('notifications').insert([{ user_id: paper.author_id, research_id: id, type: 'approval', title: 'Research Approved', message: notificationMessage }]); } catch {}
     await sendPaperStatusEmail({
@@ -526,19 +635,18 @@ exports.rejectResearch = async (req, res) => {
       }]);
     } catch {}
 
-    try { await supabase.from('approval_workflow').insert([{ research_id: id, reviewer_id: req.user.id, reviewer_role: req.user.role, status: 'rejected', comments: reason }]); } catch {}
-    if (req.user.role === 'faculty') {
-      try {
-        await supabase.from('faculty_reviews').upsert({
-          research_id: id,
-          faculty_id: req.user.id,
-          status: 'rejected',
-          comments: reason,
-          rejection_category: rejectionCategory || null,
-          reviewed_at: new Date().toISOString(),
-        }, { onConflict: 'research_id,faculty_id' });
-      } catch {}
-    }
+    await insertApprovalWorkflowEvent({
+      researchId: id,
+      reviewerId: req.user.id,
+      reviewerRole: req.user.role,
+      actionType: 'reject',
+      comments: reason,
+      previousStatus: paper.status,
+      newStatus: rejectedStatus,
+      metadata: {
+        rejectionCategory: rejectionCategory || null,
+      },
+    });
 
     await sendPaperStatusEmail({
       user: paper.author,
@@ -669,7 +777,15 @@ exports.requestRevision = async (req, res) => {
       }
     }
 
-    try { await supabase.from('approval_workflow').insert([{ research_id: id, reviewer_id: req.user.id, reviewer_role: reviewerRole, status: newStatus === 'revision_required' ? 'revision_required' : 'returned', comments: notes }]); } catch {}
+    await insertApprovalWorkflowEvent({
+      researchId: id,
+      reviewerId: req.user.id,
+      reviewerRole,
+      actionType: newStatus === 'revision_required' ? 'request_revision' : 'returned_for_review',
+      comments: notes,
+      previousStatus: paper.status,
+      newStatus,
+    });
     await logAuditEvent({ userId: req.user.id, userRole: reviewerRole, action: 'revision', targetType: 'research_paper', targetId: id, details: { previousStatus: paper.status, newStatus, paperTitle: paper.title, notes } });
 
     return sendSuccess(res, { message: 'Revision requested successfully', data: { newStatus, paper: updatedPaper } });
@@ -706,7 +822,7 @@ exports.returnToAuthor = async (req, res) => {
       return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Only research editor can return paper to author' });
     }
 
-    if (!['pending_editor', 'under_review'].includes(paper.status)) {
+    if (paper.status !== 'pending_editor') {
       return sendError(res, {
         status: 400,
         code: 'INVALID_WORKFLOW_TRANSITION',
@@ -738,15 +854,15 @@ exports.returnToAuthor = async (req, res) => {
       });
     }
 
-    try {
-      await supabase.from('approval_workflow').insert([{
-        research_id: id,
-        reviewer_id: req.user.id,
-        reviewer_role: 'staff',
-        status: 'returned_to_author',
-        comments: notes.trim(),
-      }]);
-    } catch {}
+    await insertApprovalWorkflowEvent({
+      researchId: id,
+      reviewerId: req.user.id,
+      reviewerRole: 'staff',
+      actionType: 'returned_to_author',
+      comments: notes.trim(),
+      previousStatus,
+      newStatus,
+    });
 
     try {
       await supabase.from('notifications').insert([{
@@ -796,7 +912,11 @@ exports.returnToAuthor = async (req, res) => {
 exports.correctMetadata = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, abstract, keywords, category, co_authors } = req.body;
+    const { title, abstract, keywords, category, external_author_notes } = req.body;
+    const normalizedExternalAuthorNotes =
+      external_author_notes === undefined || external_author_notes === null
+        ? null
+        : String(external_author_notes).trim() || null;
 
     if (req.user.role !== 'staff') {
       return sendError(res, {
@@ -806,7 +926,7 @@ exports.correctMetadata = async (req, res) => {
       });
     }
 
-    const hasAnyField = [title, abstract, keywords, category, co_authors].some((value) => value !== undefined);
+    const hasAnyField = [title, abstract, keywords, category, external_author_notes].some((value) => value !== undefined);
     if (!hasAnyField) {
       return sendError(res, {
         status: 400,
@@ -817,7 +937,7 @@ exports.correctMetadata = async (req, res) => {
 
     const { data: paper, error: fetchError } = await supabase
       .from('research_papers')
-      .select('id, title, abstract, keywords, category, co_authors, status, author_id')
+      .select('id, title, abstract, keywords, category, external_author_notes, status, author_id')
       .eq('id', id)
       .single();
 
@@ -825,7 +945,7 @@ exports.correctMetadata = async (req, res) => {
       return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Paper not found' });
     }
 
-    if (!['pending_editor', 'under_review'].includes(paper.status)) {
+    if (paper.status !== 'pending_editor') {
       return sendError(res, {
         status: 400,
         code: 'INVALID_WORKFLOW_TRANSITION',
@@ -840,7 +960,9 @@ exports.correctMetadata = async (req, res) => {
     if (title !== undefined) updates.title = String(title).trim();
     if (abstract !== undefined) updates.abstract = String(abstract).trim();
     if (category !== undefined) updates.category = String(category).trim();
-    if (co_authors !== undefined) updates.co_authors = co_authors;
+    if (external_author_notes !== undefined) {
+      updates.external_author_notes = normalizedExternalAuthorNotes || null;
+    }
     if (keywords !== undefined) {
       if (Array.isArray(keywords)) {
         updates.keywords = keywords.map((k) => String(k).trim()).filter(Boolean);
@@ -896,14 +1018,14 @@ exports.correctMetadata = async (req, res) => {
           abstract: paper.abstract,
           keywords: paper.keywords,
           category: paper.category,
-          co_authors: paper.co_authors,
+          external_author_notes: paper.external_author_notes,
         },
         updated: {
           title: updatedPaper.title,
           abstract: updatedPaper.abstract,
           keywords: updatedPaper.keywords,
           category: updatedPaper.category,
-          co_authors: updatedPaper.co_authors,
+          external_author_notes: updatedPaper.external_author_notes,
         },
       },
     });
@@ -947,7 +1069,19 @@ exports.deanBypassApprove = async (req, res) => {
       .eq('id', id).select().single();
     if (updateError) return sendError(res, { status: 500, code: 'DEAN_BYPASS_FAILED', message: 'Failed to bypass approve paper' });
 
-    try { await supabase.from('approval_workflow').insert([{ research_id: id, reviewer_id: deanId, reviewer_role: 'dean', status: 'bypassed', comments: `BYPASS: ${reason}` }]); } catch {}
+    await insertApprovalWorkflowEvent({
+      researchId: id,
+      reviewerId: deanId,
+      reviewerRole: 'dean',
+      actionType: 'dean_bypass',
+      comments: `BYPASS: ${reason}`,
+      previousStatus,
+      newStatus: target,
+      metadata: {
+        bypassReason: reason,
+        targetStatus: target,
+      },
+    });
     await logAuditEvent({
       userId: deanId,
       userRole: 'dean',
@@ -1075,15 +1209,18 @@ exports.assignFacultyReviewer = async (req, res) => {
       });
     }
 
-    try {
-      await supabase.from('approval_workflow').insert([{
-        research_id: id,
-        reviewer_id: req.user.id,
-        reviewer_role: req.user.role,
-        status: 'assigned_to_faculty',
-        comments: notes || null,
-      }]);
-    } catch {}
+    await insertApprovalWorkflowEvent({
+      researchId: id,
+      reviewerId: req.user.id,
+      reviewerRole: req.user.role,
+      actionType: 'assigned_to_faculty',
+      comments: notes || null,
+      previousStatus,
+      newStatus: 'pending_faculty',
+      metadata: {
+        assignedFacultyId: faculty.id,
+      },
+    });
 
     try {
       await supabase.from('notifications').insert([
@@ -1251,9 +1388,13 @@ exports.getDeanChairAssignedPapers = async (req, res) => {
 
 exports.getProgramChairAnalytics = async (req, res) => {
   try {
+    const [departmentLookup, programLookup] = await Promise.all([
+      getDepartmentLookup(),
+      getProgramLookup(),
+    ]);
     const { data: chairProfile, error: profileError } = await supabase
       .from('users')
-      .select('id, department, department_id')
+      .select('id, program, program_id, department, department_id')
       .eq('id', req.user.id)
       .single();
 
@@ -1267,11 +1408,13 @@ exports.getProgramChairAnalytics = async (req, res) => {
 
     let query = supabase
       .from('research_papers')
-      .select('id, title, status, keywords, created_at, submission_date, updated_at, department, department_id, author:users!author_id(id, first_name, middle_name, last_name, email)')
+      .select('id, title, status, keywords, created_at, submission_date, updated_at, department, department_id, program_id, author:users!author_id(id, first_name, middle_name, last_name, email)')
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
-    if (chairProfile.department_id) {
+    if (chairProfile.program_id) {
+      query = query.eq('program_id', chairProfile.program_id);
+    } else if (chairProfile.department_id) {
       query = query.eq('department_id', chairProfile.department_id);
     } else if (chairProfile.department) {
       query = query.eq('department', chairProfile.department);
@@ -1315,7 +1458,9 @@ exports.getProgramChairAnalytics = async (req, res) => {
     return sendSuccess(res, {
       data: {
         program: {
-          department: chairProfile.department || null,
+          program: (chairProfile.program_id && programLookup.get(chairProfile.program_id)) || chairProfile.program || null,
+          programId: chairProfile.program_id || null,
+          department: (chairProfile.department_id && departmentLookup.get(chairProfile.department_id)) || chairProfile.department || null,
           departmentId: chairProfile.department_id || null,
         },
         summary,
@@ -1358,7 +1503,7 @@ exports.setProgramChairReviewDeadline = async (req, res) => {
 
     const { data: chairProfile, error: profileError } = await supabase
       .from('users')
-      .select('id, department, department_id')
+      .select('id, program, program_id, department, department_id')
       .eq('id', req.user.id)
       .single();
 
@@ -1372,7 +1517,7 @@ exports.setProgramChairReviewDeadline = async (req, res) => {
 
     const { data: paper, error: paperError } = await supabase
       .from('research_papers')
-      .select('id, title, status, dean_chair_id, department, department_id')
+      .select('id, title, status, dean_chair_id, department, department_id, program_id')
       .eq('id', id)
       .single();
 
@@ -1380,9 +1525,11 @@ exports.setProgramChairReviewDeadline = async (req, res) => {
       return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Paper not found' });
     }
 
-    const inScope = chairProfile.department_id
-      ? paper.department_id === chairProfile.department_id
-      : chairProfile.department && paper.department === chairProfile.department;
+    const inScope = chairProfile.program_id
+      ? paper.program_id === chairProfile.program_id
+      : chairProfile.department_id
+        ? paper.department_id === chairProfile.department_id
+        : chairProfile.department && paper.department === chairProfile.department;
 
     if (!inScope) {
       return sendError(res, {
@@ -1493,7 +1640,7 @@ exports.getProgramChairDeadlines = async (req, res) => {
   try {
     const { data: chairProfile, error: profileError } = await supabase
       .from('users')
-      .select('id, department, department_id')
+      .select('id, program, program_id, department, department_id')
       .eq('id', req.user.id)
       .single();
 
@@ -1507,12 +1654,14 @@ exports.getProgramChairDeadlines = async (req, res) => {
 
     let query = supabase
       .from('research_papers')
-      .select('id, title, status, review_deadline_at, updated_at, submission_date, author:users!author_id(id, first_name, middle_name, last_name, email)')
+      .select('id, title, status, review_deadline_at, updated_at, submission_date, department, department_id, program_id, author:users!author_id(id, first_name, middle_name, last_name, email)')
       .is('deleted_at', null)
       .not('review_deadline_at', 'is', null)
       .order('review_deadline_at', { ascending: true });
 
-    if (chairProfile.department_id) {
+    if (chairProfile.program_id) {
+      query = query.eq('program_id', chairProfile.program_id);
+    } else if (chairProfile.department_id) {
       query = query.eq('department_id', chairProfile.department_id);
     } else if (chairProfile.department) {
       query = query.eq('department', chairProfile.department);
@@ -1585,6 +1734,7 @@ exports.getProgramChairDeadlines = async (req, res) => {
 exports.getDepartmentComparison = async (req, res) => {
   try {
     const { from, to } = req.query;
+    const departmentLookup = await getDepartmentLookup();
     let query = supabase
       .from('research_papers')
       .select('id, status, department, department_id, created_at, submission_date, updated_at, published_date')
@@ -1600,7 +1750,9 @@ exports.getDepartmentComparison = async (req, res) => {
     const byDepartment = new Map();
 
     rows.forEach((paper) => {
-      const label = paper.department || (paper.department_id ? `Department ${String(paper.department_id).slice(0, 8)}` : 'Unassigned');
+      const label = (paper.department_id && departmentLookup.get(paper.department_id))
+        || paper.department
+        || (paper.department_id ? `Department ${String(paper.department_id).slice(0, 8)}` : 'Unassigned');
       if (!byDepartment.has(label)) {
         byDepartment.set(label, {
           department: label,

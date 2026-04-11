@@ -5,7 +5,7 @@ import {
   FileText, Clock, CheckCircle, Eye, ChevronRight, RefreshCw,
   BookOpen, Users, Calendar, AlertTriangle
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
 const ProgramChairDashboard = () => {
@@ -29,13 +29,15 @@ const ProgramChairDashboard = () => {
       setLoading(true);
       const response = await researchAPI.getProgramChairAnalytics();
       const deadlinesResponse = await researchAPI.getProgramChairDeadlines();
-      const papers = response.data.papers || [];
-      setProgramScope(response.data.program?.department || 'Unassigned Program');
-      setTopKeywords(response.data.topKeywords || []);
+      const payload = unwrapApiData(response);
+      const deadlinesPayload = unwrapApiData(deadlinesResponse);
+      const papers = payload.papers || [];
+      setProgramScope(payload.program?.program || payload.program?.department || 'Unassigned Program');
+      setTopKeywords(payload.topKeywords || []);
       setAllPapers(papers);
-      setDeadlineSummary(deadlinesResponse.data.summary || { totalWithDeadline: 0, overdueCount: 0, dueSoonCount: 0 });
-      setDeadlineItems([...(deadlinesResponse.data.overdue || []), ...(deadlinesResponse.data.upcoming || [])].slice(0, 6));
-      setStats(response.data.summary || {
+      setDeadlineSummary(deadlinesPayload.summary || { totalWithDeadline: 0, overdueCount: 0, dueSoonCount: 0 });
+      setDeadlineItems([...(deadlinesPayload.overdue || []), ...(deadlinesPayload.upcoming || [])].slice(0, 6));
+      setStats(payload.summary || {
         total: 0,
         pending: 0,
         approved: 0,
@@ -135,7 +137,7 @@ const ProgramChairDashboard = () => {
             <Users size={24} className="text-white/80" />
             <h2 className="text-lg font-bold">Primary Clearance Reviewer</h2>
           </div>
-          <p className="text-teal-100 text-sm">Department-scoped analytics for {programScope || 'your assigned program'}.</p>
+          <p className="text-teal-100 text-sm">Program-scoped analytics for {programScope || 'your assigned program'}.</p>
         </div>
 
         {/* Stats Cards */}

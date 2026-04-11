@@ -29,6 +29,8 @@ import {
 import { researchAPI, authAPI } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const AdminAnalytics = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -41,17 +43,20 @@ const AdminAnalytics = () => {
 
   const [papers, setPapers] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
+  const [categoryLookup, setCategoryLookup] = useState([]);
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const [papersRes, usersRes] = await Promise.all([
+      const [papersRes, usersRes, categoriesRes] = await Promise.all([
         researchAPI.getAllResearch(),
-        authAPI.getAllUsers()
+        authAPI.getAllUsers(),
+        researchAPI.getCategories(),
       ]);
       setPapers(papersRes.data?.papers || papersRes.data || []);
       setAllUsers(usersRes.data?.users || usersRes.data || []);
+      setCategoryLookup(categoriesRes.data?.categories || []);
     } catch (err) {
       console.error('Analytics fetch error:', err);
       setError('Failed to load analytics data.');
@@ -92,8 +97,7 @@ const AdminAnalytics = () => {
 
   // Papers by status
   const statusGroups = {
-    pending: papers.filter(p => ['pending', 'pending_faculty', 'pending_editor', 'pending_admin'].includes(p.status)).length,
-    underReview: papers.filter(p => p.status === 'under_review').length,
+    pending: papers.filter(p => ['pending_faculty', 'pending_editor', 'pending_admin'].includes(p.status)).length,
     approved: papers.filter(p => p.status === 'approved').length,
     published: papers.filter(p => p.status === 'published').length,
     rejected: papers.filter(p => p.status === 'rejected').length,
@@ -125,9 +129,17 @@ const AdminAnalytics = () => {
     return Math.round((total / reviewed.length) * 10) / 10;
   })();
 
+  const getCategoryName = (categoryValue) => {
+    if (!categoryValue) return 'Uncategorized';
+    const category = categoryLookup.find((entry) => entry.id === categoryValue);
+    if (category) return category.name;
+    if (typeof categoryValue === 'string' && !UUID_PATTERN.test(categoryValue)) return categoryValue;
+    return 'Uncategorized';
+  };
+
   // Category distribution
   const categoryMap = papers.reduce((acc, p) => {
-    const cat = p.category || 'Uncategorized';
+    const cat = getCategoryName(p.category);
     acc[cat] = (acc[cat] || 0) + 1;
     return acc;
   }, {});
@@ -207,7 +219,6 @@ const AdminAnalytics = () => {
       pending_faculty: { label: 'With Faculty', cls: 'bg-yellow-100 text-yellow-800' },
       pending_editor: { label: 'With Editor', cls: 'bg-blue-100 text-blue-800' },
       pending_admin: { label: 'With Admin', cls: 'bg-indigo-100 text-indigo-800' },
-      under_review: { label: 'Under Review', cls: 'bg-blue-100 text-blue-800' },
       approved: { label: 'Approved', cls: 'bg-green-100 text-green-800' },
       published: { label: 'Published', cls: 'bg-emerald-100 text-emerald-800' },
       rejected: { label: 'Rejected', cls: 'bg-red-100 text-red-800' },
@@ -278,7 +289,6 @@ const AdminAnalytics = () => {
     lines.push(`Status${sep}Count${sep}Percentage`);
     [
       ['Pending', statusGroups.pending],
-      ['Under Review', statusGroups.underReview],
       ['Approved', statusGroups.approved],
       ['Published', statusGroups.published],
       ['Revision Required', statusGroups.revision],
@@ -321,7 +331,7 @@ const AdminAnalytics = () => {
       lines.push(
         `"${(p.title || '').replace(/"/g, '""')}"${sep}` +
         `"${(formatFullName(p.users) || 'Unknown').replace(/"/g, '""')}"${sep}` +
-        `"${(p.category || 'N/A').replace(/"/g, '""')}"${sep}` +
+        `"${getCategoryName(p.category).replace(/"/g, '""')}"${sep}` +
         `${p.status}${sep}` +
         `${p.view_count || 0}${sep}` +
         `${p.download_count || 0}${sep}` +
@@ -357,7 +367,7 @@ const AdminAnalytics = () => {
         id: p.id,
         title: p.title,
         author: formatFullName(p.users) || 'Unknown',
-        category: p.category || 'N/A',
+        category: getCategoryName(p.category),
         status: p.status,
         views: p.view_count || 0,
         downloads: p.download_count || 0,
@@ -699,7 +709,6 @@ const AdminAnalytics = () => {
           <div className="p-6 space-y-3">
             {[
               { label: 'Pending', count: statusGroups.pending, gradient: 'from-yellow-500 to-amber-500', bg: 'bg-yellow-50' },
-              { label: 'Under Review', count: statusGroups.underReview, gradient: 'from-blue-500 to-cyan-500', bg: 'bg-blue-50' },
               { label: 'Approved', count: statusGroups.approved, gradient: 'from-green-500 to-emerald-500', bg: 'bg-green-50' },
               { label: 'Published', count: statusGroups.published, gradient: 'from-emerald-600 to-teal-600', bg: 'bg-emerald-50' },
               { label: 'Revision', count: statusGroups.revision, gradient: 'from-amber-500 to-orange-500', bg: 'bg-amber-50' },

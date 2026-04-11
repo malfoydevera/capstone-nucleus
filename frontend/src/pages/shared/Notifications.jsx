@@ -14,7 +14,7 @@ import {
   ShieldAlert,
   Sparkles,
 } from 'lucide-react';
-import { notificationsAPI } from '../../utils/api';
+import { notificationsAPI, unwrapApiData } from '../../utils/api';
 
 const formatTimeAgo = (isoDate) => {
   if (!isoDate) return 'just now';
@@ -58,7 +58,7 @@ const Notifications = () => {
 
     try {
       const response = await notificationsAPI.getMine({ limit: 100 });
-      setNotifications(response.data.notifications || []);
+      setNotifications(unwrapApiData(response).notifications || []);
     } catch (error) {
       console.error('Failed to fetch notifications page data:', error);
       setNotifications([]);

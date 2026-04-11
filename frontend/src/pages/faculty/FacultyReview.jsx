@@ -21,13 +21,24 @@ import {
   Zap,
   Sparkles
 } from 'lucide-react';
-import { aiAPI, researchAPI } from '../../utils/api';
+import { aiAPI, researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const getDepartmentScopeKey = (paper) => paper?.department_id || paper?.department || 'unassigned';
+
+const getDepartmentScopeLabel = (paper) => {
+  if (paper?.department) return paper.department;
+  if (paper?.department_id) return `Department ${String(paper.department_id).slice(0, 8)}`;
+  return 'unassigned';
+};
 
 const FacultyReview = () => {
   const navigate = useNavigate();
   const [papers, setPapers] = useState([]);
   const [filteredPapers, setFilteredPapers] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('pending_faculty');
@@ -65,8 +76,12 @@ const FacultyReview = () => {
   const fetchPapers = async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const response = await researchAPI.getFacultyAssignedPapers();
-      const allPapers = response.data.papers;
+      const [response, categoriesResponse] = await Promise.all([
+        researchAPI.getFacultyAssignedPapers(),
+        researchAPI.getCategories(),
+      ]);
+      const allPapers = unwrapApiData(response).papers || [];
+      setCategories(unwrapApiData(categoriesResponse).categories || []);
       
       setPapers(allPapers);
       
@@ -113,7 +128,7 @@ const FacultyReview = () => {
     }
 
     if (departmentFilter !== 'all') {
-      filtered = filtered.filter((paper) => (paper.department || 'unassigned') === departmentFilter);
+      filtered = filtered.filter((paper) => getDepartmentScopeKey(paper) === departmentFilter);
     }
 
     if (dateFilter !== 'all') {
@@ -158,6 +173,14 @@ const FacultyReview = () => {
       day: 'numeric',
       year: 'numeric'
     });
+  };
+
+  const getCategoryName = (categoryValue) => {
+    if (!categoryValue) return 'General';
+    const category = categories.find((entry) => entry.id === categoryValue);
+    if (category) return category.name;
+    if (typeof categoryValue === 'string' && !UUID_PATTERN.test(categoryValue)) return categoryValue;
+    return 'General';
   };
 
   const getStatusConfig = (status) => {
@@ -221,7 +244,17 @@ const FacultyReview = () => {
     { id: 'all', label: 'All Assigned', count: stats.total, color: 'from-slate-500 to-slate-700' }
   ];
 
-  const departmentOptions = ['all', ...Array.from(new Set(papers.map((paper) => paper.department || 'unassigned')))].sort();
+  const departmentOptions = [
+    { value: 'all', label: 'all' },
+    ...Array.from(
+      new Map(
+        papers.map((paper) => [
+          getDepartmentScopeKey(paper),
+          getDepartmentScopeLabel(paper),
+        ])
+      ).entries()
+    ).map(([value, label]) => ({ value, label })),
+  ].sort((left, right) => left.label.localeCompare(right.label));
 
   const generateSummary = async (paperId) => {
     setSummaryLoadingByPaper((prev) => ({ ...prev, [paperId]: true }));
@@ -230,7 +263,7 @@ const FacultyReview = () => {
       setSummaryByPaper((prev) => ({
         ...prev,
         [paperId]: {
-          summary: response.data.summary || '',
+          summary: unwrapApiData(response).summary || '',
           strengths: response.data.strengths || [],
           concerns: response.data.concerns || [],
           error: null,
@@ -410,8 +443,8 @@ const FacultyReview = () => {
               className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
             >
               {departmentOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option === 'all' ? 'All Departments' : option === 'unassigned' ? 'Unassigned' : option}
+                <option key={option.value} value={option.value}>
+                  {option.value === 'all' ? 'All Departments' : option.label === 'unassigned' ? 'Unassigned' : option.label}
                 </option>
               ))}
             </select>
@@ -526,7 +559,7 @@ const FacultyReview = () => {
                       {paper.category && (
                         <div className="flex items-center gap-2">
                           <BookOpen size={16} className="text-slate-400" />
-                          <span className="text-slate-600">{paper.category}</span>
+                          <span className="text-slate-600">{getCategoryName(paper.category)}</span>
                         </div>
                       )}
                     </div>

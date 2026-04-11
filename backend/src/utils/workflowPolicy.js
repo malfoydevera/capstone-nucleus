@@ -4,13 +4,13 @@ const WORKFLOW_POLICY = {
     dean: ['pending_dean'],
     program_chair: ['pending_program_chair'],
     staff: ['pending_editor'],
-    admin: ['pending_admin', 'under_review'],
+    admin: ['pending_admin'],
   },
   reject: {
     faculty: ['pending_faculty'],
     dean: ['pending_dean'],
     staff: ['pending_editor'],
-    admin: ['pending_admin', 'under_review'],
+    admin: ['pending_admin'],
   },
   revision: {
     faculty: ['pending_faculty'],

@@ -17,14 +17,17 @@ import {
   BookOpen,
   Users
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const DeanChairReview = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [papers, setPapers] = useState([]);
   const [filteredPapers, setFilteredPapers] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('needs_review');
@@ -53,8 +56,12 @@ const DeanChairReview = () => {
   const fetchPapers = async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const response = await researchAPI.getDeanChairAssignedPapers();
-      const allPapers = response.data.papers || [];
+      const [response, categoriesResponse] = await Promise.all([
+        researchAPI.getDeanChairAssignedPapers(),
+        researchAPI.getCategories(),
+      ]);
+      const allPapers = unwrapApiData(response).papers || [];
+      setCategories(unwrapApiData(categoriesResponse).categories || []);
       setPapers(allPapers);
       setStats({
         pendingReview: allPapers.filter(p => p.status === pendingStatus).length,
@@ -107,6 +114,14 @@ const DeanChairReview = () => {
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays} days ago`;
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const getCategoryName = (categoryValue) => {
+    if (!categoryValue) return 'General';
+    const category = categories.find((entry) => entry.id === categoryValue);
+    if (category) return category.name;
+    if (typeof categoryValue === 'string' && !UUID_PATTERN.test(categoryValue)) return categoryValue;
+    return 'General';
   };
 
   const getStatusConfig = (status) => {
@@ -343,7 +358,7 @@ const DeanChairReview = () => {
                       {paper.category && (
                         <div className="flex items-center gap-2">
                           <BookOpen size={16} className="text-slate-400" />
-                          <span className="text-slate-600">{paper.category}</span>
+                          <span className="text-slate-600">{getCategoryName(paper.category)}</span>
                         </div>
                       )}
                     </div>

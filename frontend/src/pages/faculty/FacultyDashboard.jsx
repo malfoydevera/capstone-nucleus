@@ -14,7 +14,7 @@ import {
   Moon,
   Users
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
 // Donut Chart Component
@@ -143,9 +143,10 @@ const FacultyDashboard = () => {
         researchAPI.getFacultyAssignedPapers(),
         researchAPI.getFacultyWorkloadSummary(),
       ]);
-      const papers = response.data.papers || [];
-      const workloadData = workloadResponse?.data?.summary || {};
-      const overdueThresholdDays = workloadResponse?.data?.overdueThresholdDays || 7;
+      const papers = unwrapApiData(response).papers || [];
+      const workloadPayload = unwrapApiData(workloadResponse);
+      const workloadData = workloadPayload.summary || {};
+      const overdueThresholdDays = workloadPayload.overdueThresholdDays || 7;
       setAllPapers(papers);
       setWorkload({
         avgReviewDays: Number(workloadData.avgReviewDays || 0),

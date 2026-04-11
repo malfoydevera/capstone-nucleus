@@ -14,7 +14,7 @@ import {
   Award,
   Users
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
 const DeanChairDashboard = () => {
@@ -42,7 +42,7 @@ const DeanChairDashboard = () => {
     try {
       setLoading(true);
       const response = await researchAPI.getDeanChairAssignedPapers();
-      const papers = response.data.papers || [];
+      const papers = unwrapApiData(response).papers || [];
       setAllPapers(papers);
 
       const now = new Date();

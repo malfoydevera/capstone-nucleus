@@ -16,12 +16,171 @@ const { attachFullName, buildFullName } = require('../utils/name');
 const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/workflowEmail');
 const { getSystemPolicy, isFileAllowedByPolicy } = require('../utils/systemPolicy');
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeResearchAuthors = (researchAuthors = []) =>
+  [...(researchAuthors || [])]
+    .sort((left, right) => {
+      const leftOrder = Number.isFinite(left?.author_order) ? left.author_order : Number.MAX_SAFE_INTEGER;
+      const rightOrder = Number.isFinite(right?.author_order) ? right.author_order : Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder;
+    })
+    .map((entry) => ({
+      ...entry,
+      author: attachFullName(entry.author),
+    }));
+
+const normalizeExternalAuthorNotes = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+};
+
+const resolveExternalAuthorNotes = (...candidates) => {
+  for (const candidate of candidates) {
+    const normalized = normalizeExternalAuthorNotes(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+};
+
+const resolveCompatibleCoAuthorText = (structuredAuthors = [], compatibilityNotes = null) => {
+  const canonicalNames = (structuredAuthors || [])
+    .filter((entry) => !entry?.is_primary)
+    .map((entry) => buildFullName(entry?.author))
+    .filter(Boolean);
+
+  if (canonicalNames.length > 0) {
+    return canonicalNames.join('; ');
+  }
+
+  if (!compatibilityNotes) {
+    return null;
+  }
+
+  return String(compatibilityNotes)
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .join('; ');
+};
+
+const normalizeCoAuthorIds = (coAuthorIds = [], primaryAuthorId) =>
+  Array.from(
+    new Set(
+      (Array.isArray(coAuthorIds) ? coAuthorIds : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  ).filter((authorId) => authorId !== String(primaryAuthorId));
+
+const getCategoryLookup = async () => {
+  const categories = await getOrSet('categories:all', TTL.CATEGORIES, async () => {
+    const { data, error } = await supabase.from('research_categories').select('*').order('name');
+    if (error) throw error;
+    return data || [];
+  });
+
+  return new Map((categories || []).map((entry) => [entry.id, entry.name]));
+};
+
+const getDepartmentLookup = async () => {
+  const departments = await getOrSet('departments:all', TTL.CATEGORIES, async () => {
+    const { data, error } = await supabase.from('departments').select('id, name, code').order('name');
+    if (error) throw error;
+    return data || [];
+  });
+
+  const byId = new Map();
+  const byNormalizedValue = new Map();
+
+  (departments || []).forEach((entry) => {
+    byId.set(entry.id, entry.name);
+    [entry.name, entry.code].filter(Boolean).forEach((value) => {
+      byNormalizedValue.set(String(value).trim().toLowerCase(), entry);
+    });
+  });
+
+  return { byId, byNormalizedValue };
+};
+
+const getProgramLookup = async () => {
+  const programs = await getOrSet('programs:all', TTL.CATEGORIES, async () => {
+    const { data, error } = await supabase
+      .from('programs')
+      .select('id, name, code, department_id')
+      .order('name');
+    if (error) throw error;
+    return data || [];
+  });
+
+  const byId = new Map();
+  const byNormalizedValue = new Map();
+
+  (programs || []).forEach((entry) => {
+    byId.set(entry.id, entry.name);
+    [entry.name, entry.code].filter(Boolean).forEach((value) => {
+      byNormalizedValue.set(String(value).trim().toLowerCase(), entry);
+    });
+  });
+
+  return { byId, byNormalizedValue };
+};
+
+const resolveDepartmentLabel = (departmentId, fallbackLabel, departmentLookup) => {
+  if (departmentId && departmentLookup?.byId?.has(departmentId)) {
+    return departmentLookup.byId.get(departmentId);
+  }
+
+  return fallbackLabel || null;
+};
+
+const resolveProgramLabel = (programId, fallbackLabel, programLookup) => {
+  if (programId && programLookup?.byId?.has(programId)) {
+    return programLookup.byId.get(programId);
+  }
+
+  return fallbackLabel || null;
+};
+
+const resolveCategoryLabel = (categoryValue, categoryLookup) => {
+  if (!categoryValue) return '';
+
+  const categoryName = categoryLookup.get(categoryValue);
+  if (categoryName) return categoryName;
+
+  if (typeof categoryValue === 'string' && !UUID_PATTERN.test(categoryValue)) {
+    return categoryValue;
+  }
+
+  return '';
+};
+
 // Submit new research or update existing revision
 exports.submitResearch = async (req, res) => {
   try {
-    const { id, title, abstract, keywords, coAuthors, category, facultyId, department, departmentId } = req.body;
+    const {
+      id,
+      title,
+      abstract,
+      keywords,
+      coAuthors,
+      externalAuthorNotes,
+      category,
+      facultyId,
+      department,
+      departmentId,
+      programId,
+    } = req.body;
     const file = req.file;
     const userId = req.user.id;
+    const normalizedExternalAuthorNotes = resolveExternalAuthorNotes(externalAuthorNotes, coAuthors);
 
     if (!id && !file) {
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Research file is required' });
@@ -74,8 +233,29 @@ exports.submitResearch = async (req, res) => {
       };
     }
 
-    let resolvedDepartmentId = departmentId || null;
-    let resolvedDepartmentName = department || null;
+    const { data: authorProfile } = await supabase
+      .from('users')
+      .select('id, department, department_id, program, program_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    let resolvedDepartmentId = departmentId || authorProfile?.department_id || null;
+    let resolvedDepartmentName = department || authorProfile?.department || null;
+    let resolvedProgramId = programId || authorProfile?.program_id || null;
+
+    if (resolvedProgramId) {
+      const { data: selectedProgram } = await supabase
+        .from('programs')
+        .select('id, name, department_id, departments(name)')
+        .eq('id', resolvedProgramId)
+        .maybeSingle();
+
+      if (selectedProgram) {
+        resolvedProgramId = selectedProgram.id;
+        resolvedDepartmentId = selectedProgram.department_id || resolvedDepartmentId;
+        resolvedDepartmentName = selectedProgram.departments?.name || resolvedDepartmentName;
+      }
+    }
 
     if (resolvedDepartmentId) {
       const { data: selectedDepartment } = await supabase
@@ -109,13 +289,14 @@ exports.submitResearch = async (req, res) => {
       title,
       abstract,
       keywords: keywords ? keywords.split(',').map(k => k.trim()) : [],
-      co_authors: coAuthors || null,
+      external_author_notes: normalizedExternalAuthorNotes,
       category,
       author_id: userId,
       faculty_id: facultyId || null,
       department: resolvedDepartmentName || null,
       department_id: resolvedDepartmentId,
-      status: id ? undefined : (facultyId ? 'pending_faculty' : 'pending'),
+      program_id: resolvedProgramId,
+      status: id ? undefined : (facultyId ? 'pending_faculty' : 'pending_editor'),
       ...fileData,
     };
 
@@ -142,6 +323,22 @@ exports.submitResearch = async (req, res) => {
       dbError = fallbackResult.error;
     }
 
+    if (dbError?.message?.includes('program_id')) {
+      const fallbackPayload = { ...basePayload };
+      delete fallbackPayload.program_id;
+      const fallbackResult = await supabase.from('research_papers').upsert(fallbackPayload).select().single();
+      research = fallbackResult.data;
+      dbError = fallbackResult.error;
+    }
+
+    if (dbError?.message?.includes('external_author_notes')) {
+      const fallbackPayload = { ...basePayload };
+      delete fallbackPayload.external_author_notes;
+      const fallbackResult = await supabase.from('research_papers').upsert(fallbackPayload).select().single();
+      research = fallbackResult.data;
+      dbError = fallbackResult.error;
+    }
+
     if (dbError) {
       return sendError(res, { status: 500, code: 'SAVE_RESEARCH_FAILED', message: 'Failed to save research data' });
     }
@@ -156,7 +353,9 @@ exports.submitResearch = async (req, res) => {
       }
     } catch { coAuthorIds = []; }
 
-    if (coAuthorIds.length > 0) {
+    const normalizedCoAuthorIds = normalizeCoAuthorIds(coAuthorIds, userId);
+
+    if (normalizedCoAuthorIds.length > 0) {
       try {
         if (id) {
           await supabase.from('research_authors').delete().eq('research_id', research.id).neq('is_primary', true);
@@ -165,13 +364,16 @@ exports.submitResearch = async (req, res) => {
           { research_id: research.id, user_id: userId, author_order: 0, is_primary: true },
           { onConflict: 'research_id,user_id' }
         );
-        const coAuthorsData = coAuthorIds.map((authorId, index) => ({
+        const coAuthorsData = normalizedCoAuthorIds.map((authorId, index) => ({
           research_id: research.id, user_id: authorId, author_order: index + 1, is_primary: false,
         }));
         await supabase.from('research_authors').upsert(coAuthorsData, { onConflict: 'research_id,user_id' });
       } catch { /* research_authors table may not exist yet */ }
     } else {
       try {
+        if (id) {
+          await supabase.from('research_authors').delete().eq('research_id', research.id).neq('is_primary', true);
+        }
         await supabase.from('research_authors').upsert(
           { research_id: research.id, user_id: userId, author_order: 0, is_primary: true },
           { onConflict: 'research_id,user_id' }
@@ -179,7 +381,7 @@ exports.submitResearch = async (req, res) => {
       } catch { /* research_authors table may not exist yet */ }
     }
 
-    let statusAfterSubmit = research.status || (facultyId ? 'pending_faculty' : 'pending');
+    let statusAfterSubmit = research.status || (facultyId ? 'pending_faculty' : 'pending_editor');
 
     // Handle revision resubmission
     if (id) {
@@ -196,7 +398,7 @@ exports.submitResearch = async (req, res) => {
         };
         const newStatus = roleMap[existingPaper.last_reviewer_role]
           || existingPaper.previous_status
-          || (existingPaper.faculty_id ? 'pending_faculty' : 'pending');
+          || (existingPaper.faculty_id ? 'pending_faculty' : 'pending_editor');
 
         await supabase.from('research_papers').update({
           status: newStatus, revision_notes: null, last_reviewer_role: null, previous_status: null,
@@ -266,7 +468,13 @@ exports.submitResearch = async (req, res) => {
     return sendSuccess(res, {
       status: id ? 200 : 201,
       message: id ? 'Research updated successfully' : 'Research submitted successfully',
-      data: { research: { ...research, file_url: await resolvePaperFileUrl(research) } },
+      data: {
+        research: {
+          ...research,
+          external_author_notes: resolveExternalAuthorNotes(research?.external_author_notes, normalizedExternalAuthorNotes),
+          file_url: await resolvePaperFileUrl(research),
+        },
+      },
     });
   } catch (error) {
     console.error('Submit research error:', error);
@@ -277,9 +485,24 @@ exports.submitResearch = async (req, res) => {
 exports.getMyResearch = async (req, res) => {
   try {
     const { data: papers, error } = await supabase
-      .from('research_papers').select('*').eq('author_id', req.user.id).is('deleted_at', null).order('created_at', { ascending: false });
+      .from('research_papers')
+      .select(`
+        *,
+        research_authors!research_authors_research_id_fkey (
+          user_id, is_primary, author_order,
+          author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
+        )
+      `)
+      .eq('author_id', req.user.id)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
     if (error) throw error;
-    const papersWithUrls = await Promise.all((papers || []).map(async p => ({ ...p, file_url: await resolvePaperFileUrl(p) })));
+    const papersWithUrls = await Promise.all((papers || []).map(async (paper) => ({
+      ...paper,
+      external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
+      file_url: await resolvePaperFileUrl(paper),
+      structured_authors: normalizeResearchAuthors(paper.research_authors),
+    })));
     return sendSuccess(res, { data: { papers: papersWithUrls } });
   } catch (error) {
     console.error('Get my research error:', error);
@@ -291,12 +514,26 @@ exports.getProfileResearchData = async (req, res) => {
   try {
     const userId = req.user.id;
     const role = req.user.role;
-    const { title, startDate, endDate, department, program, details, status } = req.query;
+    const { title, startDate, endDate, department, departmentId, program, programId, details, status } = req.query;
+    const [categoryLookup, departmentLookup, programLookup] = await Promise.all([
+      getCategoryLookup(),
+      getDepartmentLookup(),
+      getProgramLookup(),
+    ]);
+
+    const resolvedDepartmentFilterId =
+      departmentId || departmentLookup.byNormalizedValue.get(String(department || '').trim().toLowerCase())?.id || null;
+    const resolvedProgramFilterId =
+      programId || programLookup.byNormalizedValue.get(String(program || '').trim().toLowerCase())?.id || null;
 
     let query = supabase.from('research_papers').select(`
-      id, title, abstract, category, status, department, keywords, co_authors,
+      id, title, abstract, category, status, department, department_id, program_id, keywords, external_author_notes,
       author_id, faculty_id, dean_chair_id, created_at, submission_date, published_date,
-      author:users!author_id (id, first_name, middle_name, last_name, email, program, department)
+      author:users!author_id (id, first_name, middle_name, last_name, email, program, program_id, department, department_id),
+      research_authors!research_authors_research_id_fkey (
+        user_id, is_primary, author_order,
+        author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
+      )
     `).order('created_at', { ascending: false });
 
     if (role === 'student') query = query.eq('author_id', userId);
@@ -305,7 +542,9 @@ exports.getProfileResearchData = async (req, res) => {
 
     if (title) query = query.ilike('title', `%${title}%`);
     if (status) query = query.eq('status', status);
-    if (department) query = query.eq('department', department);
+    if (resolvedDepartmentFilterId) query = query.eq('department_id', resolvedDepartmentFilterId);
+    else if (department) query = query.eq('department', department);
+    if (resolvedProgramFilterId) query = query.eq('program_id', resolvedProgramFilterId);
     if (startDate) query = query.gte('submission_date', startDate);
     if (endDate) query = query.lte('submission_date', endDate);
     if (details) {
@@ -317,21 +556,43 @@ exports.getProfileResearchData = async (req, res) => {
     if (error) throw error;
 
     let filtered = papers || [];
-    if (program) {
+    if (!resolvedProgramFilterId && program) {
       const norm = String(program).toLowerCase();
-      filtered = filtered.filter(p => String(p.author?.program || '').toLowerCase() === norm);
+      filtered = filtered.filter((p) => {
+        const programLabel = resolveProgramLabel(p.author?.program_id, p.author?.program, programLookup);
+        return String(programLabel || '').toLowerCase() === norm;
+      });
     }
 
-    const records = filtered.map(p => ({
-      id: p.id, title: p.title, category: p.category, status: p.status,
-      department: p.department || p.author?.department || null,
-      program: p.author?.program || null,
-      submissionDate: p.submission_date || p.created_at,
-      publishedDate: p.published_date,
-      authorName: buildFullName(p.author) || null,
-      authorEmail: p.author?.email || null,
-      details: { abstract: p.abstract, keywords: p.keywords || [], coAuthors: p.co_authors || null },
-    }));
+    const records = filtered.map((p) => {
+      const structuredAuthors = normalizeResearchAuthors(p.research_authors);
+      const departmentLabel = resolveDepartmentLabel(
+        p.department_id,
+        p.department || p.author?.department || null,
+        departmentLookup
+      );
+      const programLabel = resolveProgramLabel(p.program_id || p.author?.program_id, p.author?.program || null, programLookup);
+
+      return {
+        id: p.id,
+        title: p.title,
+        category: resolveCategoryLabel(p.category, categoryLookup) || p.category,
+        status: p.status,
+        department: departmentLabel,
+        program: programLabel,
+        submissionDate: p.submission_date || p.created_at,
+        publishedDate: p.published_date,
+        authorName: buildFullName(p.author) || null,
+        authorEmail: p.author?.email || null,
+        details: {
+          abstract: p.abstract,
+          keywords: p.keywords || [],
+          externalAuthorNotes: resolveExternalAuthorNotes(p.external_author_notes),
+          coAuthors: resolveCompatibleCoAuthorText(structuredAuthors, resolveExternalAuthorNotes(p.external_author_notes)),
+          structuredAuthors,
+        },
+      };
+    });
 
     return sendSuccess(res, {
       data: {
@@ -368,18 +629,25 @@ exports.getPublishedResearch = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    let transformed = await Promise.all((papers || []).map(async p => ({
-      ...p,
-      users: attachFullName(p.author),
-      co_authors: (p.research_authors || []).map(ca => ({ ...ca, author: attachFullName(ca.author) })),
-      file_url: await resolvePaperFileUrl(p),
-    })));
+    let transformed = await Promise.all((papers || []).map(async p => {
+      const structuredAuthors = normalizeResearchAuthors(p.research_authors);
+
+      return {
+        ...p,
+        users: attachFullName(p.author),
+        structured_authors: structuredAuthors,
+        external_author_notes: resolveExternalAuthorNotes(p.external_author_notes),
+        file_url: await resolvePaperFileUrl(p),
+      };
+    }));
 
     if (author) {
       const norm = author.toLowerCase();
       transformed = transformed.filter(p =>
-        p.users?.full_name?.toLowerCase().includes(norm) ||
-        p.co_authors?.some(ca => ca.author?.full_name?.toLowerCase().includes(norm))
+        p.structured_authors?.some((entry) => {
+          const normalizedAuthorName = buildFullName(entry?.author).toLowerCase();
+          return normalizedAuthorName.includes(norm);
+        })
       );
     }
     return sendSuccess(res, { data: { papers: transformed } });
@@ -404,21 +672,32 @@ exports.getCategories = async (req, res) => {
 
 exports.getFacultyMembers = async (req, res) => {
   try {
-    const { department } = req.query;
-    const cacheKey = `faculty:${department || 'all'}`;
+    const { department, departmentId } = req.query;
+    const departmentLookup = await getDepartmentLookup();
+    const resolvedDepartmentFilterId =
+      departmentId || departmentLookup.byNormalizedValue.get(String(department || '').trim().toLowerCase())?.id || null;
+    const cacheKey = `faculty:${resolvedDepartmentFilterId || department || 'all'}`;
     const facultyMembers = await getOrSet(cacheKey, TTL.FACULTY, async () => {
       let query = supabase
         .from('users')
-        .select('id, first_name, middle_name, last_name, email, department')
+        .select('id, first_name, middle_name, last_name, email, department, department_id')
         .eq('role', 'faculty')
         .order('last_name')
         .order('first_name');
-      if (department) query = query.eq('department', department);
+      if (resolvedDepartmentFilterId) query = query.eq('department_id', resolvedDepartmentFilterId);
+      else if (department) query = query.eq('department', department);
       const { data, error } = await query;
       if (error) throw error;
       return data;
     });
-    return sendSuccess(res, { data: { facultyMembers: (facultyMembers || []).map(attachFullName) } });
+    return sendSuccess(res, {
+      data: {
+        facultyMembers: (facultyMembers || []).map((member) => attachFullName({
+          ...member,
+          department: resolveDepartmentLabel(member.department_id, member.department, departmentLookup),
+        })),
+      },
+    });
   } catch (error) {
     console.error('Get faculty members error:', error);
     return sendError(res, { status: 500, code: 'GET_FACULTY_MEMBERS_FAILED', message: 'Server error' });
@@ -427,10 +706,14 @@ exports.getFacultyMembers = async (req, res) => {
 
 exports.getDeanChairMembers = async (req, res) => {
   try {
+    const [departmentLookup, programLookup] = await Promise.all([
+      getDepartmentLookup(),
+      getProgramLookup(),
+    ]);
     const members = await getOrSet('dean_chair:all', TTL.DEAN_CHAIR, async () => {
       const { data, error } = await supabase
         .from('users')
-        .select('id, first_name, middle_name, last_name, email, role, department')
+        .select('id, first_name, middle_name, last_name, email, role, department, department_id, program, program_id')
         .in('role', ['dean', 'program_chair'])
         .order('role')
         .order('last_name')
@@ -438,7 +721,15 @@ exports.getDeanChairMembers = async (req, res) => {
       if (error) throw error;
       return data;
     });
-    return sendSuccess(res, { data: { members: (members || []).map(attachFullName) } });
+    return sendSuccess(res, {
+      data: {
+        members: (members || []).map((member) => attachFullName({
+          ...member,
+          department: resolveDepartmentLabel(member.department_id, member.department, departmentLookup),
+          program: resolveProgramLabel(member.program_id, member.program, programLookup),
+        })),
+      },
+    });
   } catch (error) {
     console.error('Get dean/chair members error:', error);
     return sendError(res, { status: 500, code: 'GET_DEAN_CHAIR_MEMBERS_FAILED', message: 'Server error' });
@@ -449,7 +740,17 @@ exports.getResearchById = async (req, res) => {
   try {
     const { id } = req.params;
     const { data: paper, error } = await supabase
-      .from('research_papers').select('*, author:users!author_id (id, first_name, middle_name, last_name, email)').eq('id', id).single();
+      .from('research_papers')
+      .select(`
+        *,
+        author:users!author_id (id, first_name, middle_name, last_name, email),
+        research_authors!research_authors_research_id_fkey (
+          user_id, is_primary, author_order,
+          author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
+        )
+      `)
+      .eq('id', id)
+      .single();
     if (error || !paper) return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
     if (paper.deleted_at && req.user.role !== 'admin') {
       return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
@@ -460,7 +761,7 @@ exports.getResearchById = async (req, res) => {
     try {
       const { data: historyRows, error: historyError } = await supabase
         .from('approval_workflow')
-        .select('id, reviewer_role, status, comments, previous_status, new_status, reviewed_at, created_at, reviewer:users!approval_workflow_reviewer_id_fkey(id, first_name, middle_name, last_name, email)')
+        .select('id, reviewer_role, action_type, status, comments, previous_status, new_status, reviewed_at, created_at, reviewer:users!approval_workflow_reviewer_id_fkey(id, first_name, middle_name, last_name, email)')
         .eq('research_id', id)
         .order('created_at', { ascending: true });
 
@@ -475,7 +776,13 @@ exports.getResearchById = async (req, res) => {
 
     return sendSuccess(res, {
       data: {
-        paper: { ...paper, users: attachFullName(paper.author), file_url: await resolvePaperFileUrl(paper) },
+        paper: {
+          ...paper,
+          users: attachFullName(paper.author),
+          structured_authors: normalizeResearchAuthors(paper.research_authors),
+          external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
+          file_url: await resolvePaperFileUrl(paper),
+        },
         workflowHistory,
       },
     });

@@ -61,6 +61,24 @@ const DeanActivityMonitor = () => {
     return map[action] || { bg: 'bg-slate-100 text-slate-700', icon: Activity, label: action };
   };
 
+  const formatWorkflowAction = (action) => {
+    const actionType = (action?.action_type || '').toLowerCase();
+    const status = action?.status || 'updated';
+
+    const labels = {
+      approve: 'Approved',
+      reject: 'Rejected',
+      request_revision: 'Revision Requested',
+      returned_for_review: 'Returned for Review',
+      returned_to_author: 'Returned to Author',
+      dean_bypass: 'Dean Bypass',
+      assigned_to_faculty: 'Assigned to Faculty',
+      conflict_declared: 'Conflict Declared',
+    };
+
+    return labels[actionType] || status;
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -248,7 +266,7 @@ const DeanActivityMonitor = () => {
                   <p className="text-sm font-semibold text-slate-900">
                     {formatFullName(action.reviewer) || 'Unknown'} <span className="text-slate-400">({action.reviewer_role})</span>
                   </p>
-                  <p className="text-xs text-slate-500">Status: {action.status} &middot; {action.comments ? `"${action.comments.substring(0, 100)}"` : 'No comments'}</p>
+                  <p className="text-xs text-slate-500">Action: {formatWorkflowAction(action)} &middot; {action.comments ? `"${action.comments.substring(0, 100)}"` : 'No comments'}</p>
                 </div>
                 <span className="text-xs text-slate-400 whitespace-nowrap">{formatDate(action.created_at)}</span>
               </div>

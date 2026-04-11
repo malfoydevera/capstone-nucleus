@@ -22,7 +22,7 @@ import {
   Plus,
   UserPlus
 } from 'lucide-react';
-import { researchAPI, authAPI, aiAPI, departmentsAPI } from '../../utils/api';
+import { researchAPI, authAPI, aiAPI, departmentsAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
 const TYPE_TO_MIME = {
@@ -30,6 +30,16 @@ const TYPE_TO_MIME = {
   doc: 'application/msword',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
+
+const getStructuredCoAuthors = (paper) =>
+  Array.isArray(paper?.structured_authors)
+    ? paper.structured_authors
+        .filter((entry) => !entry?.is_primary && entry?.author?.id)
+        .map((entry) => entry.author)
+    : [];
+
+const resolveExternalAuthorNotes = (paper) =>
+  String(paper?.external_author_notes || '').trim();
 
 const SubmitResearch = () => {
   const navigate = useNavigate();
@@ -64,7 +74,7 @@ const SubmitResearch = () => {
     title: resubmitData?.title || '',
     abstract: resubmitData?.abstract || '',
     keywords: resubmitData?.keywords?.join(', ') || '',
-    coAuthors: resubmitData?.co_authors || '',
+    coAuthors: resolveExternalAuthorNotes(resubmitData),
     category: resubmitData?.category || '',
     facultyId: resubmitData?.faculty_id || '',
     department: resubmitData?.department || '',
@@ -80,7 +90,7 @@ const SubmitResearch = () => {
   const fetchSubmissionPolicy = async () => {
     try {
       const response = await authAPI.getSubmissionPolicy();
-      const data = response.data || {};
+      const data = unwrapApiData(response);
       setSubmissionPolicy({
         maxFileSizeMb: Number(data.maxFileSizeMb) || 10,
         allowedFileTypes: Array.isArray(data.allowedFileTypes) && data.allowedFileTypes.length > 0
@@ -112,6 +122,7 @@ const SubmitResearch = () => {
 
   const restoreDraft = async () => {
     const storageKey = getDraftStorageKey();
+    let selectedCoAuthorsRestored = false;
 
     try {
       const localRaw = localStorage.getItem(storageKey);
@@ -122,6 +133,7 @@ const SubmitResearch = () => {
         }
         if (Array.isArray(localDraft?.selectedCoAuthors)) {
           setSelectedCoAuthors(localDraft.selectedCoAuthors);
+          selectedCoAuthorsRestored = true;
         }
       }
     } catch (err) {
@@ -130,18 +142,33 @@ const SubmitResearch = () => {
 
     try {
       const response = await researchAPI.getMyDraft(resubmitData?.id || undefined);
-      const serverDraft = response.data?.draft?.draft_data;
+      const serverDraft = unwrapApiData(response).draft?.draft_data;
       if (serverDraft?.formData) {
         setFormData((prev) => ({ ...prev, ...serverDraft.formData }));
       }
       if (Array.isArray(serverDraft?.selectedCoAuthors)) {
         setSelectedCoAuthors(serverDraft.selectedCoAuthors);
+        selectedCoAuthorsRestored = true;
       }
       if (serverDraft) {
         setDraftSyncMessage('Draft restored');
       }
     } catch (err) {
       console.error('Failed to restore server draft:', err);
+    }
+
+    if (!selectedCoAuthorsRestored && resubmitData?.id) {
+      try {
+        const response = await researchAPI.getResearchById(resubmitData.id);
+        const detailPaper = unwrapApiData(response).paper;
+        const structuredCoAuthors = getStructuredCoAuthors(detailPaper);
+
+        if (structuredCoAuthors.length > 0) {
+          setSelectedCoAuthors(structuredCoAuthors);
+        }
+      } catch (err) {
+        console.error('Failed to hydrate structured co-authors for resubmission:', err);
+      }
     }
   };
 
@@ -174,13 +201,30 @@ const SubmitResearch = () => {
   }, [formData, selectedCoAuthors, file, loading]);
 
   useEffect(() => {
-    fetchFacultyMembers(formData.department || undefined);
-  }, [formData.department]);
+    fetchFacultyMembers({ department: formData.department || undefined, departmentId: formData.departmentId || undefined });
+  }, [formData.department, formData.departmentId]);
 
   const fetchCategories = async () => {
     try {
       const response = await researchAPI.getCategories();
-      setCategories(response.data.categories || []);
+      const list = unwrapApiData(response).categories || [];
+      setCategories(list);
+
+      if (formData.category) {
+        const hasDirectMatch = list.some((category) => category.id === formData.category);
+        if (!hasDirectMatch) {
+          const matchedCategory = list.find(
+            (category) => String(category.name || '').toLowerCase() === String(formData.category || '').toLowerCase()
+          );
+
+          if (matchedCategory) {
+            setFormData((prev) => ({
+              ...prev,
+              category: matchedCategory.id,
+            }));
+          }
+        }
+      }
     } catch (err) {
       console.error('Failed to fetch categories:', err);
       setCategories([]); // Set empty array on error
@@ -190,7 +234,7 @@ const SubmitResearch = () => {
   const fetchDepartments = async () => {
     try {
       const response = await departmentsAPI.getAll();
-      const list = response.data.departments || [];
+      const list = unwrapApiData(response).departments || [];
       setDepartments(list);
 
       if (!formData.departmentId && formData.department) {
@@ -212,10 +256,10 @@ const SubmitResearch = () => {
     }
   };
 
-  const fetchFacultyMembers = async (department) => {
+  const fetchFacultyMembers = async ({ department, departmentId } = {}) => {
     try {
-      const response = await researchAPI.getFacultyMembers(department);
-      setFacultyMembers(response.data.facultyMembers || []);
+      const response = await researchAPI.getFacultyMembers({ department, departmentId });
+      setFacultyMembers(unwrapApiData(response).facultyMembers || []);
     } catch (err) {
       console.error('Failed to fetch faculty members:', err);
       setFacultyMembers([]); // Set empty array on error
@@ -433,6 +477,7 @@ const SubmitResearch = () => {
       submitData.append('abstract', formData.abstract);
       submitData.append('keywords', formData.keywords);
       submitData.append('coAuthors', formData.coAuthors);
+      submitData.append('externalAuthorNotes', formData.coAuthors);
       submitData.append('category', formData.category);
       submitData.append('facultyId', formData.facultyId);
       submitData.append('department', formData.department);
@@ -499,6 +544,10 @@ const SubmitResearch = () => {
     e.preventDefault();
     setShowChecklistModal(true);
   };
+
+  const hasLegacyCategorySelection = Boolean(
+    formData.category && !categories.some((category) => category.id === formData.category)
+  );
 
   const confirmChecklistAndSubmit = async () => {
     if (!checklistComplete) {
@@ -830,6 +879,11 @@ const SubmitResearch = () => {
                 required
               >
                 <option value="" className="text-slate-400">Select a research category</option>
+                {hasLegacyCategorySelection && (
+                  <option value={formData.category} className="text-slate-900">
+                    {formData.category} (legacy)
+                  </option>
+                )}
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id} className="text-slate-900">
                     {cat.name}
@@ -992,7 +1046,7 @@ const SubmitResearch = () => {
             {/* Old text field for legacy/external co-authors */}
             <div className="mt-4">
               <label htmlFor="coAuthorsText" className="block text-sm font-semibold text-slate-700 mb-2">
-                External Co-Authors (Optional)
+                External / Non-System Co-Author Notes (Optional)
               </label>
               <input
                 type="text"
@@ -1003,7 +1057,7 @@ const SubmitResearch = () => {
                 className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
                 placeholder="External collaborators not in the system (comma-separated)"
               />
-              <p className="text-xs text-slate-400 mt-1">For co-authors outside the university system</p>
+              <p className="text-xs text-slate-400 mt-1">Stored separately from canonical structured authorship.</p>
             </div>
           </div>
         </div>

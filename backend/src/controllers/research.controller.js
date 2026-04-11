@@ -1,11 +1,49 @@
 const supabase = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 const reviewController = require('./review.controller');
+const { attachFullName, buildFullName, splitFullName } = require('../utils/name');
+
+const normalizeResearchAuthors = (researchAuthors = []) =>
+  [...(researchAuthors || [])]
+    .sort((left, right) => {
+      const leftOrder = Number.isFinite(left?.author_order) ? left.author_order : Number.MAX_SAFE_INTEGER;
+      const rightOrder = Number.isFinite(right?.author_order) ? right.author_order : Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder;
+    });
+
+const normalizeExternalAuthorNotes = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+};
+
+const resolveExternalAuthorNotes = (...candidates) => {
+  for (const candidate of candidates) {
+    const normalized = normalizeExternalAuthorNotes(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+};
+
+const normalizeCoAuthorIds = (coAuthorIds = [], primaryAuthorId) =>
+  Array.from(
+    new Set(
+      (Array.isArray(coAuthorIds) ? coAuthorIds : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  ).filter((authorId) => authorId !== String(primaryAuthorId));
 
 const getRoleMemberForPaper = async (role, paper, allowFallback = true) => {
   let query = supabase
     .from('users')
-    .select('id, full_name, email, role, department, department_id')
+    .select('id, first_name, middle_name, last_name, email, role, department, department_id')
     .eq('role', role)
     .order('created_at', { ascending: true })
     .limit(1);
@@ -22,7 +60,7 @@ const getRoleMemberForPaper = async (role, paper, allowFallback = true) => {
   if ((!members || members.length === 0) && allowFallback && (paper.department_id || paper.department)) {
     const fallbackResult = await supabase
       .from('users')
-      .select('id, full_name, email, role, department, department_id')
+      .select('id, first_name, middle_name, last_name, email, role, department, department_id')
       .eq('role', role)
       .order('created_at', { ascending: true })
       .limit(1);
@@ -37,7 +75,7 @@ const getRoleMemberForPaper = async (role, paper, allowFallback = true) => {
 const getUserProfile = async (userId) => {
   const { data: user, error } = await supabase
     .from('users')
-    .select('id, full_name, email, role, department, department_id')
+    .select('id, first_name, middle_name, last_name, email, role, department, department_id')
     .eq('id', userId)
     .single();
 
@@ -86,9 +124,10 @@ const recordWorkflowEvent = async ({
 // Submit new research or update existing revision
 exports.submitResearch = async (req, res) => {
   try {
-    const { id, title, abstract, keywords, coAuthors, category, facultyId, department } = req.body;
+    const { id, title, abstract, keywords, coAuthors, externalAuthorNotes, category, facultyId, department } = req.body;
     const file = req.file;
     const userId = req.user.id;
+    const normalizedExternalAuthorNotes = resolveExternalAuthorNotes(externalAuthorNotes, coAuthors);
 
     if (!id && !file) {
       return res.status(400).json({ error: 'Research file is required' });
@@ -127,14 +166,14 @@ exports.submitResearch = async (req, res) => {
       };
     }
 
-    const { data: research, error: dbError } = await supabase
+    let { data: research, error: dbError } = await supabase
       .from('research_papers')
       .upsert({
         ...(id && { id }), 
         title,
         abstract,
         keywords: keywords ? keywords.split(',').map(k => k.trim()) : [],
-        co_authors: coAuthors || null,
+        external_author_notes: normalizedExternalAuthorNotes,
         category,
         author_id: userId,
         faculty_id: facultyId || null,
@@ -148,6 +187,32 @@ exports.submitResearch = async (req, res) => {
       })
       .select()
       .single();
+
+    if (dbError?.message?.includes('external_author_notes')) {
+      const fallbackPayload = {
+        ...(id && { id }),
+        title,
+        abstract,
+        keywords: keywords ? keywords.split(',').map(k => k.trim()) : [],
+        category,
+        author_id: userId,
+        faculty_id: facultyId || null,
+        department: department || null,
+        status: id ? undefined : (facultyId ? 'pending_faculty' : 'pending'),
+        ...fileData,
+      };
+
+      const fallbackResult = await supabase
+        .from('research_papers')
+        .upsert(fallbackPayload)
+        .select()
+        .single();
+
+      if (!fallbackResult.error) {
+        research = fallbackResult.data;
+        dbError = null;
+      }
+    }
 
     if (dbError) {
       console.error('=== DATABASE ERROR DETAILS ===');
@@ -176,7 +241,9 @@ exports.submitResearch = async (req, res) => {
       coAuthorIds = [];
     }
     
-    if (coAuthorIds.length > 0) {
+    const normalizedCoAuthorIds = normalizeCoAuthorIds(coAuthorIds, userId);
+
+    if (normalizedCoAuthorIds.length > 0) {
       try {
         // Delete existing co-authors for resubmission
         if (id) {
@@ -204,7 +271,7 @@ exports.submitResearch = async (req, res) => {
         }
 
         // Insert co-authors
-        const coAuthorsData = coAuthorIds.map((authorId, index) => ({
+        const coAuthorsData = normalizedCoAuthorIds.map((authorId, index) => ({
           research_id: research.id,
           user_id: authorId,
           author_order: index + 1,
@@ -228,6 +295,14 @@ exports.submitResearch = async (req, res) => {
     } else {
       // Just insert primary author
       try {
+        if (id) {
+          await supabase
+            .from('research_authors')
+            .delete()
+            .eq('research_id', research.id)
+            .neq('is_primary', true);
+        }
+
         await supabase
           .from('research_authors')
           .upsert({
@@ -296,9 +371,10 @@ exports.submitResearch = async (req, res) => {
 
     const { data: author } = await supabase
       .from('users')
-      .select('full_name, email')
+      .select('first_name, middle_name, last_name, email')
       .eq('id', userId)
       .single();
+    const authorDisplayName = buildFullName(author) || author?.email;
 
     // Notify the assigned faculty member for new submissions
     if (!id && facultyId) {
@@ -307,7 +383,7 @@ exports.submitResearch = async (req, res) => {
         research_id: research.id,
         type: 'submission',
         title: 'New Research Submission',
-        message: `${author?.full_name || author?.email} submitted "${title}" for your review`
+        message: `${authorDisplayName} submitted "${title}" for your review`
       }]);
     }
     
@@ -324,7 +400,7 @@ exports.submitResearch = async (req, res) => {
           research_id: research.id,
           type: 'submission',
           title: id ? 'Research Revised' : 'New Research Submission',
-          message: `${author?.full_name || author?.email} ${id ? 'resubmitted' : 'submitted'} "${title}" for review`
+          message: `${authorDisplayName} ${id ? 'resubmitted' : 'submitted'} "${title}" for review`
         }));
 
         await supabase.from('notifications').insert(notifications);
@@ -333,7 +409,10 @@ exports.submitResearch = async (req, res) => {
 
     res.status(id ? 200 : 201).json({
       message: id ? 'Research updated successfully' : 'Research submitted successfully',
-      research
+      research: {
+        ...research,
+        external_author_notes: resolveExternalAuthorNotes(research?.external_author_notes, normalizedExternalAuthorNotes),
+      }
     });
   } catch (error) {
     console.error('Submit research error:', error);
@@ -365,7 +444,7 @@ exports.getAllResearch = async (req, res) => {
     const { status } = req.query;
     let query = supabase
       .from('research_papers')
-      .select(`*, author:users!author_id (id, full_name, email)`)
+      .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
       .order('submission_date', { ascending: false });
 
     if (status) query = query.eq('status', status);
@@ -373,7 +452,7 @@ exports.getAllResearch = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    const transformedPapers = papers.map(paper => ({ ...paper, users: paper.author }));
+    const transformedPapers = papers.map((paper) => ({ ...paper, users: attachFullName(paper.author) }));
     res.json({ papers: transformedPapers });
   } catch (error) {
     console.error('Get all research error:', error);
@@ -387,7 +466,7 @@ exports.getResearchById = async (req, res) => {
     const { id } = req.params;
     const { data: paper, error } = await supabase
       .from('research_papers')
-      .select(`*, author:users!author_id (id, full_name, email)`)
+      .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
       .eq('id', id)
       .single();
 
@@ -403,7 +482,7 @@ exports.getResearchById = async (req, res) => {
       })
       .catch(err => console.error('Unexpected error during view tracking:', err));
 
-    const transformedPaper = { ...paper, users: paper.author };
+    const transformedPaper = { ...paper, users: attachFullName(paper.author) };
     res.json({ paper: transformedPaper });
   } catch (error) {
     console.error('Get research error:', error);
@@ -468,12 +547,12 @@ exports.adminGetAllResearch = async (req, res) => {
   try {
     const { data: papers, error } = await supabase
       .from('research_papers')
-      .select(`*, author:users!author_id (id, full_name, email, role), reviews:approval_workflow(*)`)
+      .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email, role), reviews:approval_workflow(*)`)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    const transformedPapers = papers.map(paper => ({ ...paper, users: paper.author }));
+    const transformedPapers = papers.map((paper) => ({ ...paper, users: attachFullName(paper.author) }));
     res.json({ success: true, papers: transformedPapers });
   } catch (error) {
     console.error('Admin fetch error:', error);
@@ -491,14 +570,14 @@ exports.adminUpdateResearch = async (req, res) => {
       .from('research_papers')
       .update(updateData)
       .eq('id', id)
-      .select(`*, author:users!author_id (id, full_name, email)`)
+      .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
       .single();
 
     if (updateError) throw updateError;
 
     res.json({ 
       success: true, 
-      paper: { ...updatedPaper, users: updatedPaper.author },
+      paper: { ...updatedPaper, users: attachFullName(updatedPaper.author) },
       message: 'Research updated successfully' 
     });
   } catch (error) {
@@ -535,11 +614,10 @@ exports.adminPublishResearch = async (req, res) => {
       .from('research_papers')
       .update({ 
         status: 'published',
-        is_published: true,
         published_date: new Date().toISOString()
       })
       .eq('id', id)
-      .select(`*, author:users!author_id (id, full_name, email)`)
+      .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
       .single();
 
     if (updateError) throw updateError;
@@ -552,7 +630,7 @@ exports.adminPublishResearch = async (req, res) => {
       message: `Congratulations! Your research "${publishedPaper.title}" is now available.`
     }]);
 
-    res.json({ success: true, paper: { ...publishedPaper, users: publishedPaper.author } });
+    res.json({ success: true, paper: { ...publishedPaper, users: attachFullName(publishedPaper.author) } });
   } catch (error) {
     console.error('Publish error:', error);
     res.status(500).json({ error: 'Failed to publish research' });
@@ -567,16 +645,15 @@ exports.adminUnpublishResearch = async (req, res) => {
       .from('research_papers')
       .update({ 
         status: 'approved',
-        is_published: false,
         published_date: null
       })
       .eq('id', id)
-      .select(`*, author:users!author_id (id, full_name, email)`)
+      .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
       .single();
 
     if (updateError) throw updateError;
 
-    res.json({ success: true, paper: { ...unpublishedPaper, users: unpublishedPaper.author } });
+    res.json({ success: true, paper: { ...unpublishedPaper, users: attachFullName(unpublishedPaper.author) } });
   } catch (error) {
     console.error('Unpublish error:', error);
     res.status(500).json({ error: 'Failed to unpublish research' });
@@ -593,7 +670,7 @@ exports.approveResearch = async (req, res) => {
 
     const { data: paper, error: fetchError } = await supabase
       .from('research_papers')
-      .select('*, author:users!author_id(full_name, email)')
+      .select('*, author:users!author_id(first_name, middle_name, last_name, email)')
       .eq('id', id)
       .single();
 
@@ -774,7 +851,7 @@ exports.deanInterveneResearch = async (req, res) => {
     const [paperResult, deanProfile] = await Promise.all([
       supabase
         .from('research_papers')
-        .select('*, author:users!author_id(full_name, email)')
+        .select('*, author:users!author_id(first_name, middle_name, last_name, email)')
         .eq('id', id)
         .single(),
       getUserProfile(reviewerId),
@@ -1128,12 +1205,12 @@ exports.getPublishedResearch = async (req, res) => {
       .from('research_papers')
       .select(`
         *, 
-        author:users!author_id (id, full_name, email),
+        author:users!author_id (id, first_name, middle_name, last_name, email),
         research_authors!research_authors_research_id_fkey (
           user_id,
           is_primary,
           author_order,
-          author:users!research_authors_user_id_fkey (id, full_name, email)
+          author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
         )
       `)
       .eq('status', 'approved')
@@ -1152,24 +1229,27 @@ exports.getPublishedResearch = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    let transformedPapers = papers.map(paper => ({ 
-      ...paper, 
-      users: paper.author,
-      co_authors: paper.research_authors || []
-    }));
+    let transformedPapers = papers.map((paper) => {
+      const structuredAuthors = normalizeResearchAuthors(paper.research_authors || [])
+        .map((entry) => ({ ...entry, author: attachFullName(entry.author) }));
+
+      return {
+        ...paper,
+        users: attachFullName(paper.author),
+        structured_authors: structuredAuthors,
+        external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
+      };
+    });
 
     // Author filter (search across all authors)
     if (author) {
       transformedPapers = transformedPapers.filter(paper => {
         const authorName = author.toLowerCase();
         // Check primary author
-        if (paper.users?.full_name?.toLowerCase().includes(authorName)) {
+        if (buildFullName(paper.users).toLowerCase().includes(authorName)) {
           return true;
         }
-        // Check co-authors
-        if (paper.co_authors?.some(ca => 
-          ca.author?.full_name?.toLowerCase().includes(authorName)
-        )) {
+        if (paper.structured_authors?.some((ca) => buildFullName(ca.author).toLowerCase().includes(authorName))) {
           return true;
         }
         return false;
@@ -1201,9 +1281,10 @@ exports.getFacultyMembers = async (req, res) => {
     
     let query = supabase
       .from('users')
-      .select('id, full_name, email, department')
+      .select('id, first_name, middle_name, last_name, email, department')
       .eq('role', 'faculty')
-      .order('full_name');
+      .order('last_name')
+      .order('first_name');
     
     if (department) {
       query = query.eq('department', department);
@@ -1212,7 +1293,7 @@ exports.getFacultyMembers = async (req, res) => {
     const { data: facultyMembers, error } = await query;
     if (error) throw error;
     
-    res.json({ facultyMembers });
+    res.json({ facultyMembers: (facultyMembers || []).map(attachFullName) });
   } catch (error) {
     console.error('Get faculty members error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -1228,10 +1309,11 @@ exports.getDeanChairMembers = async (req, res) => {
 
     let query = supabase
       .from('users')
-      .select('id, full_name, email, role, department')
+      .select('id, first_name, middle_name, last_name, email, role, department')
       .in('role', roles)
       .order('role')
-      .order('full_name');
+      .order('last_name')
+      .order('first_name');
 
     if (department) {
       query = query.eq('department', department);
@@ -1244,15 +1326,16 @@ exports.getDeanChairMembers = async (req, res) => {
     if (department && (!members || members.length === 0)) {
       const { data: allMembers, error: err2 } = await supabase
         .from('users')
-        .select('id, full_name, email, role, department')
+        .select('id, first_name, middle_name, last_name, email, role, department')
         .in('role', roles)
         .order('role')
-        .order('full_name');
+        .order('last_name')
+        .order('first_name');
       if (err2) throw err2;
-      return res.json({ members: allMembers, fallback: true });
+      return res.json({ members: (allMembers || []).map(attachFullName), fallback: true });
     }
 
-    res.json({ members, fallback: false });
+    res.json({ members: (members || []).map(attachFullName), fallback: false });
   } catch (error) {
     console.error('Get dean/chair members error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -1273,7 +1356,7 @@ exports.getDeanChairAssignedPapers = async (req, res) => {
 
       const assignedResult = await supabase
         .from('research_papers')
-        .select(`*, author:users!author_id (id, full_name, email)`)
+        .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
         .eq('dean_chair_id', userId)
         .order('created_at', { ascending: false });
 
@@ -1281,7 +1364,7 @@ exports.getDeanChairAssignedPapers = async (req, res) => {
 
       let oversightQuery = supabase
         .from('research_papers')
-        .select(`*, author:users!author_id (id, full_name, email)`)
+        .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
         .eq('status', 'pending_program_chair')
         .order('created_at', { ascending: false });
 
@@ -1301,13 +1384,13 @@ exports.getDeanChairAssignedPapers = async (req, res) => {
         papers = papers.filter((paper) => paper.status === status);
       }
 
-      const transformedPapers = papers.map((paper) => ({ ...paper, users: paper.author }));
+      const transformedPapers = papers.map((paper) => ({ ...paper, users: attachFullName(paper.author) }));
       return res.json({ papers: transformedPapers, pendingStatus, monitoringEnabled: true });
     }
 
     let query = supabase
       .from('research_papers')
-      .select(`*, author:users!author_id (id, full_name, email)`)
+      .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
       .eq('dean_chair_id', userId)
       .order('created_at', { ascending: false });
 
@@ -1318,7 +1401,7 @@ exports.getDeanChairAssignedPapers = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    const transformedPapers = papers.map((paper) => ({ ...paper, users: paper.author }));
+    const transformedPapers = papers.map((paper) => ({ ...paper, users: attachFullName(paper.author) }));
     res.json({ papers: transformedPapers, pendingStatus, monitoringEnabled: false });
   } catch (error) {
     console.error('Get dean/chair papers error:', error);
@@ -1334,7 +1417,7 @@ exports.getFacultyAssignedPapers = async (req, res) => {
     
     let query = supabase
       .from('research_papers')
-      .select(`*, author:users!author_id (id, full_name, email)`)
+      .select(`*, author:users!author_id (id, first_name, middle_name, last_name, email)`)
       .eq('faculty_id', facultyId)
       .order('submission_date', { ascending: false });
 
@@ -1345,7 +1428,7 @@ exports.getFacultyAssignedPapers = async (req, res) => {
     const { data: papers, error } = await query;
     if (error) throw error;
 
-    const transformedPapers = papers.map(paper => ({ ...paper, users: paper.author }));
+    const transformedPapers = papers.map((paper) => ({ ...paper, users: attachFullName(paper.author) }));
     res.json({ papers: transformedPapers });
   } catch (error) {
     console.error('Get faculty papers error:', error);
@@ -1357,6 +1440,7 @@ exports.register = async (req, res) => {
   try {
     // 1. Accept 'program' from the request body
     const { email, password, fullName, role, program } = req.body;
+    const parsedName = splitFullName(fullName);
 
     if (!email || !password || !fullName || !role) {
       return res.status(400).json({ error: 'All fields are required' });
@@ -1393,7 +1477,9 @@ exports.register = async (req, res) => {
       .insert([{
         email,
         password: hashedPassword,
-        full_name: fullName,
+        first_name: parsedName.first_name,
+        middle_name: parsedName.middle_name,
+        last_name: parsedName.last_name,
         role,
         program: role === 'student' ? program : null // Only students need a program
       }])
@@ -1414,7 +1500,7 @@ exports.register = async (req, res) => {
       user: {
         id: newUser.id,
         email: newUser.email,
-        fullName: newUser.full_name,
+        fullName: buildFullName(newUser),
         role: newUser.role,
         program: newUser.program, // Return the program info
       },

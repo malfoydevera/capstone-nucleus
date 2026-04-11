@@ -6,7 +6,7 @@ export const formatFullName = (user = {}) => {
   const combined = [first, middle, last].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   if (combined) return combined;
 
-  const fallback = (user.full_name || user.fullName || user.name || '').trim();
+  const fallback = (user.name || '').trim();
   if (fallback) return fallback;
 
   return (user.email || '').trim();

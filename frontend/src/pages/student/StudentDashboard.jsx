@@ -16,7 +16,14 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const getStructuredCoAuthorCount = (paper) =>
+  Array.isArray(paper?.structured_authors)
+    ? paper.structured_authors.filter((entry) => !entry?.is_primary).length
+    : 0;
 
 // Donut Chart Component
 const DonutChart = ({ data, colors, size = 80 }) => {
@@ -142,6 +149,7 @@ const StudentDashboard = () => {
   });
   const [recentPapers, setRecentPapers] = useState([]);
   const [allPapers, setAllPapers] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -152,15 +160,19 @@ const StudentDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await researchAPI.getMyResearch();
-      const papers = response.data.papers || [];
+      const [response, categoriesResponse] = await Promise.all([
+        researchAPI.getMyResearch(),
+        researchAPI.getCategories(),
+      ]);
+      const papers = unwrapApiData(response).papers || [];
+      setCategories(unwrapApiData(categoriesResponse).categories || []);
 
       setAllPapers(papers);
 
       const statistics = {
         total: papers.length,
-        pending: papers.filter(p => p.status === 'pending' || p.status === 'pending_faculty').length,
-        underReview: papers.filter(p => p.status === 'under_review' || p.status === 'pending_editor').length,
+        pending: papers.filter(p => p.status === 'pending_faculty').length,
+        underReview: papers.filter(p => p.status === 'pending_editor').length,
         approved: papers.filter(p => p.status === 'approved').length,
         rejected: papers.filter(p => p.status === 'rejected').length,
         revisionRequired: papers.filter(p => p.status === 'revision_required').length
@@ -183,6 +195,14 @@ const StudentDashboard = () => {
     }
   };
 
+  const getCategoryName = (categoryValue) => {
+    if (!categoryValue) return 'Research';
+    const category = categories.find((entry) => entry.id === categoryValue);
+    if (category) return category.name;
+    if (typeof categoryValue === 'string' && !UUID_PATTERN.test(categoryValue)) return categoryValue;
+    return 'Research';
+  };
+
   const monthlyData = useMemo(() => {
     const months = Array(12).fill(0).map((_, i) => ({ month: i, value: 0 }));
     allPapers.forEach(paper => {
@@ -196,9 +216,8 @@ const StudentDashboard = () => {
 
   const getStatusColor = (status) => {
     const colors = {
-      pending: 'text-amber-600 bg-amber-50',
       pending_faculty: 'text-amber-600 bg-amber-50',
-      under_review: 'text-blue-600 bg-blue-50',
+      under_review: 'text-cyan-600 bg-cyan-50',
       pending_editor: 'text-blue-600 bg-blue-50',
       approved: 'text-emerald-600 bg-emerald-50',
       rejected: 'text-red-600 bg-red-50',
@@ -213,9 +232,8 @@ const StudentDashboard = () => {
 
   const getStatusBadge = (status) => {
     const statusMap = {
-      pending: 'Pending',
       pending_faculty: 'Pending',
-      under_review: 'In Review',
+      under_review: 'With Editor',
       pending_editor: 'In Review',
       approved: 'Published',
       rejected: 'Rejected',
@@ -525,32 +543,43 @@ const StudentDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {recentPapers.map((paper) => (
-                    <tr
-                      key={paper.id}
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/student/my-research/${paper.id}`)}
-                    >
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                            <FileText size={16} className="text-slate-500" />
+                  {recentPapers.map((paper) => {
+                    const coAuthorCount = getStructuredCoAuthorCount(paper);
+
+                    return (
+                      <tr
+                        key={paper.id}
+                        className="hover:bg-slate-50 cursor-pointer transition-colors"
+                        onClick={() => navigate(`/student/my-research/${paper.id}`)}
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                              <FileText size={16} className="text-slate-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="block font-medium text-slate-900 truncate max-w-[200px]">{paper.title}</span>
+                              {coAuthorCount > 0 ? (
+                                <span className="block text-xs text-slate-500">
+                                  {coAuthorCount} canonical co-author{coAuthorCount > 1 ? 's' : ''}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
-                          <span className="font-medium text-slate-900 truncate max-w-[200px]">{paper.title}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{paper.category || 'Research'}</td>
-                      <td className="px-5 py-4 text-sm text-slate-500">{formatDate(paper.submission_date || paper.created_at)}</td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(paper.status)}`}>
-                          {getStatusBadge(paper.status)}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <ChevronRight size={16} className="text-slate-300" />
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-600">{getCategoryName(paper.category)}</td>
+                        <td className="px-5 py-4 text-sm text-slate-500">{formatDate(paper.submission_date || paper.created_at)}</td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(paper.status)}`}>
+                            {getStatusBadge(paper.status)}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <ChevronRight size={16} className="text-slate-300" />
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

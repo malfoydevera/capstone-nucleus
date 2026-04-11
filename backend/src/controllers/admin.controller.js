@@ -9,19 +9,57 @@ const { attachFullName } = require('../utils/name');
 const { validateWorkflowStages } = require('../utils/workflowEngine');
 
 const RECYCLE_BIN_RETENTION_DAYS = Number.parseInt(process.env.RECYCLE_BIN_RETENTION_DAYS || '30', 10);
-const WORKFLOW_STAGE_ROLES = ['faculty', 'dean', 'program_chair', 'staff', 'admin'];
+const WORKFLOW_STAGE_MUTATION_MESSAGE = 'Workflow stages are fixed and cannot be modified through the admin UI.';
+
+const normalizeResearchAuthors = (researchAuthors = []) =>
+  [...(researchAuthors || [])]
+    .sort((left, right) => {
+      const leftOrder = Number.isFinite(left?.author_order) ? left.author_order : Number.MAX_SAFE_INTEGER;
+      const rightOrder = Number.isFinite(right?.author_order) ? right.author_order : Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder;
+    })
+    .map((entry) => ({
+      ...entry,
+      author: attachFullName(entry.author),
+    }));
+
+const normalizeExternalAuthorNotes = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+};
 
 exports.getAllResearch = async (req, res) => {
   try {
     const { status, includeDeleted } = req.query;
     let query = supabase.from('research_papers')
-      .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)')
+      .select(`
+        *,
+        author:users!author_id (id, first_name, middle_name, last_name, email),
+        research_authors!research_authors_research_id_fkey (
+          user_id, is_primary, author_order,
+          author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
+        )
+      `)
       .order('submission_date', { ascending: false });
     if (status) query = query.eq('status', status);
     if (includeDeleted !== 'true') query = query.is('deleted_at', null);
     const { data: papers, error } = await query;
     if (error) throw error;
-    const transformed = await Promise.all((papers || []).map(async p => ({ ...p, users: attachFullName(p.author), file_url: await resolvePaperFileUrl(p) })));
+    const transformed = await Promise.all((papers || []).map(async (paper) => {
+      const structuredAuthors = normalizeResearchAuthors(paper.research_authors);
+
+      return {
+        ...paper,
+        users: attachFullName(paper.author),
+        structured_authors: structuredAuthors,
+        external_author_notes: normalizeExternalAuthorNotes(paper.external_author_notes),
+        file_url: await resolvePaperFileUrl(paper),
+      };
+    }));
     return sendSuccess(res, { data: { papers: transformed } });
   } catch (error) {
     console.error('Get all research error:', error);
@@ -131,7 +169,7 @@ exports.adminPublishResearch = async (req, res) => {
   try {
     const { id } = req.params;
     const { data: publishedPaper, error } = await supabase.from('research_papers')
-      .update({ status: 'published', is_published: true, published_date: new Date().toISOString() })
+      .update({ status: 'published', published_date: new Date().toISOString() })
       .eq('id', id).select('*, author:users!author_id (id, first_name, middle_name, last_name, email)').single();
     if (error) throw error;
     await supabase.from('notifications').insert([{
@@ -150,7 +188,7 @@ exports.adminUnpublishResearch = async (req, res) => {
   try {
     const { id } = req.params;
     const { data: unpublishedPaper, error } = await supabase.from('research_papers')
-      .update({ status: 'approved', is_published: false, published_date: null })
+      .update({ status: 'approved', published_date: null })
       .eq('id', id).select('*, author:users!author_id (id, first_name, middle_name, last_name, email)').single();
     if (error) throw error;
     return sendSuccess(res, { data: { paper: { ...unpublishedPaper, users: attachFullName(unpublishedPaper.author) } } });
@@ -180,131 +218,27 @@ exports.getWorkflowStages = async (req, res) => {
 };
 
 exports.createWorkflowStage = async (req, res) => {
-  try {
-    const { code, label, reviewerRole, position, isActive = true } = req.body;
-
-    if (!code || !label || !reviewerRole || !Number.isFinite(Number(position))) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_INPUT',
-        message: 'code, label, reviewerRole and numeric position are required',
-      });
-    }
-
-    if (!WORKFLOW_STAGE_ROLES.includes(reviewerRole)) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_INPUT',
-        message: `reviewerRole must be one of: ${WORKFLOW_STAGE_ROLES.join(', ')}`,
-      });
-    }
-
-    const payload = {
-      code: String(code).trim().toLowerCase(),
-      label: String(label).trim(),
-      reviewer_role: reviewerRole,
-      position: Number(position),
-      is_active: Boolean(isActive),
-      updated_at: new Date().toISOString(),
-    };
-
-    const { data: stage, error } = await supabase
-      .from('workflow_stages')
-      .insert(payload)
-      .select('*')
-      .single();
-
-    if (error) throw error;
-    return sendSuccess(res, {
-      status: 201,
-      message: 'Workflow stage created',
-      data: { stage },
-    });
-  } catch (error) {
-    console.error('Create workflow stage error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'CREATE_WORKFLOW_STAGE_FAILED',
-      message: 'Failed to create workflow stage',
-    });
-  }
+  return sendError(res, {
+    status: 409,
+    code: 'WORKFLOW_STAGE_MUTATIONS_DISABLED',
+    message: WORKFLOW_STAGE_MUTATION_MESSAGE,
+  });
 };
 
 exports.updateWorkflowStage = async (req, res) => {
-  try {
-    const { stageId } = req.params;
-    const { label, reviewerRole, position, isActive } = req.body;
-
-    const updates = { updated_at: new Date().toISOString() };
-    if (typeof label === 'string' && label.trim()) updates.label = label.trim();
-    if (reviewerRole) {
-      if (!WORKFLOW_STAGE_ROLES.includes(reviewerRole)) {
-        return sendError(res, {
-          status: 400,
-          code: 'INVALID_INPUT',
-          message: `reviewerRole must be one of: ${WORKFLOW_STAGE_ROLES.join(', ')}`,
-        });
-      }
-      updates.reviewer_role = reviewerRole;
-    }
-    if (position !== undefined) {
-      if (!Number.isFinite(Number(position))) {
-        return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'position must be numeric' });
-      }
-      updates.position = Number(position);
-    }
-    if (isActive !== undefined) updates.is_active = Boolean(isActive);
-
-    const { data: stage, error } = await supabase
-      .from('workflow_stages')
-      .update(updates)
-      .eq('id', stageId)
-      .select('*')
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!stage) {
-      return sendError(res, { status: 404, code: 'WORKFLOW_STAGE_NOT_FOUND', message: 'Workflow stage not found' });
-    }
-
-    return sendSuccess(res, {
-      message: 'Workflow stage updated',
-      data: { stage },
-    });
-  } catch (error) {
-    console.error('Update workflow stage error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'UPDATE_WORKFLOW_STAGE_FAILED',
-      message: 'Failed to update workflow stage',
-    });
-  }
+  return sendError(res, {
+    status: 409,
+    code: 'WORKFLOW_STAGE_MUTATIONS_DISABLED',
+    message: WORKFLOW_STAGE_MUTATION_MESSAGE,
+  });
 };
 
 exports.deleteWorkflowStage = async (req, res) => {
-  try {
-    const { stageId } = req.params;
-    const { data: stage, error } = await supabase
-      .from('workflow_stages')
-      .delete()
-      .eq('id', stageId)
-      .select('id')
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!stage) {
-      return sendError(res, { status: 404, code: 'WORKFLOW_STAGE_NOT_FOUND', message: 'Workflow stage not found' });
-    }
-
-    return sendSuccess(res, { message: 'Workflow stage deleted', data: {} });
-  } catch (error) {
-    console.error('Delete workflow stage error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'DELETE_WORKFLOW_STAGE_FAILED',
-      message: 'Failed to delete workflow stage',
-    });
-  }
+  return sendError(res, {
+    status: 409,
+    code: 'WORKFLOW_STAGE_MUTATIONS_DISABLED',
+    message: WORKFLOW_STAGE_MUTATION_MESSAGE,
+  });
 };
 
 exports.validateWorkflowStages = async (req, res) => {

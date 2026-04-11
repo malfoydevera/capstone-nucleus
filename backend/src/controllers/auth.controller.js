@@ -2,12 +2,61 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
-const { attachFullName, buildFullName, splitFullName } = require('../utils/name');
+const { attachFullName, buildFullName, normalizeNameParts, splitFullName } = require('../utils/name');
 const { sendSuccess, sendError } = require('../utils/response');
 const { sendTransactionalEmail } = require('../utils/mailer');
 const { getSystemPolicy, updateSystemPolicy, SUPPORTED_FILE_TYPES } = require('../utils/systemPolicy');
+const {
+  signInWithPassword,
+  refreshAuthSession,
+  ensureAuthUser,
+  deleteAuthUserById,
+  deleteAuthUserByEmail,
+} = require('../utils/supabaseAuth');
 
 const BULK_IMPORT_ALLOWED_ROLES = ['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin'];
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizeOrganizationKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-');
+}
+
+async function findProgramByIdentifier(identifier) {
+  const normalizedIdentifier = normalizeOrganizationKey(identifier);
+  if (!normalizedIdentifier) return null;
+
+  const { data: programs, error } = await supabase
+    .from('programs')
+    .select('id, name, code, department_id, departments(name)');
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = programs || [];
+  const directMatch = rows.find((programRow) => {
+    const normalizedName = normalizeOrganizationKey(programRow.name);
+    const normalizedCode = normalizeOrganizationKey(programRow.code);
+    return normalizedIdentifier === normalizedName || normalizedIdentifier === normalizedCode;
+  });
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  if (normalizedIdentifier === 'bsit') {
+    return rows.find((programRow) => {
+      const normalizedName = normalizeOrganizationKey(programRow.name);
+      const normalizedCode = normalizeOrganizationKey(programRow.code);
+      return normalizedCode === 'bsit-mwa' || normalizedName.startsWith('bs-information-technology');
+    }) || null;
+  }
+
+  return null;
+}
 
 function normalizeCsvHeader(header) {
   return String(header || '')
@@ -51,9 +100,179 @@ function hashResetToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
+function isUuid(value) {
+  return UUID_PATTERN.test(String(value || '').trim());
+}
+
+async function getOrganizationLookups() {
+  try {
+    const [departmentsResult, programsResult] = await Promise.all([
+      supabase.from('departments').select('id, name'),
+      supabase.from('programs').select('id, name'),
+    ]);
+
+    if (departmentsResult?.error) throw departmentsResult.error;
+    if (programsResult?.error) throw programsResult.error;
+
+    return {
+      departmentById: new Map((departmentsResult?.data || []).map((entry) => [entry.id, entry.name])),
+      programById: new Map((programsResult?.data || []).map((entry) => [entry.id, entry.name])),
+    };
+  } catch {
+    return {
+      departmentById: new Map(),
+      programById: new Map(),
+    };
+  }
+}
+
+function attachOrganizationLabels(user, organizationLookups = {}) {
+  const department = user?.department_id && organizationLookups.departmentById?.has(user.department_id)
+    ? organizationLookups.departmentById.get(user.department_id)
+    : user?.department || null;
+  const program = user?.program_id && organizationLookups.programById?.has(user.program_id)
+    ? organizationLookups.programById.get(user.program_id)
+    : user?.program || null;
+
+  return {
+    ...user,
+    department,
+    program,
+  };
+}
+
+function buildAuthSuccessData(user, session, organizationLookups = {}) {
+  const normalizedUser = normalizeNameParts(user);
+  const userWithOrgLabels = attachOrganizationLabels(user, organizationLookups);
+  return {
+    token: session?.access_token || null,
+    refreshToken: session?.refresh_token || null,
+    user: {
+      id: user.id,
+      email: user.email,
+      fullName: buildFullName(normalizedUser),
+      role: user.role,
+      department: userWithOrgLabels.department || null,
+      departmentId: user.department_id || null,
+      program: userWithOrgLabels.program || null,
+      programId: user.program_id || null,
+    },
+  };
+}
+
+async function getOptionalTableRowCount(tableName) {
+  try {
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('id');
+
+    if (error) {
+      throw error;
+    }
+
+    return (data || []).length;
+  } catch (error) {
+    if (/does not exist|relation .* does not exist|could not find the table .* in the schema cache/i.test(String(error?.message || ''))) {
+      return 0;
+    }
+
+    throw error;
+  }
+}
+
+async function resolveUserOrganizationAssignment({
+  role,
+  department,
+  departmentId,
+  program,
+  programId,
+  requireProgramForRoles = [],
+}) {
+  let resolvedDepartmentId = departmentId || null;
+  let resolvedDepartmentName = department?.trim() || null;
+  const supportsProgramAssignment = ['student', 'program_chair'].includes(role);
+  let resolvedProgramId = supportsProgramAssignment ? (programId || null) : null;
+  let resolvedProgramName = supportsProgramAssignment ? (program?.trim() || null) : null;
+
+  if (requireProgramForRoles.includes(role) && !resolvedProgramId && !resolvedProgramName) {
+    return {
+      errorMessage: role === 'student'
+        ? 'Program is required for student registration'
+        : 'Program is required for program chair accounts',
+    };
+  }
+
+  if (resolvedProgramId) {
+    const { data: selectedProgram } = await supabase
+      .from('programs')
+      .select('id, name, department_id, departments(name)')
+      .eq('id', resolvedProgramId)
+      .maybeSingle();
+
+    if (!selectedProgram) {
+      return { errorMessage: 'Selected program is invalid.' };
+    }
+
+    resolvedProgramId = selectedProgram.id;
+    resolvedProgramName = selectedProgram.name;
+    resolvedDepartmentId = selectedProgram.department_id;
+    resolvedDepartmentName = selectedProgram.departments?.name || resolvedDepartmentName;
+  } else if (resolvedProgramName) {
+    const selectedProgram = await findProgramByIdentifier(resolvedProgramName);
+
+    if (selectedProgram) {
+      resolvedProgramId = selectedProgram.id;
+      resolvedProgramName = selectedProgram.name;
+      resolvedDepartmentId = selectedProgram.department_id;
+      resolvedDepartmentName = selectedProgram.departments?.name || resolvedDepartmentName;
+    } else if (requireProgramForRoles.includes(role)) {
+      return { errorMessage: 'Selected program is invalid.' };
+    }
+  }
+
+  if (resolvedDepartmentId) {
+    const { data: selectedDepartment } = await supabase
+      .from('departments')
+      .select('id, name')
+      .eq('id', resolvedDepartmentId)
+      .maybeSingle();
+
+    if (!selectedDepartment) {
+      return { errorMessage: 'Selected department is invalid.' };
+    }
+
+    resolvedDepartmentId = selectedDepartment.id;
+    resolvedDepartmentName = selectedDepartment.name;
+  } else if (resolvedDepartmentName) {
+    const { data: selectedDepartment } = await supabase
+      .from('departments')
+      .select('id, name, code')
+      .or(`name.eq.${resolvedDepartmentName},code.eq.${resolvedDepartmentName}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (selectedDepartment) {
+      resolvedDepartmentId = selectedDepartment.id;
+      resolvedDepartmentName = selectedDepartment.name;
+    }
+  }
+
+  return {
+    resolvedDepartmentId,
+    resolvedDepartmentName,
+    resolvedProgramId,
+    resolvedProgramName,
+  };
+}
+
+function isMissingProgramColumnError(error) {
+  return String(error?.message || '').includes('program_id');
+}
+
 // Register new user
 exports.register = async (req, res) => {
   try {
+    const organizationLookups = await getOrganizationLookups();
     const {
       email,
       password,
@@ -69,9 +288,14 @@ exports.register = async (req, res) => {
     } = req.body;
 
     const parsedFromFullName = splitFullName(fullName);
-    const resolvedFirstName = (firstName || parsedFromFullName.first_name || '').trim();
-    const resolvedMiddleName = (middleName || parsedFromFullName.middle_name || '').trim() || null;
-    const resolvedLastName = (lastName || parsedFromFullName.last_name || '').trim();
+    const normalizedNames = normalizeNameParts({
+      first_name: firstName || parsedFromFullName.first_name || '',
+      middle_name: middleName || parsedFromFullName.middle_name || '',
+      last_name: lastName || parsedFromFullName.last_name || '',
+    });
+    const resolvedFirstName = normalizedNames.first_name;
+    const resolvedMiddleName = normalizedNames.middle_name;
+    const resolvedLastName = normalizedNames.last_name;
 
     if (!email || !password || !role || !resolvedFirstName || !resolvedLastName) {
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'All fields are required' });
@@ -104,59 +328,41 @@ exports.register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const {
+      resolvedDepartmentId,
+      resolvedDepartmentName,
+      resolvedProgramId,
+      resolvedProgramName,
+      errorMessage,
+    } = await resolveUserOrganizationAssignment({
+      role,
+      department,
+      departmentId,
+      program,
+      programId,
+      requireProgramForRoles: ['student'],
+    });
 
-    let resolvedDepartmentId = departmentId || null;
-    let resolvedProgramId = role === 'student' ? (programId || null) : null;
-    let resolvedDepartmentName = department?.trim() || null;
-    let resolvedProgramName = role === 'student' ? (program?.trim() || null) : null;
-
-    // Students should always map to a concrete program row.
-    if (role === 'student' && !resolvedProgramId && !resolvedProgramName) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Program is required for student registration' });
+    if (errorMessage) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: errorMessage });
     }
 
-    if (role === 'student' && resolvedProgramId) {
-      const { data: selectedProgram } = await supabase
-        .from('programs')
-        .select('id, name, department_id, departments(name)')
-        .eq('id', resolvedProgramId)
-        .single();
+    const authProvision = await ensureAuthUser({
+      email: normalizedEmail,
+      password,
+      userMetadata: { role },
+    });
 
-      if (!selectedProgram) {
-        return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Selected program is invalid' });
+    const { data: authSessionData, error: authSessionError } = await signInWithPassword(normalizedEmail, password);
+    if (authSessionError || !authSessionData?.session) {
+      if (authProvision.created) {
+        await deleteAuthUserById(authProvision.user?.id);
       }
 
-      resolvedProgramName = selectedProgram.name;
-      resolvedDepartmentId = selectedProgram.department_id;
-      resolvedDepartmentName = selectedProgram.departments?.name || resolvedDepartmentName;
+      throw authSessionError || new Error('Failed to establish Supabase session during registration');
     }
 
-    if (role === 'student' && !resolvedProgramId && resolvedProgramName) {
-      const { data: selectedProgram } = await supabase
-        .from('programs')
-        .select('id, name, department_id, departments(name)')
-        .ilike('name', resolvedProgramName)
-        .limit(1)
-        .maybeSingle();
-
-      if (selectedProgram) {
-        resolvedProgramId = selectedProgram.id;
-        resolvedProgramName = selectedProgram.name;
-        resolvedDepartmentId = selectedProgram.department_id;
-        resolvedDepartmentName = selectedProgram.departments?.name || resolvedDepartmentName;
-      }
-    }
-
-    if (!resolvedDepartmentName && resolvedDepartmentId) {
-      const { data: selectedDepartment } = await supabase
-        .from('departments')
-        .select('name')
-        .eq('id', resolvedDepartmentId)
-        .single();
-      if (selectedDepartment) resolvedDepartmentName = selectedDepartment.name;
-    }
-
-    const { data: newUser, error } = await supabase
+    let insertResult = await supabase
       .from('users')
       .insert([{
         email: normalizedEmail,
@@ -173,26 +379,37 @@ exports.register = async (req, res) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (insertResult.error && isMissingProgramColumnError(insertResult.error)) {
+      insertResult = await supabase
+        .from('users')
+        .insert([{
+          email: normalizedEmail,
+          password: hashedPassword,
+          first_name: resolvedFirstName,
+          middle_name: resolvedMiddleName,
+          last_name: resolvedLastName,
+          role,
+          department_id: resolvedDepartmentId,
+          department: resolvedDepartmentName,
+          program: resolvedProgramName,
+        }])
+        .select()
+        .single();
+    }
 
-    const token = jwt.sign(
-      { id: newUser.id, email: newUser.email, role: newUser.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const { data: newUser, error } = insertResult;
+
+    if (error) {
+      if (authProvision.created) {
+        await deleteAuthUserById(authProvision.user?.id);
+      }
+      throw error;
+    }
 
     return sendSuccess(res, {
       status: 201,
       message: 'User registered successfully',
-      data: {
-        token,
-        user: {
-          id: newUser.id,
-          email: newUser.email,
-          fullName: buildFullName(newUser),
-          role: newUser.role,
-        },
-      },
+      data: buildAuthSuccessData(newUser, authSessionData.session, organizationLookups),
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -203,6 +420,7 @@ exports.register = async (req, res) => {
 // Login user
 exports.login = async (req, res) => {
   try {
+    const organizationLookups = await getOrganizationLookups();
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -211,11 +429,34 @@ exports.login = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    const { data: user, error } = await supabase
+    const { data: authLoginData, error: authLoginError } = await signInWithPassword(normalizedEmail, password);
+
+    let { data: user, error } = await supabase
       .from('users')
       .select('*')
       .eq('email', normalizedEmail)
       .single();
+
+    if (!authLoginError && authLoginData?.session) {
+      if (error || !user) {
+        return sendError(res, { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' });
+      }
+
+      if (user.is_active === false || user.suspended_at) {
+        return sendError(res, {
+          status: 403,
+          code: 'ACCOUNT_SUSPENDED',
+          message: user.suspended_reason
+            ? `Account suspended: ${user.suspended_reason}`
+            : 'Account is suspended. Please contact administrator.',
+        });
+      }
+
+      return sendSuccess(res, {
+        message: 'Login successful',
+        data: buildAuthSuccessData(user, authLoginData.session, organizationLookups),
+      });
+    }
 
     if (error || !user) {
       return sendError(res, { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' });
@@ -236,44 +477,85 @@ exports.login = async (req, res) => {
       return sendError(res, { status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    await ensureAuthUser({
+      email: normalizedEmail,
+      password,
+      userMetadata: { role: user.role },
+      forcePasswordSync: true,
+    });
 
-    const refreshToken = jwt.sign(
-      { id: user.id, type: 'refresh' },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    try {
-      await supabase.from('refresh_tokens').insert([{
-        user_id: user.id,
-        token: refreshToken,
-        expires_at: new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString(),
-      }]);
-    } catch (refreshError) {
-      console.log('Refresh token persistence skipped:', refreshError.message);
+    const { data: migratedAuthSession, error: migratedAuthError } = await signInWithPassword(normalizedEmail, password);
+    if (migratedAuthError || !migratedAuthSession?.session) {
+      throw migratedAuthError || new Error('Failed to establish Supabase session after legacy password migration');
     }
 
     return sendSuccess(res, {
       message: 'Login successful',
-      data: {
-        token,
-        refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: buildFullName(user),
-          role: user.role,
-        },
-      },
+      data: buildAuthSuccessData(user, migratedAuthSession.session, organizationLookups),
     });
   } catch (error) {
     console.error('Login error:', error);
     return sendError(res, { status: 500, code: 'LOGIN_FAILED', message: 'Server error' });
+  }
+};
+
+exports.refreshSession = async (req, res) => {
+  try {
+    const organizationLookups = await getOrganizationLookups();
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_INPUT',
+        message: 'Refresh token is required',
+      });
+    }
+
+    const { data, error } = await refreshAuthSession(refreshToken);
+    if (error || !data?.session || !data?.user?.email) {
+      return sendError(res, {
+        status: 401,
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Refresh token is invalid or expired',
+      });
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, email, first_name, middle_name, last_name, role, department, department_id, program, program_id, is_active, suspended_at, suspended_reason')
+      .eq('email', String(data.user.email).toLowerCase().trim())
+      .maybeSingle();
+
+    if (userError || !user) {
+      return sendError(res, {
+        status: 401,
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Refresh token is invalid or expired',
+      });
+    }
+
+    if (user.is_active === false || user.suspended_at) {
+      return sendError(res, {
+        status: 403,
+        code: 'ACCOUNT_SUSPENDED',
+        message: user.suspended_reason
+          ? `Account suspended: ${user.suspended_reason}`
+          : 'Account is suspended. Please contact administrator.',
+      });
+    }
+
+    return sendSuccess(res, {
+      message: 'Session refreshed successfully',
+      data: buildAuthSuccessData(user, data.session, organizationLookups),
+    });
+  } catch (error) {
+    console.error('Refresh session error:', error);
+    return sendError(res, {
+      status: 500,
+      code: 'REFRESH_SESSION_FAILED',
+      message: 'Failed to refresh session',
+    });
   }
 };
 
@@ -398,6 +680,22 @@ exports.resetPassword = async (req, res) => {
       return sendError(res, { status: 400, code: 'INVALID_RESET_TOKEN', message: 'Reset token is invalid or expired' });
     }
 
+    const { data: resetUser, error: resetUserError } = await supabase
+      .from('users')
+      .select('id, email')
+      .eq('id', resetRecord.user_id)
+      .maybeSingle();
+
+    if (resetUserError || !resetUser) {
+      return sendError(res, { status: 400, code: 'INVALID_RESET_TOKEN', message: 'Reset token is invalid or expired' });
+    }
+
+    await ensureAuthUser({
+      email: resetUser.email,
+      password: newPassword,
+      forcePasswordSync: true,
+    });
+
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     const { data: updatedUser, error: updateError } = await supabase
@@ -407,7 +705,7 @@ exports.resetPassword = async (req, res) => {
         updated_at: new Date().toISOString(),
       })
       .eq('id', resetRecord.user_id)
-      .select('id')
+      .select('id, email')
       .maybeSingle();
 
     if (updateError || !updatedUser) {
@@ -420,10 +718,8 @@ exports.resetPassword = async (req, res) => {
         .update({ used_at: new Date().toISOString() })
         .eq('user_id', resetRecord.user_id)
         .is('used_at', null);
-
-      await supabase.from('refresh_tokens').delete().eq('user_id', resetRecord.user_id);
-    } catch (refreshDeleteError) {
-      console.log('Refresh token invalidation skipped:', refreshDeleteError.message);
+    } catch (resetTokenFinalizeError) {
+      console.log('Password reset token finalization skipped:', resetTokenFinalizeError.message);
     }
 
     return sendSuccess(res, {
@@ -438,9 +734,10 @@ exports.resetPassword = async (req, res) => {
 // Get current user
 exports.getCurrentUser = async (req, res) => {
   try {
+    const organizationLookups = await getOrganizationLookups();
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, email, first_name, middle_name, last_name, role, created_at')
+      .select('id, email, first_name, middle_name, last_name, role, department, department_id, program, program_id, created_at')
       .eq('id', req.user.id)
       .single();
 
@@ -448,12 +745,18 @@ exports.getCurrentUser = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    const userWithOrgLabels = attachOrganizationLabels(user, organizationLookups);
+
     res.json({
       user: {
         id: user.id,
         email: user.email,
         fullName: buildFullName(user),
         role: user.role,
+        department: userWithOrgLabels.department || null,
+        departmentId: user.department_id || null,
+        program: userWithOrgLabels.program || null,
+        programId: user.program_id || null,
         createdAt: user.created_at,
       },
     });
@@ -466,13 +769,14 @@ exports.getCurrentUser = async (req, res) => {
 // NEW: Get All Users (Admin only)
 exports.getAllUsers = async (req, res) => {
   try {
+    const organizationLookups = await getOrganizationLookups();
     // 1. Check if a role filter was provided in the URL (e.g., ?role=staff)
     const { role } = req.query;
 
     // 2. Start the query
     let query = supabase
       .from('users')
-      .select('id, email, first_name, middle_name, last_name, role, program, department, is_active, suspended_at, suspended_reason, created_at')
+      .select('id, email, first_name, middle_name, last_name, role, program, program_id, department, department_id, is_active, suspended_at, suspended_reason, created_at')
       .order('created_at', { ascending: false });
 
     // 3. Apply filter if a role is requested
@@ -484,10 +788,112 @@ exports.getAllUsers = async (req, res) => {
 
     if (error) throw error;
 
-    res.json({ users: (users || []).map(attachFullName) });
+    res.json({
+      users: (users || []).map((user) => attachFullName(attachOrganizationLabels(user, organizationLookups))),
+    });
   } catch (error) {
     console.error('Get all users error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  try {
+    const organizationLookups = await getOrganizationLookups();
+    const { id } = req.params;
+    const {
+      firstName,
+      middleName,
+      lastName,
+      department,
+      departmentId,
+      program,
+      programId,
+    } = req.body;
+
+    const { data: existingUser, error: existingUserError } = await supabase
+      .from('users')
+      .select('id, email, role, first_name, middle_name, last_name, department, department_id, program, program_id, is_active, suspended_at, suspended_reason, created_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (existingUserError) throw existingUserError;
+    if (!existingUser) {
+      return sendError(res, { status: 404, code: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    const normalizedNames = normalizeNameParts({
+      first_name: firstName ?? existingUser.first_name ?? '',
+      middle_name: middleName ?? existingUser.middle_name ?? '',
+      last_name: lastName ?? existingUser.last_name ?? '',
+    });
+    const resolvedFirstName = normalizedNames.first_name;
+    const resolvedMiddleName = normalizedNames.middle_name;
+    const resolvedLastName = normalizedNames.last_name;
+
+    if (!resolvedFirstName || !resolvedLastName) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'First name and last name are required' });
+    }
+
+    const {
+      resolvedDepartmentId,
+      resolvedDepartmentName,
+      resolvedProgramId,
+      resolvedProgramName,
+      errorMessage,
+    } = await resolveUserOrganizationAssignment({
+      role: existingUser.role,
+      department: department ?? existingUser.department,
+      departmentId: departmentId ?? existingUser.department_id,
+      program: program ?? existingUser.program,
+      programId: programId ?? existingUser.program_id,
+      requireProgramForRoles: ['student', 'program_chair'],
+    });
+
+    if (errorMessage) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: errorMessage });
+    }
+
+    const updatePayload = {
+      first_name: resolvedFirstName,
+      middle_name: resolvedMiddleName,
+      last_name: resolvedLastName,
+      department_id: resolvedDepartmentId || null,
+      department: resolvedDepartmentName || null,
+      program_id: ['student', 'program_chair'].includes(existingUser.role) ? (resolvedProgramId || null) : null,
+      program: ['student', 'program_chair'].includes(existingUser.role) ? (resolvedProgramName || null) : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    let { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update(updatePayload)
+      .eq('id', id)
+      .select('id, email, first_name, middle_name, last_name, role, program, program_id, department, department_id, is_active, suspended_at, suspended_reason, created_at')
+      .maybeSingle();
+
+    if (isMissingProgramColumnError(updateError)) {
+      const fallbackPayload = { ...updatePayload };
+      delete fallbackPayload.program_id;
+      const fallbackResult = await supabase
+        .from('users')
+        .update(fallbackPayload)
+        .eq('id', id)
+        .select('id, email, first_name, middle_name, last_name, role, program, department, department_id, is_active, suspended_at, suspended_reason, created_at')
+        .maybeSingle();
+      updatedUser = fallbackResult.data;
+      updateError = fallbackResult.error;
+    }
+
+    if (updateError) throw updateError;
+
+    return sendSuccess(res, {
+      message: 'User updated successfully',
+      data: { user: attachFullName(attachOrganizationLabels(updatedUser, organizationLookups)) },
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
+    return sendError(res, { status: 500, code: 'UPDATE_USER_FAILED', message: 'Failed to update user' });
   }
 };
 
@@ -520,7 +926,8 @@ exports.searchStudents = async (req, res) => {
 // Creates faculty, staff, dean, program_chair, or admin accounts
 exports.createPrivilegedUser = async (req, res) => {
   try {
-    const { email, password, fullName, firstName, middleName, lastName, role, department, departmentId } = req.body;
+    const organizationLookups = await getOrganizationLookups();
+    const { email, password, fullName, firstName, middleName, lastName, role, department, departmentId, program, programId } = req.body;
 
     const allowedRoles = ['faculty', 'staff', 'dean', 'program_chair', 'admin'];
     if (!allowedRoles.includes(role)) {
@@ -528,9 +935,14 @@ exports.createPrivilegedUser = async (req, res) => {
     }
 
     const parsedFromFullName = splitFullName(fullName);
-    const resolvedFirstName = (firstName || parsedFromFullName.first_name || '').trim();
-    const resolvedMiddleName = (middleName || parsedFromFullName.middle_name || '').trim() || null;
-    const resolvedLastName = (lastName || parsedFromFullName.last_name || '').trim();
+    const normalizedNames = normalizeNameParts({
+      first_name: firstName || parsedFromFullName.first_name || '',
+      middle_name: middleName || parsedFromFullName.middle_name || '',
+      last_name: lastName || parsedFromFullName.last_name || '',
+    });
+    const resolvedFirstName = normalizedNames.first_name;
+    const resolvedMiddleName = normalizedNames.middle_name;
+    const resolvedLastName = normalizedNames.last_name;
 
     if (!email || !password || !role || !resolvedFirstName || !resolvedLastName) {
       return res.status(400).json({ error: 'Email, password, full name, and role are required.' });
@@ -552,52 +964,74 @@ exports.createPrivilegedUser = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    let resolvedDepartmentId = departmentId || null;
-    let resolvedDepartmentName = department?.trim() || null;
+    const organization = await resolveUserOrganizationAssignment({
+      role,
+      department,
+      departmentId,
+      program,
+      programId,
+      requireProgramForRoles: ['program_chair'],
+    });
 
-    if (resolvedDepartmentId) {
-      const { data: selectedDepartment } = await supabase
-        .from('departments')
-        .select('id, name')
-        .eq('id', resolvedDepartmentId)
-        .single();
-
-      if (!selectedDepartment) {
-        return res.status(400).json({ error: 'Selected department is invalid.' });
-      }
-
-      resolvedDepartmentId = selectedDepartment.id;
-      resolvedDepartmentName = selectedDepartment.name;
-    } else if (resolvedDepartmentName) {
-      const { data: selectedDepartment } = await supabase
-        .from('departments')
-        .select('id, name, code')
-        .or(`name.eq.${resolvedDepartmentName},code.eq.${resolvedDepartmentName}`)
-        .limit(1)
-        .maybeSingle();
-
-      if (selectedDepartment) {
-        resolvedDepartmentId = selectedDepartment.id;
-        resolvedDepartmentName = selectedDepartment.name;
-      }
+    if (organization.errorMessage) {
+      return res.status(400).json({ error: organization.errorMessage });
     }
 
-    const { data: newUser, error } = await supabase
+    const {
+      resolvedDepartmentId,
+      resolvedDepartmentName,
+      resolvedProgramId,
+      resolvedProgramName,
+    } = organization;
+
+    if (role === 'program_chair' && !resolvedProgramId && !resolvedProgramName) {
+      return res.status(400).json({ error: 'Program is required for program chair accounts.' });
+    }
+
+    const basePayload = {
+      email: email.toLowerCase().trim(),
+      password: hashedPassword,
+      first_name: resolvedFirstName,
+      middle_name: resolvedMiddleName,
+      last_name: resolvedLastName,
+      role,
+      department: resolvedDepartmentName,
+      department_id: resolvedDepartmentId,
+      program: resolvedProgramName,
+      program_id: resolvedProgramId,
+    };
+
+    const authProvision = await ensureAuthUser({
+      email: basePayload.email,
+      password,
+      userMetadata: { role },
+    });
+
+    let insertResult = await supabase
       .from('users')
-      .insert([{
-        email: email.toLowerCase().trim(),
-        password: hashedPassword,
-        first_name: resolvedFirstName,
-        middle_name: resolvedMiddleName,
-        last_name: resolvedLastName,
-        role,
-        department: resolvedDepartmentName,
-        department_id: resolvedDepartmentId,
-      }])
-      .select('id, email, first_name, middle_name, last_name, role, department, department_id, created_at')
+      .insert([basePayload])
+      .select('id, email, first_name, middle_name, last_name, role, department, department_id, program, program_id, created_at')
       .single();
 
-    if (error) throw error;
+    if (insertResult.error && isMissingProgramColumnError(insertResult.error)) {
+      const fallbackPayload = { ...basePayload };
+      delete fallbackPayload.program_id;
+      delete fallbackPayload.program;
+      insertResult = await supabase
+        .from('users')
+        .insert([fallbackPayload])
+        .select('id, email, first_name, middle_name, last_name, role, department, department_id, program, program_id, created_at')
+        .single();
+    }
+
+    const { data: newUser, error } = insertResult;
+
+    if (error) {
+      if (authProvision.created) {
+        await deleteAuthUserById(authProvision.user?.id);
+      }
+      throw error;
+    }
 
     res.status(201).json({
       message: `${role.replace('_', ' ')} account created successfully.`,
@@ -606,8 +1040,10 @@ exports.createPrivilegedUser = async (req, res) => {
         email: newUser.email,
         fullName: buildFullName(newUser),
         role: newUser.role,
-        department: newUser.department,
+        department: attachOrganizationLabels(newUser, organizationLookups).department,
         departmentId: newUser.department_id,
+        program: attachOrganizationLabels(newUser, organizationLookups).program || null,
+        programId: newUser.program_id || null,
         createdAt: newUser.created_at,
       },
     });
@@ -647,7 +1083,9 @@ exports.bulkImportUsersCsv = async (req, res) => {
       lastname: headers.findIndex((h) => h === 'lastname' || h === 'last'),
       fullname: headers.findIndex((h) => h === 'fullname' || h === 'name'),
       department: headers.findIndex((h) => h === 'department'),
+      departmentId: headers.findIndex((h) => h === 'departmentid'),
       program: headers.findIndex((h) => h === 'program'),
+      programId: headers.findIndex((h) => h === 'programid'),
     };
 
     if (idx.email < 0 || idx.password < 0 || idx.role < 0 || (idx.fullname < 0 && (idx.firstname < 0 || idx.lastname < 0))) {
@@ -678,14 +1116,21 @@ exports.bulkImportUsersCsv = async (req, res) => {
         lastName: idx.lastname >= 0 ? (cells[idx.lastname] || '').trim() : '',
         fullName: idx.fullname >= 0 ? (cells[idx.fullname] || '').trim() : '',
         department: idx.department >= 0 ? (cells[idx.department] || '').trim() : '',
+        departmentId: idx.departmentId >= 0 ? (cells[idx.departmentId] || '').trim() : '',
         program: idx.program >= 0 ? (cells[idx.program] || '').trim() : '',
+        programId: idx.programId >= 0 ? (cells[idx.programId] || '').trim() : '',
       };
 
       try {
         const parsedFullName = splitFullName(row.fullName);
-        const resolvedFirstName = (row.firstName || parsedFullName.first_name || '').trim();
-        const resolvedMiddleName = (row.middleName || parsedFullName.middle_name || '').trim() || null;
-        const resolvedLastName = (row.lastName || parsedFullName.last_name || '').trim();
+        const normalizedNames = normalizeNameParts({
+          first_name: row.firstName || parsedFullName.first_name || '',
+          middle_name: row.middleName || parsedFullName.middle_name || '',
+          last_name: row.lastName || parsedFullName.last_name || '',
+        });
+        const resolvedFirstName = normalizedNames.first_name;
+        const resolvedMiddleName = normalizedNames.middle_name;
+        const resolvedLastName = normalizedNames.last_name;
 
         if (!row.email || !row.password || !row.role || !resolvedFirstName || !resolvedLastName) {
           summary.failed += 1;
@@ -721,20 +1166,61 @@ exports.bulkImportUsersCsv = async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(row.password, 10);
 
-        const { error: insertError } = await supabase
-          .from('users')
-          .insert([{
-            email: row.email,
-            password: hashedPassword,
-            first_name: resolvedFirstName,
-            middle_name: resolvedMiddleName,
-            last_name: resolvedLastName,
-            role: row.role,
-            department: row.department || null,
-            program: row.role === 'student' ? (row.program || null) : null,
-          }]);
+        const organization = await resolveUserOrganizationAssignment({
+          role: row.role,
+          department: row.department,
+          departmentId: row.departmentId || null,
+          program: row.program,
+          programId: row.programId || null,
+          requireProgramForRoles: ['student', 'program_chair'],
+        });
 
-        if (insertError) throw insertError;
+        if (organization.errorMessage) {
+          summary.failed += 1;
+          summary.results.push({ row: rowNumber, email: row.email, status: 'failed', reason: organization.errorMessage });
+          continue;
+        }
+
+        const basePayload = {
+          email: row.email,
+          password: hashedPassword,
+          first_name: resolvedFirstName,
+          middle_name: resolvedMiddleName,
+          last_name: resolvedLastName,
+          role: row.role,
+          department: organization.resolvedDepartmentName,
+          department_id: organization.resolvedDepartmentId,
+          program: organization.resolvedProgramName,
+          program_id: organization.resolvedProgramId,
+        };
+
+        const authProvision = await ensureAuthUser({
+          email: row.email,
+          password: row.password,
+          userMetadata: { role: row.role },
+        });
+
+        let insertResult = await supabase
+          .from('users')
+          .insert([basePayload]);
+
+        if (insertResult.error && isMissingProgramColumnError(insertResult.error)) {
+          const fallbackPayload = { ...basePayload };
+          delete fallbackPayload.program_id;
+          delete fallbackPayload.program;
+          insertResult = await supabase
+            .from('users')
+            .insert([fallbackPayload]);
+        }
+
+        const { error: insertError } = insertResult;
+
+        if (insertError) {
+          if (authProvision.created) {
+            await deleteAuthUserById(authProvision.user?.id);
+          }
+          throw insertError;
+        }
 
         summary.created += 1;
         summary.results.push({ row: rowNumber, email: row.email, status: 'created' });
@@ -799,6 +1285,29 @@ exports.getSystemHealth = async (req, res) => {
         uptimeSeconds: Math.round(process.uptime()),
         memoryRSSMB: Math.round((process.memoryUsage().rss / (1024 * 1024)) * 100) / 100,
         nodeVersion: process.version,
+      },
+      cleanup: {
+        usersMissingDepartment: 0,
+        scopedUsersMissingProgram: 0,
+        unresolvedUsers: [],
+        orphanedUnresolvedUsers: 0,
+        legacyWorkflowStatusPapers: 0,
+        legacyWorkflowStatuses: [],
+        usersNeedingNameReview: 0,
+        nameReviewUsers: [],
+        unresolvedCategoryPapers: 0,
+        unresolvedCategoryValues: [],
+        papersUsingExternalAuthorNotes: 0,
+        externalAuthorNoteMismatches: 0,
+        fullNameCompatibilityWindowActive: false,
+        fullNameRetirementBlocked: false,
+        coAuthorsCompatibilityWindowActive: false,
+        coAuthorsRetirementBlocked: false,
+        legacyTableRows: {
+          facultyReviews: 0,
+          authorInvitations: 0,
+          systemPolicies: 0,
+        },
       },
     };
 
@@ -882,6 +1391,125 @@ exports.getSystemHealth = async (req, res) => {
       }
     } catch (err) {
       console.error('System health AI metrics error:', err.message);
+    }
+
+    try {
+      const [
+        usersResult,
+        papersResult,
+        authoredPapersResult,
+        researchAuthorLinksResult,
+        draftsResult,
+        invitationsResult,
+        notificationsResult,
+        facultyReviewsCount,
+        authorInvitationsCount,
+        systemPoliciesCount,
+      ] = await Promise.all([
+        supabase
+          .from('users')
+          .select('id, email, role, first_name, middle_name, last_name, department_id, program_id'),
+        supabase
+          .from('research_papers')
+          .select('id, title, status, category, external_author_notes')
+          .is('deleted_at', null),
+        supabase.from('research_papers').select('author_id'),
+        supabase.from('research_authors').select('user_id'),
+        supabase.from('submission_drafts').select('user_id'),
+        supabase.from('co_author_invitations').select('invitee_id'),
+        supabase.from('notifications').select('user_id'),
+        getOptionalTableRowCount('faculty_reviews'),
+        getOptionalTableRowCount('author_invitations'),
+        getOptionalTableRowCount('system_policies'),
+      ]);
+
+      if (usersResult.error) throw usersResult.error;
+      if (papersResult.error) throw papersResult.error;
+      if (authoredPapersResult.error) throw authoredPapersResult.error;
+      if (researchAuthorLinksResult.error) throw researchAuthorLinksResult.error;
+      if (draftsResult.error) throw draftsResult.error;
+      if (invitationsResult.error) throw invitationsResult.error;
+      if (notificationsResult.error) throw notificationsResult.error;
+
+      const users = usersResult.data || [];
+      const scopedProgramRoles = new Set(['student', 'program_chair']);
+      const requiredDepartmentRoles = new Set(['student', 'faculty', 'program_chair', 'dean', 'staff']);
+      const footprintUserIds = new Set([
+        ...(authoredPapersResult.data || []).map((row) => row.author_id).filter(Boolean),
+        ...(researchAuthorLinksResult.data || []).map((row) => row.user_id).filter(Boolean),
+        ...(draftsResult.data || []).map((row) => row.user_id).filter(Boolean),
+        ...(invitationsResult.data || []).map((row) => row.invitee_id).filter(Boolean),
+        ...(notificationsResult.data || []).map((row) => row.user_id).filter(Boolean),
+      ]);
+
+      response.cleanup.usersMissingDepartment = users.filter((user) => requiredDepartmentRoles.has(user.role) && !user.department_id).length;
+      response.cleanup.scopedUsersMissingProgram = users.filter((user) => scopedProgramRoles.has(user.role) && !user.program_id).length;
+      response.cleanup.unresolvedUsers = users
+        .filter((user) => (requiredDepartmentRoles.has(user.role) && !user.department_id) || (scopedProgramRoles.has(user.role) && !user.program_id))
+        .map((user) => ({
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          missingDepartment: requiredDepartmentRoles.has(user.role) && !user.department_id,
+          missingProgram: scopedProgramRoles.has(user.role) && !user.program_id,
+          orphaned: !footprintUserIds.has(user.id),
+        }))
+        .sort((left, right) => left.email.localeCompare(right.email));
+      response.cleanup.orphanedUnresolvedUsers = response.cleanup.unresolvedUsers.filter((user) => user.orphaned).length;
+
+      response.cleanup.nameReviewUsers = users
+        .filter((user) => !String(user.first_name || '').trim() || !String(user.last_name || '').trim())
+        .map((user) => ({
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          missingFirstName: !String(user.first_name || '').trim(),
+          missingLastName: !String(user.last_name || '').trim(),
+          currentDisplayName: buildFullName(user),
+        }))
+        .sort((left, right) => left.email.localeCompare(right.email));
+      response.cleanup.usersNeedingNameReview = response.cleanup.nameReviewUsers.length;
+
+      const unresolvedCategoryCounts = new Map();
+      const legacyWorkflowStatuses = [];
+      let papersUsingExternalAuthorNotes = 0;
+      for (const paper of papersResult.data || []) {
+        const normalizedExternalAuthorNotes = String(paper.external_author_notes || '').trim();
+        if (normalizedExternalAuthorNotes) {
+          papersUsingExternalAuthorNotes += 1;
+        }
+
+        if (['pending', 'under_review', 'faculty_approved', 'editor_approved'].includes(String(paper.status || ''))) {
+          legacyWorkflowStatuses.push({
+            id: paper.id,
+            title: paper.title,
+            status: paper.status,
+          });
+        }
+
+        const value = String(paper.category || '').trim();
+        if (!value || isUuid(value)) continue;
+        unresolvedCategoryCounts.set(value, (unresolvedCategoryCounts.get(value) || 0) + 1);
+      }
+
+      response.cleanup.legacyWorkflowStatusPapers = legacyWorkflowStatuses.length;
+      response.cleanup.legacyWorkflowStatuses = legacyWorkflowStatuses
+        .sort((left, right) => String(left.title || '').localeCompare(String(right.title || '')))
+        .slice(0, 10);
+      response.cleanup.unresolvedCategoryPapers = Array.from(unresolvedCategoryCounts.values()).reduce((sum, count) => sum + count, 0);
+      response.cleanup.unresolvedCategoryValues = Array.from(unresolvedCategoryCounts.entries())
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+        .map(([value, count]) => ({ value, count }));
+      response.cleanup.papersUsingExternalAuthorNotes = papersUsingExternalAuthorNotes;
+      response.cleanup.externalAuthorNoteMismatches = 0;
+      response.cleanup.coAuthorsCompatibilityWindowActive = false;
+      response.cleanup.coAuthorsRetirementBlocked = false;
+
+      response.cleanup.legacyTableRows.facultyReviews = facultyReviewsCount;
+      response.cleanup.legacyTableRows.authorInvitations = authorInvitationsCount;
+      response.cleanup.legacyTableRows.systemPolicies = systemPoliciesCount;
+    } catch (err) {
+      console.error('System health cleanup metrics error:', err.message);
     }
 
     return sendSuccess(res, { data: response });
@@ -972,12 +1600,29 @@ exports.deleteUser = async (req, res) => {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
 
+    const { data: existingUser, error: existingUserError } = await supabase
+      .from('users')
+      .select('id, email')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (existingUserError) throw existingUserError;
+    if (!existingUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
     const { error } = await supabase
       .from('users')
       .delete()
       .eq('id', id);
 
     if (error) throw error;
+
+    try {
+      await deleteAuthUserByEmail(existingUser.email);
+    } catch (authDeleteError) {
+      console.error('Delete auth user warning:', authDeleteError.message);
+    }
 
     res.json({ message: 'User deleted successfully' });
   } catch (error) {

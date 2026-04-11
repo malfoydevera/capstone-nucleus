@@ -22,6 +22,176 @@ describe('admin controller', () => {
     jest.clearAllMocks();
   });
 
+  test('adminPublishResearch only updates supported publish fields', async () => {
+    let updatePayload;
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          update: (payload) => {
+            updatePayload = payload;
+            return {
+              eq: () => ({
+                select: () => ({
+                  single: async () => ({
+                    data: {
+                      id: 'paper-1',
+                      author_id: 'author-1',
+                      title: 'Paper',
+                      status: 'published',
+                      published_date: '2026-04-10T00:00:00.000Z',
+                      author: {
+                        id: 'author-1',
+                        first_name: 'Author',
+                        middle_name: null,
+                        last_name: 'One',
+                        email: 'author@example.com',
+                      },
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          },
+        };
+      }
+
+      if (table === 'notifications') {
+        return {
+          insert: async () => ({ error: null }),
+        };
+      }
+
+      return {};
+    });
+
+    const req = { params: { id: 'paper-1' }, user: { id: 'admin-1', role: 'admin' } };
+    const res = createRes();
+
+    await adminController.adminPublishResearch(req, res);
+
+    expect(updatePayload).toEqual(expect.objectContaining({ status: 'published' }));
+    expect(updatePayload).not.toHaveProperty('is_published');
+    expect(res.json).toHaveBeenCalled();
+  });
+
+  test('getAllResearch returns structured_authors for staff/admin repository consumers', async () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          select: () => ({
+            order: async () => ({
+              data: [
+                {
+                  id: 'paper-1',
+                  title: 'Canonical Authors',
+                  status: 'approved',
+                  external_author_notes: 'External Collaborator',
+                  author: {
+                    id: 'author-1',
+                    first_name: 'Alice',
+                    middle_name: null,
+                    last_name: 'Author',
+                    email: 'alice@example.com',
+                  },
+                  research_authors: [
+                    {
+                      user_id: 'author-2',
+                      is_primary: false,
+                      author_order: 1,
+                      author: {
+                        id: 'author-2',
+                        first_name: 'Bob',
+                        middle_name: null,
+                        last_name: 'Contributor',
+                        email: 'bob@example.com',
+                      },
+                    },
+                    {
+                      user_id: 'author-1',
+                      is_primary: true,
+                      author_order: 0,
+                      author: {
+                        id: 'author-1',
+                        first_name: 'Alice',
+                        middle_name: null,
+                        last_name: 'Author',
+                        email: 'alice@example.com',
+                      },
+                    },
+                  ],
+                },
+              ],
+              error: null,
+            }),
+          }),
+        };
+      }
+
+      return {};
+    });
+
+    const req = { query: { includeDeleted: 'true' }, user: { id: 'staff-1', role: 'staff' } };
+    const res = createRes();
+
+    await adminController.getAllResearch(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.data.papers[0].structured_authors).toHaveLength(2);
+    expect(payload.data.papers[0].structured_authors[0].author.full_name).toBe('Alice Author');
+    expect(payload.data.papers[0].external_author_notes).toBe('External Collaborator');
+  });
+
+  test('adminUnpublishResearch only updates supported unpublish fields', async () => {
+    let updatePayload;
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'research_papers') {
+        return {
+          update: (payload) => {
+            updatePayload = payload;
+            return {
+              eq: () => ({
+                select: () => ({
+                  single: async () => ({
+                    data: {
+                      id: 'paper-1',
+                      author_id: 'author-1',
+                      title: 'Paper',
+                      status: 'approved',
+                      published_date: null,
+                      author: {
+                        id: 'author-1',
+                        first_name: 'Author',
+                        middle_name: null,
+                        last_name: 'One',
+                        email: 'author@example.com',
+                      },
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          },
+        };
+      }
+
+      return {};
+    });
+
+    const req = { params: { id: 'paper-1' }, user: { id: 'admin-1', role: 'admin' } };
+    const res = createRes();
+
+    await adminController.adminUnpublishResearch(req, res);
+
+    expect(updatePayload).toEqual(expect.objectContaining({ status: 'approved', published_date: null }));
+    expect(updatePayload).not.toHaveProperty('is_published');
+    expect(res.json).toHaveBeenCalled();
+  });
+
   test('validateWorkflowStages returns validation payload', async () => {
     supabase.from.mockImplementation((table) => {
       if (table === 'workflow_stages') {
@@ -91,5 +261,28 @@ describe('admin controller', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(false);
     expect(payload.error.code).toBe('VALIDATE_WORKFLOW_STAGES_FAILED');
+  });
+
+  test('workflow stage mutations are disabled', async () => {
+    const createReq = { body: { code: 'pending_qc', label: 'QC', reviewerRole: 'staff', position: 5 }, user: { id: 'admin-1', role: 'admin' } };
+    const updateReq = { params: { stageId: 'stage-1' }, body: { isActive: false }, user: { id: 'admin-1', role: 'admin' } };
+    const deleteReq = { params: { stageId: 'stage-1' }, user: { id: 'admin-1', role: 'admin' } };
+
+    const createResponse = createRes();
+    const updateResponse = createRes();
+    const deleteResponse = createRes();
+
+    await adminController.createWorkflowStage(createReq, createResponse);
+    await adminController.updateWorkflowStage(updateReq, updateResponse);
+    await adminController.deleteWorkflowStage(deleteReq, deleteResponse);
+
+    for (const res of [createResponse, updateResponse, deleteResponse]) {
+      expect(res.status).toHaveBeenCalledWith(409);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.success).toBe(false);
+      expect(payload.error.code).toBe('WORKFLOW_STAGE_MUTATIONS_DISABLED');
+    }
+
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 });

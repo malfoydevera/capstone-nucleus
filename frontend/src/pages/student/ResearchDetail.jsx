@@ -26,7 +26,7 @@ import {
   Maximize2,
   MessageSquare
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import ResearchChat from '../../components/ai/ResearchChat';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
 import { formatFullName } from '../../utils/names';
@@ -52,12 +52,13 @@ const ResearchDetail = () => {
   const fetchPaperDetail = async () => {
     try {
       const response = await researchAPI.getResearchById(id);
-      setPaper(response.data.paper);
-      setWorkflowHistory(response.data.workflowHistory || []);
-      setDownloadCount(response.data.paper.download_count || 0);
-      setViewCount(response.data.paper.view_count || 0);
+      const payload = unwrapApiData(response);
+      setPaper(payload.paper || null);
+      setWorkflowHistory(payload.workflowHistory || []);
+      setDownloadCount(payload.paper?.download_count || 0);
+      setViewCount(payload.paper?.view_count || 0);
       const annotationResponse = await researchAPI.getAnnotations(id);
-      setAnnotations(annotationResponse.data.annotations || []);
+      setAnnotations(unwrapApiData(annotationResponse).annotations || []);
     } catch (error) {
       console.error('Failed to fetch paper:', error);
     } finally {
@@ -68,7 +69,7 @@ const ResearchDetail = () => {
   const fetchRelatedPapers = async () => {
     try {
       const response = await researchAPI.getPublishedResearch();
-      const allPapers = response.data.papers.filter(p => p.id !== id);
+      const allPapers = (unwrapApiData(response).papers || []).filter(p => p.id !== id);
       setRelatedPapers(allPapers.slice(0, 3));
     } catch (error) {
       console.error('Failed to fetch related papers:', error);
@@ -115,20 +116,52 @@ const ResearchDetail = () => {
     return String(new Date(sourceDate).getFullYear());
   };
 
+  const getExternalAuthorNames = () => {
+    const notes = paper?.external_author_notes;
+    if (!notes) {
+      return [];
+    }
+
+    return Array.from(new Set(
+      String(notes)
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    ));
+  };
+
   const getAuthors = () => {
     const authors = [];
     const primaryAuthor = formatFullName(paper?.users);
     if (primaryAuthor) {
       authors.push(primaryAuthor);
     }
-    if (paper?.co_authors) {
-      String(paper.co_authors)
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean)
-        .forEach((entry) => authors.push(entry));
+    const structuredAuthors = Array.isArray(paper?.structured_authors)
+      ? paper.structured_authors
+          .map((entry) => formatFullName(entry.author))
+          .filter(Boolean)
+      : [];
+    if (structuredAuthors.length > 0) {
+      authors.push(...structuredAuthors);
     }
+
+    getExternalAuthorNames().forEach((entry) => authors.push(entry));
+
     return Array.from(new Set(authors));
+  };
+
+  const getDisplayedCoAuthors = () => {
+    const structuredAuthors = Array.isArray(paper?.structured_authors)
+      ? paper.structured_authors
+          .filter((entry) => !entry?.is_primary)
+          .map((entry) => formatFullName(entry.author))
+          .filter(Boolean)
+      : [];
+
+    return Array.from(new Set([
+      ...structuredAuthors,
+      ...getExternalAuthorNames(),
+    ]));
   };
 
   const formatApaCitation = () => {
@@ -146,7 +179,16 @@ const ResearchDetail = () => {
   };
 
   const formatWorkflowLabel = (entry) => {
+    const actionType = (entry?.action_type || '').toLowerCase();
     const status = (entry?.status || '').toLowerCase();
+    if (actionType === 'dean_bypass') return 'Dean Bypass';
+    if (actionType === 'assigned_to_faculty') return 'Assigned to Faculty';
+    if (actionType === 'conflict_declared') return 'Conflict Declared';
+    if (actionType === 'returned_to_author') return 'Returned to Author';
+    if (actionType === 'returned_for_review') return 'Returned for Review';
+    if (actionType === 'request_revision') return 'Revision Requested';
+    if (actionType === 'approve') return 'Approved';
+    if (actionType === 'reject') return 'Rejected';
     if (status === 'approved') return 'Approved';
     if (status === 'rejected') return 'Rejected';
     if (status === 'revision_required') return 'Revision Requested';
@@ -204,6 +246,8 @@ const ResearchDetail = () => {
       </div>
     );
   }
+
+  const displayedCoAuthors = getDisplayedCoAuthors();
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -355,14 +399,18 @@ const ResearchDetail = () => {
                 </div>
 
                 {/* Co-Authors */}
-                {paper.co_authors && (
+                {displayedCoAuthors.length > 0 && (
                   <div className="mb-8">
                     <div className="flex items-center gap-2 mb-3">
                       <Users size={18} className="text-indigo-600" />
                       <h4 className="text-lg font-bold text-slate-900">Co-Authors</h4>
                     </div>
-                    <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
-                      <p className="text-slate-700">{paper.co_authors}</p>
+                    <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 space-y-2">
+                      {displayedCoAuthors.map((authorName) => (
+                        <p key={authorName} className="text-slate-700">
+                          {authorName}
+                        </p>
+                      ))}
                     </div>
                   </div>
                 )}

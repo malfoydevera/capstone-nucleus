@@ -145,8 +145,8 @@ const StaffDashboard = () => {
 
       const statistics = {
         total: papers.length,
-        pending: papers.filter(p => p.status === 'pending' || p.status === 'pending_faculty' || p.status === 'pending_editor').length,
-        underReview: papers.filter(p => p.status === 'under_review' || p.status === 'pending_admin').length,
+        pending: papers.filter(p => p.status === 'pending_faculty' || p.status === 'pending_editor').length,
+        underReview: papers.filter(p => p.status === 'pending_admin').length,
         approved: papers.filter(p => p.status === 'approved' || p.status === 'published').length,
         rejected: papers.filter(p => p.status === 'rejected').length,
         revisionRequired: papers.filter(p => p.status === 'revision_required').length
@@ -185,11 +185,10 @@ const StaffDashboard = () => {
 
   const getStatusColor = (status) => {
     const colors = {
-      pending: 'text-amber-600 bg-amber-50',
       pending_faculty: 'text-amber-600 bg-amber-50',
       pending_editor: 'text-cyan-600 bg-cyan-50',
       pending_admin: 'text-indigo-600 bg-indigo-50',
-      under_review: 'text-blue-600 bg-blue-50',
+      under_review: 'text-indigo-600 bg-indigo-50',
       approved: 'text-emerald-600 bg-emerald-50',
       published: 'text-emerald-600 bg-emerald-50',
       rejected: 'text-red-600 bg-red-50',
@@ -204,8 +203,8 @@ const StaffDashboard = () => {
 
   const getStatusBadge = (status) => {
     const statusMap = {
-      pending: 'Pending', pending_faculty: 'With Faculty', pending_editor: 'With Editor',
-      pending_admin: 'With Admin', under_review: 'In Review', approved: 'Approved',
+      pending_faculty: 'With Faculty', pending_editor: 'With Editor',
+      pending_admin: 'With Admin', under_review: 'With Admin', approved: 'Approved',
       published: 'Published', rejected: 'Rejected', revision_required: 'Revision'
     };
     return statusMap[status] || status;

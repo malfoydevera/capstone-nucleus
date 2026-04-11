@@ -14,10 +14,22 @@ jest.mock('../../utils/systemPolicy', () => ({
   updateSystemPolicy: jest.fn(),
   SUPPORTED_FILE_TYPES: ['pdf', 'doc', 'docx'],
 }));
+jest.mock('../../utils/supabaseAuth', () => ({
+  signInWithPassword: jest.fn(),
+  refreshAuthSession: jest.fn(),
+  ensureAuthUser: jest.fn(),
+  deleteAuthUserById: jest.fn().mockResolvedValue(undefined),
+}));
 
 const supabase = require('../../config/supabase');
 const authController = require('../../controllers/auth.controller');
 const { getSystemPolicy, updateSystemPolicy } = require('../../utils/systemPolicy');
+const {
+  signInWithPassword,
+  refreshAuthSession,
+  ensureAuthUser,
+  deleteAuthUserById,
+} = require('../../utils/supabaseAuth');
 
 beforeAll(() => {
   process.env.JWT_SECRET = 'test-secret-key-that-is-32-chars!!';
@@ -34,6 +46,23 @@ function createRes() {
 // ─── Register tests ────────────────────────────────────────────────────────────
 
 describe('authController.register', () => {
+  beforeEach(() => {
+    ensureAuthUser.mockResolvedValue({
+      user: { id: 'auth-user-1', email: 'user@test.com' },
+      created: false,
+    });
+    signInWithPassword.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'supabase-access-token',
+          refresh_token: 'supabase-refresh-token',
+        },
+        user: { id: 'auth-user-1', email: 'user@test.com' },
+      },
+      error: null,
+    });
+  });
+
   test('TC-AUTH-001: rejects when email already exists (returns 400 USER_EXISTS)', async () => {
     // register() checks DB only after role/password/email validation passes.
     // Set up: valid role+password, but DB returns existing user.
@@ -89,7 +118,7 @@ describe('authController.register', () => {
   });
 
   test('TC-AUTH-002c: rejects non-student role on public registration (returns 403)', async () => {
-    const req = { body: { email: 'hacker@test.com', password: 'SecurePass1', fullName: 'Attacker', role: 'admin' } };
+    const req = { body: { email: 'hacker@test.com', password: 'SecurePass1', fullName: 'Attacker Admin', role: 'admin' } };
     const res = createRes();
 
     await authController.register(req, res);
@@ -98,16 +127,116 @@ describe('authController.register', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.error.code).toBe('REGISTRATION_ROLE_NOT_ALLOWED');
   });
+
+  test('maps BSIT program alias to the canonical program during student registration', async () => {
+    let insertPayload;
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({ data: null, error: null }),
+            }),
+          }),
+          insert: (rows) => {
+            insertPayload = rows[0];
+            return {
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'student-1',
+                    email: insertPayload.email,
+                    first_name: insertPayload.first_name,
+                    middle_name: insertPayload.middle_name,
+                    last_name: insertPayload.last_name,
+                    role: insertPayload.role,
+                    department: insertPayload.department,
+                    department_id: insertPayload.department_id,
+                    program: insertPayload.program,
+                    program_id: insertPayload.program_id,
+                  },
+                  error: null,
+                }),
+              }),
+            };
+          },
+        };
+      }
+
+      if (table === 'programs') {
+        return {
+          select: async () => ({
+            data: [
+              {
+                id: 'prog-1',
+                name: 'BS Information Technology - Mobile and Web Applications',
+                code: 'BSIT-MWA',
+                department_id: 'dept-1',
+                departments: { name: 'School of Engineering, Computing, and Architecture' },
+              },
+            ],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'departments') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: 'dept-1', name: 'School of Engineering, Computing, and Architecture' },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {};
+    });
+
+    const req = {
+      body: {
+        email: 'student@test.com',
+        password: 'SecurePass1',
+        firstName: 'Test',
+        lastName: 'Student',
+        role: 'student',
+        program: 'BSIT',
+      },
+    };
+    const res = createRes();
+
+    await authController.register(req, res);
+
+    expect(insertPayload).toEqual(expect.objectContaining({
+      role: 'student',
+      department: 'School of Engineering, Computing, and Architecture',
+      department_id: 'dept-1',
+      program: 'BS Information Technology - Mobile and Web Applications',
+      program_id: 'prog-1',
+    }));
+    expect(res.json).toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+  });
 });
 
 // ─── Login tests ───────────────────────────────────────────────────────────────
 
 describe('authController.login', () => {
   test('TC-AUTH-003: returns 401 for incorrect password', async () => {
+    signInWithPassword.mockResolvedValue({
+      data: null,
+      error: new Error('Invalid login credentials'),
+    });
+
     const bcrypt = require('bcryptjs');
     const hashedPassword = await bcrypt.hash('CorrectPassword', 10);
 
-    // Only the users lookup matters here — wrong password means refresh_tokens is never reached
+    // Only the users lookup matters here — wrong password short-circuits before token issuance
     supabase.from.mockImplementation((table) => {
       if (table === 'users') {
         return {
@@ -135,6 +264,11 @@ describe('authController.login', () => {
   });
 
   test('TC-AUTH-003b: returns 401 when user not found', async () => {
+    signInWithPassword.mockResolvedValue({
+      data: null,
+      error: new Error('Invalid login credentials'),
+    });
+
     supabase.from.mockImplementation((table) => {
       if (table === 'users') {
         return {
@@ -157,8 +291,16 @@ describe('authController.login', () => {
   });
 
   test('TC-AUTH-004 (F-001 regression): email normalization — mixed case login succeeds', async () => {
-    const bcrypt = require('bcryptjs');
-    const hashedPassword = await bcrypt.hash('SecurePass1', 10);
+    signInWithPassword.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'supabase-access-token',
+          refresh_token: 'supabase-refresh-token',
+        },
+        user: { id: 'auth-1', email: 'mixed@test.com' },
+      },
+      error: null,
+    });
 
     supabase.from.mockImplementation((table) => {
       if (table === 'users') {
@@ -169,17 +311,13 @@ describe('authController.login', () => {
                 // Verify the controller lowercased the email before querying
                 expect(val).toBe('mixed@test.com');
                 return {
-                  data: { id: 'u2', email: 'mixed@test.com', password: hashedPassword, role: 'student', first_name: 'Mixed', middle_name: null, last_name: 'Case', department: null, program: null },
+                  data: { id: 'u2', email: 'mixed@test.com', password: 'unused-under-supabase-auth', role: 'student', first_name: 'Mixed', middle_name: null, last_name: 'Case', department: null, program: null },
                   error: null,
                 };
               },
             }),
           }),
         };
-      }
-      // refresh_tokens insert (S-005)
-      if (table === 'refresh_tokens') {
-        return { insert: async () => ({ error: null }) };
       }
       return { insert: async () => ({ error: null }) };
     });
@@ -192,12 +330,20 @@ describe('authController.login', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
     expect(payload.data.token).toBeDefined();
-    expect(payload.data.refreshToken).toBeDefined(); // S-005
+    expect(payload.data.refreshToken).toBeDefined();
   });
 
   test('returns 403 when account is suspended', async () => {
-    const bcrypt = require('bcryptjs');
-    const hashedPassword = await bcrypt.hash('SecurePass1', 10);
+    signInWithPassword.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'supabase-access-token',
+          refresh_token: 'supabase-refresh-token',
+        },
+        user: { id: 'auth-1', email: 'suspended@test.com' },
+      },
+      error: null,
+    });
 
     supabase.from.mockImplementation((table) => {
       if (table === 'users') {
@@ -208,7 +354,7 @@ describe('authController.login', () => {
                 data: {
                   id: 'u3',
                   email: 'suspended@test.com',
-                  password: hashedPassword,
+                  password: 'unused-under-supabase-auth',
                   role: 'student',
                   is_active: false,
                   suspended_at: new Date().toISOString(),
@@ -231,6 +377,63 @@ describe('authController.login', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     const payload = res.json.mock.calls[0][0];
     expect(payload.error.code).toBe('ACCOUNT_SUSPENDED');
+  });
+
+  test('refreshSession returns a renewed Supabase-backed session', async () => {
+    refreshAuthSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+        },
+        user: {
+          email: 'student@test.com',
+        },
+      },
+      error: null,
+    });
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  id: 'student-1',
+                  email: 'student@test.com',
+                  first_name: 'Test',
+                  middle_name: null,
+                  last_name: 'Student',
+                  role: 'student',
+                  department: 'SECA',
+                  department_id: 'dept-1',
+                  program: 'BSIT-MWA',
+                  program_id: 'prog-1',
+                  is_active: true,
+                  suspended_at: null,
+                  suspended_reason: null,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {};
+    });
+
+    const req = { body: { refreshToken: 'refresh-token' } };
+    const res = createRes();
+
+    await authController.refreshSession(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.data.token).toBe('new-access-token');
+    expect(payload.data.refreshToken).toBe('new-refresh-token');
+    expect(payload.data.user.email).toBe('student@test.com');
   });
 });
 
@@ -289,8 +492,315 @@ describe('authController suspension management', () => {
   });
 });
 
+describe('authController.createPrivilegedUser', () => {
+  test('creates a program chair with canonical program and department assignment', async () => {
+    ensureAuthUser.mockResolvedValue({
+      user: { id: 'auth-user-2', email: 'chair@test.com' },
+      created: true,
+    });
+
+    let insertPayload;
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({ data: null, error: null }),
+            }),
+          }),
+          insert: (rows) => {
+            insertPayload = rows[0];
+            return {
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'chair-1',
+                    email: insertPayload.email,
+                    first_name: insertPayload.first_name,
+                    middle_name: insertPayload.middle_name,
+                    last_name: insertPayload.last_name,
+                    role: insertPayload.role,
+                    department: insertPayload.department,
+                    department_id: insertPayload.department_id,
+                    program: insertPayload.program,
+                    program_id: insertPayload.program_id,
+                    created_at: '2026-04-10T00:00:00.000Z',
+                  },
+                  error: null,
+                }),
+              }),
+            };
+          },
+        };
+      }
+
+      if (table === 'programs') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  id: 'prog-1',
+                  name: 'BS Computer Engineering',
+                  department_id: 'dept-1',
+                  departments: { name: 'College of Engineering' },
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'departments') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: 'dept-1', name: 'College of Engineering' },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {};
+    });
+
+    const req = {
+      body: {
+        email: 'chair@test.com',
+        password: 'SecurePass1',
+        firstName: 'Program',
+        lastName: 'Chair',
+        role: 'program_chair',
+        programId: 'prog-1',
+      },
+    };
+    const res = createRes();
+
+    await authController.createPrivilegedUser(req, res);
+
+    expect(insertPayload).toEqual(expect.objectContaining({
+      role: 'program_chair',
+      department: 'College of Engineering',
+      department_id: 'dept-1',
+      program: 'BS Computer Engineering',
+      program_id: 'prog-1',
+    }));
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+});
+
+describe('authController.updateUser', () => {
+  test('updates a program chair with canonical program and department assignment', async () => {
+    let updatePayload;
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  id: 'chair-1',
+                  email: 'chair@test.com',
+                  role: 'program_chair',
+                  first_name: 'Program',
+                  middle_name: null,
+                  last_name: 'Chair',
+                  department: 'School of Engineering, Computing, and Architecture',
+                  department_id: 'dept-1',
+                  program: null,
+                  program_id: null,
+                  is_active: true,
+                  suspended_at: null,
+                  suspended_reason: null,
+                  created_at: '2026-04-10T00:00:00.000Z',
+                },
+                error: null,
+              }),
+            }),
+          }),
+          update: (payload) => {
+            updatePayload = payload;
+            return {
+              eq: () => ({
+                select: () => ({
+                  maybeSingle: async () => ({
+                    data: {
+                      id: 'chair-1',
+                      email: 'chair@test.com',
+                      first_name: payload.first_name,
+                      middle_name: payload.middle_name,
+                      last_name: payload.last_name,
+                      role: 'program_chair',
+                      department: payload.department,
+                      department_id: payload.department_id,
+                      program: payload.program,
+                      program_id: payload.program_id,
+                      is_active: true,
+                      suspended_at: null,
+                      suspended_reason: null,
+                      created_at: '2026-04-10T00:00:00.000Z',
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          },
+        };
+      }
+
+      if (table === 'programs') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  id: 'prog-1',
+                  name: 'BS Information Technology - Mobile and Web Applications',
+                  department_id: 'dept-1',
+                  departments: { name: 'School of Engineering, Computing, and Architecture' },
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'departments') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: 'dept-1', name: 'School of Engineering, Computing, and Architecture' },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {};
+    });
+
+    const req = {
+      params: { id: 'chair-1' },
+      body: {
+        firstName: 'Maria',
+        lastName: 'Reyes',
+        programId: 'prog-1',
+      },
+    };
+    const res = createRes();
+
+    await authController.updateUser(req, res);
+
+    expect(updatePayload).toEqual(expect.objectContaining({
+      first_name: 'Maria',
+      last_name: 'Reyes',
+      department: 'School of Engineering, Computing, and Architecture',
+      department_id: 'dept-1',
+      program: 'BS Information Technology - Mobile and Web Applications',
+      program_id: 'prog-1',
+    }));
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.data.user.program_id).toBe('prog-1');
+  });
+});
+
+describe('authController.bulkImportUsersCsv', () => {
+  test('normalizes program chair department and program during CSV import', async () => {
+    ensureAuthUser.mockResolvedValue({
+      user: { id: 'auth-user-3', email: 'chair@test.com' },
+      created: true,
+    });
+
+    const insertedRows = [];
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'users') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+          insert: (rows) => {
+            insertedRows.push(rows[0]);
+            return Promise.resolve({ error: null });
+          },
+        };
+      }
+
+      if (table === 'programs') {
+        return {
+          select: async () => ({
+            data: [
+              {
+                id: 'prog-1',
+                name: 'BS Computer Engineering',
+                code: 'BSCPE',
+                department_id: 'dept-1',
+                departments: { name: 'College of Engineering' },
+              },
+            ],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'departments') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: 'dept-1', name: 'College of Engineering' },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      return {};
+    });
+
+    const req = {
+      file: {
+        buffer: Buffer.from([
+          'email,password,role,firstName,lastName,department,program',
+          'chair@test.com,SecurePass1,program_chair,Program,Chair,College of Engineering,BS Computer Engineering',
+        ].join('\n')),
+      },
+    };
+    const res = createRes();
+
+    await authController.bulkImportUsersCsv(req, res);
+
+    expect(insertedRows).toHaveLength(1);
+    expect(insertedRows[0]).toEqual(expect.objectContaining({
+      role: 'program_chair',
+      department: 'College of Engineering',
+      department_id: 'dept-1',
+      program: 'BS Computer Engineering',
+      program_id: 'prog-1',
+    }));
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    expect(payload.data.created).toBe(1);
+  });
+});
+
 describe('authController.getSystemHealth', () => {
-  test('returns aggregated health metrics in success envelope', async () => {
+  test('returns aggregated health metrics and cleanup backlog in success envelope', async () => {
     supabase.from.mockImplementation((table) => {
       if (table === 'audit_logs') {
         return {
@@ -316,11 +826,102 @@ describe('authController.getSystemHealth', () => {
           select: () => ({
             is: async () => ({
               data: [
-                { file_size: 1024 * 1024, status: 'pending_faculty' },
-                { file_size: 2 * 1024 * 1024, status: 'pending_admin' },
+                {
+                  id: 'paper-legacy-1',
+                  title: 'Legacy Pending Paper',
+                  file_size: 1024 * 1024,
+                  status: 'pending',
+                  category: 'legacy-a',
+                  external_author_notes: 'External Collaborator',
+                },
+                {
+                  id: 'paper-current-1',
+                  title: 'Current Admin Paper',
+                  file_size: 2 * 1024 * 1024,
+                  status: 'pending_admin',
+                  category: '4ec6a72b-9d2a-43ae-a034-d1e7a3b3535d',
+                  external_author_notes: null,
+                },
               ],
               error: null,
             }),
+          }),
+        };
+      }
+
+      if (table === 'research_authors') {
+        return {
+          select: async () => ({
+            data: [{ user_id: 'faculty-user-id' }],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'submission_drafts') {
+        return {
+          select: async () => ({
+            data: [],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'co_author_invitations') {
+        return {
+          select: async () => ({
+            data: [],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'notifications') {
+        return {
+          select: async () => ({
+            data: [],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'users') {
+        return {
+          select: async () => ({
+            data: [
+              { id: 'student-user-id', email: 'student@example.com', role: 'student', department_id: null, program_id: null },
+              { id: 'chair-user-id', email: 'chair@example.com', role: 'program_chair', department_id: 'dept-1', program_id: null },
+              { id: 'faculty-user-id', email: 'faculty@example.com', role: 'faculty', department_id: 'dept-1', program_id: null },
+              { id: 'admin-user-id', email: 'admin@example.com', role: 'admin', department_id: null, program_id: null },
+            ],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'faculty_reviews') {
+        return {
+          select: async () => ({
+            data: [],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'author_invitations') {
+        return {
+          select: async () => ({
+            data: [{ id: 'invite-1' }],
+            error: null,
+          }),
+        };
+      }
+
+      if (table === 'system_policies') {
+        return {
+          select: async () => ({
+            data: [{ id: 'policy-1' }, { id: 'policy-2' }],
+            error: null,
           }),
         };
       }
@@ -337,8 +938,48 @@ describe('authController.getSystemHealth', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
     expect(payload.data.storage.totalMB).toBeGreaterThan(0);
-    expect(payload.data.workflow.pendingFaculty).toBe(1);
+    expect(payload.data.workflow.pendingFaculty).toBe(0);
     expect(payload.data.ai.requests30d).toBeGreaterThan(0);
+    expect(payload.data.cleanup.usersMissingDepartment).toBe(1);
+    expect(payload.data.cleanup.scopedUsersMissingProgram).toBe(2);
+    expect(payload.data.cleanup.unresolvedUsers).toEqual([
+      {
+        id: 'chair-user-id',
+        email: 'chair@example.com',
+        role: 'program_chair',
+        missingDepartment: false,
+        missingProgram: true,
+        orphaned: true,
+      },
+      {
+        id: 'student-user-id',
+        email: 'student@example.com',
+        role: 'student',
+        missingDepartment: true,
+        missingProgram: true,
+        orphaned: true,
+      },
+    ]);
+    expect(payload.data.cleanup.orphanedUnresolvedUsers).toBe(2);
+    expect(payload.data.cleanup.legacyWorkflowStatusPapers).toBe(1);
+    expect(payload.data.cleanup.legacyWorkflowStatuses).toEqual([
+      {
+        id: 'paper-legacy-1',
+        title: 'Legacy Pending Paper',
+        status: 'pending',
+      },
+    ]);
+    expect(payload.data.cleanup.unresolvedCategoryPapers).toBe(1);
+    expect(payload.data.cleanup.unresolvedCategoryValues).toEqual([{ value: 'legacy-a', count: 1 }]);
+    expect(payload.data.cleanup.papersUsingExternalAuthorNotes).toBe(1);
+    expect(payload.data.cleanup.externalAuthorNoteMismatches).toBe(0);
+    expect(payload.data.cleanup.coAuthorsCompatibilityWindowActive).toBe(false);
+    expect(payload.data.cleanup.coAuthorsRetirementBlocked).toBe(false);
+    expect(payload.data.cleanup.legacyTableRows).toEqual({
+      facultyReviews: 0,
+      authorInvitations: 1,
+      systemPolicies: 2,
+    });
   });
 });
 

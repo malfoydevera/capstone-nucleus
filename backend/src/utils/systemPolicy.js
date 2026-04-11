@@ -28,7 +28,7 @@ function normalizeFileTypes(fileTypes) {
 
 function toPolicyResponse(row) {
   if (!row) {
-    return { ...DEFAULT_POLICY };
+    return { ...DEFAULT_POLICY, legacyPolicies: {} };
   }
 
   const normalizedTypes = normalizeFileTypes(row.allowed_file_types);
@@ -37,6 +37,9 @@ function toPolicyResponse(row) {
   return {
     maxFileSizeMb,
     allowedFileTypes: normalizedTypes.length > 0 ? normalizedTypes : [...DEFAULT_POLICY.allowedFileTypes],
+    legacyPolicies: row.legacy_policy_overrides && typeof row.legacy_policy_overrides === 'object'
+      ? row.legacy_policy_overrides
+      : {},
   };
 }
 
@@ -44,7 +47,7 @@ async function getSystemPolicy() {
   try {
     const { data, error } = await supabase
       .from('system_policy_settings')
-      .select('max_file_size_mb, allowed_file_types')
+      .select('max_file_size_mb, allowed_file_types, legacy_policy_overrides')
       .eq('id', true)
       .maybeSingle();
 
@@ -84,7 +87,7 @@ async function updateSystemPolicy({ maxFileSizeMb, allowedFileTypes, updatedBy =
   const { data, error } = await supabase
     .from('system_policy_settings')
     .upsert(payload)
-    .select('max_file_size_mb, allowed_file_types')
+    .select('max_file_size_mb, allowed_file_types, legacy_policy_overrides')
     .single();
 
   if (error) {

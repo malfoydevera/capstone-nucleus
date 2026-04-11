@@ -262,6 +262,26 @@ exports.deleteProgram = async (req, res) => {
       });
     }
 
+    try {
+      const { count: paperCount, error: paperCountErr } = await supabase
+        .from('research_papers')
+        .select('id', { count: 'exact', head: true })
+        .eq('program_id', id);
+
+      if (paperCountErr) throw paperCountErr;
+
+      if (paperCount > 0) {
+        return res.status(409).json({
+          error: `Cannot deactivate: ${paperCount} research paper(s) still reference this program`,
+        });
+      }
+    } catch (paperError) {
+      // Backward compatibility for databases where research_papers.program_id is not available yet.
+      if (!String(paperError.message || '').includes('program_id')) {
+        throw paperError;
+      }
+    }
+
     const { data, error } = await supabase
       .from('programs')
       .update({ is_active: false, updated_at: new Date().toISOString() })

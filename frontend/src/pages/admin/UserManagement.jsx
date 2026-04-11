@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { 
   Users, 
@@ -20,16 +21,43 @@ import {
   Download,
   Upload
 } from 'lucide-react';
-import { authAPI } from '../../utils/api';
+import { authAPI, departmentsAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName, getInitials } from '../../utils/names';
 
+const emptyCreateForm = {
+  email: '',
+  password: '',
+  firstName: '',
+  middleName: '',
+  lastName: '',
+  role: 'faculty',
+  department: '',
+  departmentId: '',
+  program: '',
+  programId: '',
+};
+
+const emptyEditForm = {
+  firstName: '',
+  middleName: '',
+  lastName: '',
+  role: '',
+  department: '',
+  departmentId: '',
+  program: '',
+  programId: '',
+};
+
 const UserManagement = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [selectedRole, setSelectedRole] = useState('all');
+  const [showOnlyOrganizationGaps, setShowOnlyOrganizationGaps] = useState(false);
+  const [showOnlyNameReviewGaps, setShowOnlyNameReviewGaps] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
@@ -37,28 +65,119 @@ const UserManagement = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    email: '', password: '', firstName: '', middleName: '', lastName: '', role: 'faculty', department: ''
-  });
+  const [createForm, setCreateForm] = useState(emptyCreateForm);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [userToEdit, setUserToEdit] = useState(null);
+  const [editForm, setEditForm] = useState(emptyEditForm);
+  const [departments, setDepartments] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [editPrograms, setEditPrograms] = useState([]);
 
   useEffect(() => {
     fetchUsers();
+    fetchDepartments();
   }, []);
 
   useEffect(() => {
+    const focusEmail = searchParams.get('email') || '';
+    const focusOrgGaps = searchParams.get('orgGaps') === '1';
+    const focusNameReview = searchParams.get('nameReview') === '1';
+    const focusRole = searchParams.get('role') || 'all';
+
+    if (focusEmail) {
+      setSearchTerm(focusEmail);
+    }
+
+    if (focusOrgGaps) {
+      setShowOnlyOrganizationGaps(true);
+    }
+
+    if (focusNameReview) {
+      setShowOnlyNameReviewGaps(true);
+    }
+
+    if (focusRole && ['all', 'admin', 'faculty', 'dean', 'program_chair', 'staff', 'student'].includes(focusRole)) {
+      setSelectedRole(focusRole);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const focusEmail = searchParams.get('email') || '';
+    const openEdit = searchParams.get('edit') === '1';
+
+    if (!openEdit || !focusEmail || showEditModal) {
+      return;
+    }
+
+    const matchedUser = users.find((user) => String(user.email || '').toLowerCase() === focusEmail.toLowerCase());
+    if (matchedUser) {
+      openEditModal(matchedUser);
+    }
+  }, [searchParams, users, showEditModal]);
+
+  useEffect(() => {
+    const loadPrograms = async () => {
+      if (!createForm.departmentId) {
+        setPrograms([]);
+        return;
+      }
+
+      try {
+        const response = await departmentsAPI.getPrograms(createForm.departmentId);
+        setPrograms(unwrapApiData(response).programs || []);
+      } catch (err) {
+        console.error('Failed to fetch programs:', err);
+        setPrograms([]);
+      }
+    };
+
+    loadPrograms();
+  }, [createForm.departmentId]);
+
+  useEffect(() => {
+    const loadPrograms = async () => {
+      if (!['student', 'program_chair'].includes(editForm.role) || !editForm.departmentId) {
+        setEditPrograms([]);
+        return;
+      }
+
+      try {
+        const response = await departmentsAPI.getPrograms(editForm.departmentId);
+        setEditPrograms(unwrapApiData(response).programs || []);
+      } catch (err) {
+        console.error('Failed to fetch edit programs:', err);
+        setEditPrograms([]);
+      }
+    };
+
+    loadPrograms();
+  }, [editForm.departmentId, editForm.role]);
+
+  useEffect(() => {
     filterAndSortUsers();
-  }, [users, searchTerm, selectedRole, sortConfig]);
+  }, [users, searchTerm, selectedRole, showOnlyOrganizationGaps, showOnlyNameReviewGaps, sortConfig]);
 
   const fetchUsers = async () => {
     try {
       const response = await authAPI.getAllUsers();
-      setUsers(response.data.users);
+      setUsers(unwrapApiData(response).users || []);
       setError('');
     } catch (err) {
       console.error('Failed to fetch users:', err);
       setError('Failed to load users. Please try again later.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      const response = await departmentsAPI.getAll();
+      setDepartments(unwrapApiData(response).departments || []);
+    } catch (err) {
+      console.error('Failed to fetch departments:', err);
+      setDepartments([]);
     }
   };
 
@@ -78,6 +197,14 @@ const UserManagement = () => {
     // Filter by role
     if (selectedRole !== 'all') {
       filtered = filtered.filter(user => user.role === selectedRole);
+    }
+
+    if (showOnlyOrganizationGaps) {
+      filtered = filtered.filter((user) => hasOrganizationGap(user));
+    }
+
+    if (showOnlyNameReviewGaps) {
+      filtered = filtered.filter((user) => hasNameReviewGap(user));
     }
 
     // Sort
@@ -101,7 +228,7 @@ const UserManagement = () => {
     });
 
     setFilteredUsers(filtered);
-  }, [users, searchTerm, selectedRole, sortConfig]);
+  }, [users, searchTerm, selectedRole, showOnlyOrganizationGaps, showOnlyNameReviewGaps, sortConfig]);
 
   const handleSort = (key) => {
     setSortConfig(prev => ({
@@ -110,9 +237,116 @@ const UserManagement = () => {
     }));
   };
 
+  const clearFocusedFilters = () => {
+    setSearchParams({});
+    setSearchTerm('');
+    setSelectedRole('all');
+    setShowOnlyOrganizationGaps(false);
+    setShowOnlyNameReviewGaps(false);
+  };
+
   const handleDeleteClick = (user) => {
     setUserToDelete(user);
     setShowDeleteModal(true);
+  };
+
+  const handleCreateRoleChange = (role) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      role,
+      program: role === 'program_chair' ? prev.program : '',
+      programId: role === 'program_chair' ? prev.programId : '',
+    }));
+  };
+
+  const handleCreateDepartmentChange = (departmentId) => {
+    const selectedDepartment = departments.find((item) => item.id === departmentId);
+    setCreateForm((prev) => ({
+      ...prev,
+      departmentId,
+      department: selectedDepartment?.name || '',
+      program: '',
+      programId: '',
+    }));
+  };
+
+  const handleCreateProgramChange = (programId) => {
+    const selectedProgram = programs.find((item) => item.id === programId);
+    setCreateForm((prev) => ({
+      ...prev,
+      programId,
+      program: selectedProgram?.name || '',
+    }));
+  };
+
+  const closeCreateModal = () => {
+    setCreateForm(emptyCreateForm);
+    setPrograms([]);
+    setShowCreateModal(false);
+  };
+
+  const requiresProgramAssignment = (role) => ['student', 'program_chair'].includes(role);
+  const requiresDepartmentAssignment = (role) => ['student', 'faculty', 'dean', 'program_chair', 'staff'].includes(role);
+
+  const hasOrganizationGap = (user) => {
+    const departmentId = user.departmentId || user.department_id;
+    const programId = user.programId || user.program_id;
+    return (requiresDepartmentAssignment(user.role) && !departmentId)
+      || (requiresProgramAssignment(user.role) && !programId);
+  };
+
+  const hasNameReviewGap = (user) => {
+    const firstName = String(user.first_name || user.firstName || '').trim();
+    const lastName = String(user.last_name || user.lastName || '').trim();
+    return !firstName || !lastName;
+  };
+
+  const handleEditDepartmentChange = (departmentId) => {
+    const selectedDepartment = departments.find((item) => item.id === departmentId);
+    setEditForm((prev) => ({
+      ...prev,
+      departmentId,
+      department: selectedDepartment?.name || '',
+      program: '',
+      programId: '',
+    }));
+  };
+
+  const handleEditProgramChange = (programId) => {
+    const selectedProgram = editPrograms.find((item) => item.id === programId);
+    setEditForm((prev) => ({
+      ...prev,
+      programId,
+      program: selectedProgram?.name || '',
+    }));
+  };
+
+  const openEditModal = (user) => {
+    setUserToEdit(user);
+    setEditForm({
+      firstName: user.first_name || '',
+      middleName: user.middle_name || '',
+      lastName: user.last_name || '',
+      role: user.role || '',
+      department: user.department || '',
+      departmentId: user.departmentId || user.department_id || '',
+      program: user.program || '',
+      programId: user.programId || user.program_id || '',
+    });
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setUserToEdit(null);
+    setEditForm(emptyEditForm);
+    setEditPrograms([]);
+
+    if (searchParams.get('edit') === '1') {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('edit');
+      setSearchParams(nextParams);
+    }
   };
 
   const handleCreateUser = async (e) => {
@@ -121,12 +355,12 @@ const UserManagement = () => {
     const loadingToast = toast.loading('Creating account...');
     try {
       const response = await authAPI.createUser(createForm);
-      setUsers(prev => [response.data.user, ...prev]);
-      toast.success(`${response.data.user.role.replace('_', ' ')} account created!`, {
+      const createdUser = unwrapApiData(response).user;
+      setUsers(prev => [createdUser, ...prev]);
+      toast.success(`${createdUser.role.replace('_', ' ')} account created!`, {
         id: loadingToast, icon: '✅', duration: 3000
       });
-      setCreateForm({ email: '', password: '', firstName: '', middleName: '', lastName: '', role: 'faculty', department: '' });
-      setShowCreateModal(false);
+      closeCreateModal();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to create user', { id: loadingToast });
     } finally {
@@ -161,11 +395,33 @@ const UserManagement = () => {
     }
   };
 
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    if (!userToEdit) return;
+
+    setEditLoading(true);
+    const loadingToast = toast.loading('Updating user...');
+    try {
+      const response = await authAPI.updateUser(userToEdit.id, editForm);
+      const updatedUser = unwrapApiData(response).user;
+      setUsers((prev) => prev.map((user) => (
+        user.id === userToEdit.id ? updatedUser : user
+      )));
+      toast.success('User updated successfully', { id: loadingToast });
+      closeEditModal();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update user', { id: loadingToast });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const downloadCsvTemplate = () => {
     const template = [
       'email,password,role,firstName,middleName,lastName,department,program',
       'faculty1@university.edu,TempPass123,faculty,Juan,,Dela Cruz,College of Engineering,',
       'student1@university.edu,TempPass123,student,Ana,,Santos,College of Engineering,BS Computer Engineering',
+      'chair1@university.edu,TempPass123,program_chair,Maria,,Reyes,College of Engineering,BS Computer Engineering',
     ].join('\n');
 
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
@@ -196,7 +452,7 @@ const UserManagement = () => {
       const formData = new FormData();
       formData.append('file', file);
       const response = await authAPI.importUsersCsv(formData);
-      const result = response.data.data;
+      const result = unwrapApiData(response);
 
       toast.success(
         `Import complete: ${result.created} created, ${result.skipped} skipped, ${result.failed} failed`,
@@ -373,7 +629,11 @@ const UserManagement = () => {
               />
             </label>
             <button
-              onClick={() => setShowCreateModal(true)}
+              onClick={() => {
+                setCreateForm(emptyCreateForm);
+                setPrograms([]);
+                setShowCreateModal(true);
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#1a4480] hover:to-[#1d55d0] transition-all duration-300 shadow-md"
             >
               <UserPlus size={16} />
@@ -384,7 +644,7 @@ const UserManagement = () => {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6 mb-8">
         <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
@@ -434,6 +694,32 @@ const UserManagement = () => {
           <h3 className="text-lg font-bold text-slate-900 mb-1">Students</h3>
           <p className="text-slate-600 text-sm">Student researchers</p>
         </div>
+
+        <div className="bg-gradient-to-br from-white to-amber-50 rounded-2xl shadow-lg border border-amber-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg">
+              <AlertCircle size={22} className="text-white" />
+            </div>
+            <span className="text-3xl font-black text-slate-900">
+              {users.filter((user) => hasOrganizationGap(user)).length}
+            </span>
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 mb-1">Org Gaps</h3>
+          <p className="text-slate-600 text-sm">Users needing department or program assignment</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-white to-violet-50 rounded-2xl shadow-lg border border-violet-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center shadow-lg">
+              <Edit size={22} className="text-white" />
+            </div>
+            <span className="text-3xl font-black text-slate-900">
+              {users.filter((user) => hasNameReviewGap(user)).length}
+            </span>
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 mb-1">Name Review</h3>
+          <p className="text-slate-600 text-sm">Users still missing first or last name</p>
+        </div>
       </div>
 
       {/* Error Alert */}
@@ -477,6 +763,26 @@ const UserManagement = () => {
               <Filter size={18} className="text-slate-600" />
               <span className="text-sm font-medium text-slate-700">Filter:</span>
             </div>
+            <button
+              onClick={() => setShowOnlyOrganizationGaps((prev) => !prev)}
+              className={`px-4 py-2 rounded-xl font-medium text-sm transition-all duration-300 ${
+                showOnlyOrganizationGaps
+                  ? 'bg-amber-100 border border-amber-200 text-amber-700 font-bold'
+                  : 'bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30'
+              }`}
+            >
+              Needs Org Setup
+            </button>
+            <button
+              onClick={() => setShowOnlyNameReviewGaps((prev) => !prev)}
+              className={`px-4 py-2 rounded-xl font-medium text-sm transition-all duration-300 ${
+                showOnlyNameReviewGaps
+                  ? 'bg-violet-100 border border-violet-200 text-violet-700 font-bold'
+                  : 'bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30'
+              }`}
+            >
+              Needs Name Review
+            </button>
             <div className="flex gap-2">
               {['all', 'admin', 'faculty', 'dean', 'program_chair', 'staff', 'student'].map((role) => {
                 const config = getRoleConfig(role);
@@ -499,6 +805,14 @@ const UserManagement = () => {
                 );
               })}
             </div>
+            {(searchParams.get('email') || searchParams.get('orgGaps') === '1' || searchParams.get('nameReview') === '1' || (searchParams.get('role') && searchParams.get('role') !== 'all')) && (
+              <button
+                onClick={clearFocusedFilters}
+                className="px-4 py-2 rounded-xl font-medium text-sm bg-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-all duration-300"
+              >
+                Clear Focus
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -532,15 +846,17 @@ const UserManagement = () => {
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-2">No users found</h3>
             <p className="text-slate-600 mb-8">
-              {searchTerm || selectedRole !== 'all' 
+              {searchTerm || selectedRole !== 'all' || showOnlyOrganizationGaps || showOnlyNameReviewGaps
                 ? 'Try adjusting your search or filters' 
                 : 'No users registered in the system'}
             </p>
-            {(searchTerm || selectedRole !== 'all') && (
+            {(searchTerm || selectedRole !== 'all' || showOnlyOrganizationGaps || showOnlyNameReviewGaps) && (
               <button
                 onClick={() => {
                   setSearchTerm('');
                   setSelectedRole('all');
+                  setShowOnlyOrganizationGaps(false);
+                  setShowOnlyNameReviewGaps(false);
                 }}
                 className="px-6 py-3 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl font-medium hover:border-[#1C4D8D]/30 transition-colors"
               >
@@ -614,6 +930,21 @@ const UserManagement = () => {
                                 Suspended
                               </div>
                             )}
+                            {hasOrganizationGap(user) && (
+                              <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-bold">
+                                Organization setup needed
+                              </div>
+                            )}
+                            {hasNameReviewGap(user) && (
+                              <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-violet-100 text-violet-700 text-xs font-bold">
+                                Name review needed
+                              </div>
+                            )}
+                            {(user.department || user.program) && (
+                              <div className="mt-1 text-xs text-slate-500">
+                                {[user.department, user.program].filter(Boolean).join(' / ')}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -638,13 +969,13 @@ const UserManagement = () => {
                           >
                             {user.is_active === false || user.suspended_at ? 'Reactivate' : 'Suspend'}
                           </button>
-                          {/* Placeholder for Edit functionality */}
-                          {/* <button
+                          <button
+                            onClick={() => openEditModal(user)}
                             className="w-10 h-10 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 flex items-center justify-center text-slate-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
                             title="Edit User"
                           >
                             <Edit size={16} />
-                          </button> */}
+                          </button>
                           <button
                             onClick={() => handleDeleteClick(user)}
                             className="w-10 h-10 rounded-xl bg-gradient-to-r from-red-100 to-pink-100 border border-red-200 flex items-center justify-center text-red-600 hover:border-red-300 hover:text-red-700 transition-colors"
@@ -712,6 +1043,141 @@ const UserManagement = () => {
         </div>
       )}
 
+      {showEditModal && userToEdit && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            <div className="px-6 py-4 bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center">
+                  <Edit size={18} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">Edit User</h3>
+                  <p className="text-slate-500 text-sm">Update account details and organization scope</p>
+                </div>
+              </div>
+              <button
+                onClick={closeEditModal}
+                className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors text-lg font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateUser} className="p-6 space-y-4">
+              <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-600">
+                <div className="font-semibold text-slate-900">{userToEdit.email}</div>
+                <div className="mt-1">Role: <span className="font-medium">{getRoleConfig(userToEdit.role).label}</span></div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">First Name</label>
+                  <input
+                    type="text"
+                    value={editForm.firstName}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Middle Name</label>
+                  <input
+                    type="text"
+                    value={editForm.middleName}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, middleName: e.target.value }))}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Last Name</label>
+                <input
+                  type="text"
+                  value={editForm.lastName}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">
+                  Department {requiresDepartmentAssignment(editForm.role) ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                </label>
+                <select
+                  value={editForm.departmentId}
+                  onChange={(e) => handleEditDepartmentChange(e.target.value)}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white"
+                  required={requiresDepartmentAssignment(editForm.role)}
+                >
+                  <option value="">Select department</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {requiresProgramAssignment(editForm.role) && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Program <span className="text-red-500">*</span></label>
+                  <select
+                    value={editForm.programId}
+                    onChange={(e) => handleEditProgramChange(e.target.value)}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white disabled:bg-slate-50 disabled:text-slate-400"
+                    required
+                    disabled={!editForm.departmentId}
+                  >
+                    <option value="">
+                      {editForm.departmentId ? 'Select program' : 'Select department first'}
+                    </option>
+                    {editPrograms.map((program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {(editForm.department || editForm.program) && (
+                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-600">
+                  Updated organization: <span className="font-semibold text-slate-900">{editForm.department || 'No department selected'}</span>
+                  {editForm.program ? ` / ${editForm.program}` : ''}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="flex-1 px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors"
+                  disabled={editLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 disabled:opacity-50"
+                  disabled={editLoading}
+                >
+                  {editLoading ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Saving...
+                    </div>
+                  ) : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Create User Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
@@ -728,7 +1194,7 @@ const UserManagement = () => {
                 </div>
               </div>
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={closeCreateModal}
                 className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors text-lg font-bold"
               >
                 ×
@@ -806,7 +1272,7 @@ const UserManagement = () => {
                 <label className="block text-sm font-bold text-slate-700 mb-1">Role <span className="text-red-500">*</span></label>
                 <select
                   value={createForm.role}
-                  onChange={e => setCreateForm({ ...createForm, role: e.target.value })}
+                  onChange={e => handleCreateRoleChange(e.target.value)}
                   className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all bg-white"
                 >
                   <option value="faculty">Adviser (Faculty)</option>
@@ -817,23 +1283,60 @@ const UserManagement = () => {
                 </select>
               </div>
 
-              {/* Department (optional) */}
+              {/* Department */}
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Department <span className="text-slate-400 font-normal">(optional)</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. College of Engineering"
-                  value={createForm.department}
-                  onChange={e => setCreateForm({ ...createForm, department: e.target.value })}
-                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all"
-                />
+                <label className="block text-sm font-bold text-slate-700 mb-1">
+                  Department {createForm.role === 'program_chair' ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(optional)</span>}
+                </label>
+                <select
+                  value={createForm.departmentId}
+                  onChange={(e) => handleCreateDepartmentChange(e.target.value)}
+                  className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all bg-white"
+                  required={createForm.role === 'program_chair'}
+                >
+                  <option value="">Select department</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              {createForm.role === 'program_chair' && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Program <span className="text-red-500">*</span></label>
+                  <select
+                    value={createForm.programId}
+                    onChange={(e) => handleCreateProgramChange(e.target.value)}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent outline-none transition-all bg-white disabled:bg-slate-50 disabled:text-slate-400"
+                    required
+                    disabled={!createForm.departmentId}
+                  >
+                    <option value="">
+                      {createForm.departmentId ? 'Select program' : 'Select department first'}
+                    </option>
+                    {programs.map((program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {createForm.department && (
+                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-600">
+                  Selected organization: <span className="font-semibold text-slate-900">{createForm.department}</span>
+                  {createForm.program ? ` / ${createForm.program}` : ''}
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={closeCreateModal}
                   className="flex-1 px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors"
                   disabled={createLoading}
                 >

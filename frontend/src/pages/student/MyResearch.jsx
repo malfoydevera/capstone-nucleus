@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Plus, RefreshCw } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
+
+const getStructuredCoAuthorCount = (paper) =>
+  Array.isArray(paper?.structured_authors)
+    ? paper.structured_authors.filter((entry) => !entry?.is_primary).length
+    : 0;
 
 const MyResearch = () => {
   const navigate = useNavigate();
@@ -26,7 +31,7 @@ const MyResearch = () => {
     if (!silent) setRefreshing(true);
     try {
       const response = await researchAPI.getMyResearch();
-      const fetchedPapers = response.data.papers;
+      const fetchedPapers = unwrapApiData(response).papers || [];
 
       setPapers(fetchedPapers);
       setError('');
@@ -49,7 +54,7 @@ const MyResearch = () => {
       pending_faculty: 'With Adviser',
       pending_editor: 'With Editor',
       pending_admin: 'With Admin',
-      under_review: 'Under Review',
+      under_review: 'With Editor',
       approved: 'Published',
       rejected: 'Rejected',
       revision_required: 'Revision Required',
@@ -73,8 +78,7 @@ const MyResearch = () => {
     if (status === 'approved') return 5;
     if (status === 'pending_admin') return 4;
     if (status === 'pending_editor' || status === 'under_review') return 3;
-    if (status === 'pending') return 2;
-    if (status === 'pending_faculty') return 1;
+    if (status === 'pending_faculty') return 2;
     return 1;
   };
 
@@ -93,10 +97,10 @@ const MyResearch = () => {
   }, [papers]);
 
   const summary = useMemo(() => {
-    const pending = (statusCounts.pending || 0) + (statusCounts.pending_faculty || 0) + (statusCounts.pending_editor || 0) + (statusCounts.pending_admin || 0);
+    const pending = (statusCounts.pending_faculty || 0) + (statusCounts.pending_editor || 0) + (statusCounts.pending_admin || 0);
     const published = statusCounts.approved || 0;
     const needsAction = (statusCounts.rejected || 0) + (statusCounts.revision_required || 0);
-    const inReview = statusCounts.under_review || 0;
+    const inReview = statusCounts.pending_editor || 0;
 
     return {
       total: papers.length,
@@ -315,6 +319,7 @@ const MyResearch = () => {
                 const isPublished = paper.status === 'approved';
                 const isRejected = paper.status === 'rejected';
                 const isRevision = paper.status === 'revision_required';
+                const coAuthorCount = getStructuredCoAuthorCount(paper);
                 const stageNames = ['Adviser', 'Program Chair', 'Editor', 'Admin', 'Publish'];
                 const currentStageName = isPublished ? 'Published' : stageNames[Math.max(0, Math.min(stage - 1, 4))];
                 const progressPercent = Math.max(0, Math.min(100, ((stage - 1) / 4) * 100));
@@ -345,6 +350,11 @@ const MyResearch = () => {
                         <p className="text-sm text-slate-500">
                           {getStatusLabel(paper.status)} • Submitted {formatTimeAgo(paper.submission_date || paper.created_at)}
                         </p>
+                        {coAuthorCount > 0 ? (
+                          <p className="text-xs text-slate-500 mt-1">
+                            {coAuthorCount} canonical co-author{coAuthorCount > 1 ? 's' : ''}
+                          </p>
+                        ) : null}
                       </div>
 
                       <div>

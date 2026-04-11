@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Save, Shield, FileText, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Save, Shield, FileText, Loader2 } from 'lucide-react';
 import { authAPI, researchAPI } from '../../utils/api';
-
-const WORKFLOW_ROLES = ['faculty', 'dean', 'program_chair', 'staff', 'admin'];
 
 const AdminSettings = () => {
   const [loading, setLoading] = useState(true);
@@ -13,15 +11,10 @@ const AdminSettings = () => {
     maxFileSizeMb: 10,
     allowedFileTypes: ['pdf'],
   });
+  const [legacyPolicies, setLegacyPolicies] = useState({});
   const [stagesLoading, setStagesLoading] = useState(true);
   const [stages, setStages] = useState([]);
   const [stageValidation, setStageValidation] = useState({ ok: true, warnings: [] });
-  const [newStage, setNewStage] = useState({
-    code: '',
-    label: '',
-    reviewerRole: 'faculty',
-    position: 10,
-  });
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -34,6 +27,7 @@ const AdminSettings = () => {
             ? data.allowedFileTypes
             : ['pdf'],
         });
+        setLegacyPolicies(data.legacyPolicies && typeof data.legacyPolicies === 'object' ? data.legacyPolicies : {});
         if (Array.isArray(data.supportedFileTypes) && data.supportedFileTypes.length > 0) {
           setSupportedTypes(data.supportedFileTypes);
         }
@@ -111,46 +105,6 @@ const AdminSettings = () => {
     }
   };
 
-  const handleCreateStage = async () => {
-    if (!newStage.code.trim() || !newStage.label.trim()) {
-      toast.error('Code and label are required');
-      return;
-    }
-
-    try {
-      await researchAPI.createWorkflowStage({
-        code: newStage.code.trim(),
-        label: newStage.label.trim(),
-        reviewerRole: newStage.reviewerRole,
-        position: Number(newStage.position) || 10,
-      });
-      setNewStage({ code: '', label: '', reviewerRole: 'faculty', position: 10 });
-      await loadWorkflowStages();
-      toast.success('Workflow stage created');
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to create stage');
-    }
-  };
-
-  const handleToggleStage = async (stage) => {
-    try {
-      await researchAPI.updateWorkflowStage(stage.id, { isActive: !stage.is_active });
-      await loadWorkflowStages();
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to update stage');
-    }
-  };
-
-  const handleDeleteStage = async (stageId) => {
-    try {
-      await researchAPI.deleteWorkflowStage(stageId);
-      await loadWorkflowStages();
-      toast.success('Workflow stage deleted');
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to delete stage');
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-[320px] flex items-center justify-center">
@@ -219,44 +173,11 @@ const AdminSettings = () => {
           </div>
 
           <div className="p-6 space-y-4">
-            <p className="text-sm text-gray-700">Configure review stages shown in admin interfaces.</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <input
-                type="text"
-                placeholder="code (e.g. pending_qc)"
-                value={newStage.code}
-                onChange={(event) => setNewStage((prev) => ({ ...prev, code: event.target.value }))}
-                className="rounded-md border-gray-300 shadow-sm sm:text-sm border p-2"
-              />
-              <input
-                type="text"
-                placeholder="label"
-                value={newStage.label}
-                onChange={(event) => setNewStage((prev) => ({ ...prev, label: event.target.value }))}
-                className="rounded-md border-gray-300 shadow-sm sm:text-sm border p-2"
-              />
-              <select
-                value={newStage.reviewerRole}
-                onChange={(event) => setNewStage((prev) => ({ ...prev, reviewerRole: event.target.value }))}
-                className="rounded-md border-gray-300 shadow-sm sm:text-sm border p-2"
-              >
-                {WORKFLOW_ROLES.map((role) => (
-                  <option key={role} value={role}>{role}</option>
-                ))}
-              </select>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  value={newStage.position}
-                  onChange={(event) => setNewStage((prev) => ({ ...prev, position: event.target.value }))}
-                  className="w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2"
-                />
-                <button onClick={handleCreateStage} className="px-3 rounded-md bg-emerald-600 text-white hover:bg-emerald-700">
-                  <Plus size={16} />
-                </button>
-              </div>
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+              <p className="text-sm font-semibold text-blue-900">Workflow stages are read-only</p>
+              <p className="mt-1 text-xs text-blue-800">
+                The live workflow is fixed in code and database constraints. Stage editing is disabled until the workflow model is fully unified.
+              </p>
             </div>
 
             {stagesLoading ? (
@@ -281,18 +202,11 @@ const AdminSettings = () => {
                       <p className="text-xs text-gray-500">{stage.code} • role: {stage.reviewer_role} • position: {stage.position}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleToggleStage(stage)}
+                      <span
                         className={`text-xs px-2 py-1 rounded ${stage.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}
                       >
                         {stage.is_active ? 'Active' : 'Inactive'}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteStage(stage.id)}
-                        className="p-1 rounded bg-red-50 text-red-600 hover:bg-red-100"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -313,6 +227,38 @@ const AdminSettings = () => {
             </p>
             <p className="text-xs text-gray-500">
               Supported file types in this system: {supportedTypes.map((type) => `.${type}`).join(', ')}
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="p-4 border-b border-gray-200 bg-gray-50">
+            <div className="flex items-center gap-2 font-medium text-gray-700">
+              <Shield size={18} /> Legacy Policy Archive
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            {Object.keys(legacyPolicies).length > 0 ? (
+              <div className="space-y-3">
+                {Object.entries(legacyPolicies).map(([key, value]) => (
+                  <div key={key} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-sm font-semibold text-slate-900">{key}</p>
+                    {value?.description && (
+                      <p className="mt-1 text-xs text-slate-500">{value.description}</p>
+                    )}
+                    <pre className="mt-2 whitespace-pre-wrap break-all rounded bg-white p-2 text-xs text-slate-700 border border-slate-200">
+                      {JSON.stringify(value?.value ?? value, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600">
+                No archived legacy policy overrides are stored.
+              </p>
+            )}
+            <p className="text-xs text-gray-500">
+              These settings are preserved for reference only. Active upload enforcement comes from the canonical submission policy above.
             </p>
           </div>
         </div>

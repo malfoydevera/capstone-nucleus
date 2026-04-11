@@ -24,7 +24,7 @@ import {
   Award,
   Lightbulb
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
 const AdminReviewSubmissions = () => {
@@ -33,11 +33,10 @@ const AdminReviewSubmissions = () => {
   const [papers, setPapers] = useState([]);
   const [filteredPapers, setFilteredPapers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('under_review');
+  const [statusFilter, setStatusFilter] = useState('needs_action');
   const [showRecycleBin, setShowRecycleBin] = useState(false);
   const [stats, setStats] = useState({
     pending: 0,
-    underReview: 0,
     pendingAdmin: 0,
     approved: 0,
     rejected: 0,
@@ -69,14 +68,13 @@ const AdminReviewSubmissions = () => {
   const fetchPapers = async () => {
     try {
       const response = await researchAPI.adminGetAllResearch(showRecycleBin ? 'true' : undefined);
-      const allPapers = response.data.papers || [];
+      const allPapers = unwrapApiData(response).papers || [];
       
       setPapers(allPapers);
       
       // Calculate stats
       setStats({
-        pending: allPapers.filter(p => p.status === 'pending').length,
-        underReview: allPapers.filter(p => p.status === 'under_review').length,
+        pending: 0,
         pendingAdmin: allPapers.filter(p => p.status === 'pending_admin').length,
         approved: allPapers.filter(p => p.status === 'approved').length,
         rejected: allPapers.filter(p => p.status === 'rejected').length,
@@ -107,11 +105,7 @@ const AdminReviewSubmissions = () => {
     if (statusFilter === 'all') {
       filtered = filtered;
     } else if (statusFilter === 'needs_action') {
-      filtered = filtered.filter(p => 
-        p.status === 'pending' || 
-        p.status === 'under_review' || 
-        p.status === 'pending_admin'
-      );
+      filtered = filtered.filter(p => p.status === 'pending_admin');
     } else if (statusFilter === 'pending_admin') {
       filtered = filtered.filter(p => p.status === 'pending_admin');
     } else {
@@ -176,14 +170,6 @@ const AdminReviewSubmissions = () => {
         borderColor: 'border-yellow-200',
         icon: Clock,
         label: 'Pending Staff Review'
-      },
-      under_review: {
-        color: 'from-blue-500 to-cyan-500',
-        bgColor: 'bg-gradient-to-r from-blue-100 to-cyan-100',
-        textColor: 'text-blue-800',
-        borderColor: 'border-blue-200',
-        icon: Eye,
-        label: 'Awaiting Final Approval'
       },
       approved: {
         color: 'from-green-500 to-emerald-500',
@@ -364,8 +350,7 @@ const AdminReviewSubmissions = () => {
           <div className="flex flex-wrap gap-3">
             {[
               { key: 'pending_admin', label: 'Awaiting Admin Approval', count: stats.pendingAdmin, color: '[#1C4D8D]' },
-              { key: 'needs_action', label: 'Needs Action', count: stats.pending + stats.underReview + stats.pendingAdmin, color: '[#1C4D8D]' },
-              { key: 'under_review', label: 'Under Review', count: stats.underReview, color: 'blue' },
+              { key: 'needs_action', label: 'Needs Action', count: stats.pending + stats.pendingAdmin, color: '[#1C4D8D]' },
               { key: 'pending', label: 'Pending Staff Review', count: stats.pending, color: 'amber' },
               { key: 'approved', label: 'Published', count: stats.approved, color: 'emerald' },
               { key: 'rejected', label: 'Rejected', count: stats.rejected, color: 'red' },
@@ -419,14 +404,14 @@ const AdminReviewSubmissions = () => {
               <BookOpen size={40} className="text-slate-400" />
             </div>
             <h3 className="text-2xl font-bold text-slate-900 mb-3">
-              {statusFilter === 'under_review' 
+              {statusFilter === 'pending_admin' 
                 ? 'No papers awaiting final approval'
                 : `No papers found with status: ${statusFilter.replace('_', ' ')}`
               }
             </h3>
             <p className="text-slate-600 mb-8 max-w-md mx-auto">
-              {statusFilter === 'under_review'
-                ? 'All pending papers have been processed or are currently under staff review.'
+              {statusFilter === 'pending_admin'
+                ? 'All papers that reached final admin review have been processed.'
                 : 'Try selecting a different filter to view more papers.'
               }
             </p>
@@ -597,7 +582,7 @@ const AdminReviewSubmissions = () => {
                         }}
                         className="inline-flex items-center gap-2 text-[#1C4D8D] hover:text-[#1C4D8D]/80 font-bold group/btn transition-colors"
                       >
-                        {paper.status === 'under_review' 
+                        {paper.status === 'pending_admin' 
                           ? 'Final Approval Required'
                           : paper.status === 'pending'
                             ? 'View Staff Review Progress'

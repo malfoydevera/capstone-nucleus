@@ -1,4 +1,10 @@
 import axios from 'axios';
+import {
+  clearAuthTokens,
+  getAccessToken,
+  getRefreshToken,
+  updateAuthTokens,
+} from './authStorage';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -9,9 +15,13 @@ const api = axios.create({
   },
 });
 
+export const unwrapApiData = (response) => response?.data?.data ?? response?.data ?? {};
+
+let refreshPromise = null;
+
 api.interceptors.request.use(
   (config) => {
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const token = getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -20,14 +30,69 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    const refreshToken = getRefreshToken();
+    const requestUrl = String(originalRequest?.url || '');
+
+    if (
+      error.response?.status !== 401
+      || originalRequest?._retry
+      || !refreshToken
+      || requestUrl.includes('/auth/login')
+      || requestUrl.includes('/auth/register')
+      || requestUrl.includes('/auth/refresh')
+    ) {
+      return Promise.reject(error);
+    }
+
+    originalRequest._retry = true;
+
+    try {
+      if (!refreshPromise) {
+        refreshPromise = axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken })
+          .then((response) => {
+            const accessToken = response.data?.token || response.data?.data?.token;
+            const nextRefreshToken = response.data?.refreshToken || response.data?.data?.refreshToken || refreshToken;
+
+            if (!accessToken) {
+              throw new Error('Refresh response did not include an access token');
+            }
+
+            updateAuthTokens(accessToken, nextRefreshToken);
+            return accessToken;
+          })
+          .finally(() => {
+            refreshPromise = null;
+          });
+      }
+
+      const nextAccessToken = await refreshPromise;
+      originalRequest.headers = {
+        ...(originalRequest.headers || {}),
+        Authorization: `Bearer ${nextAccessToken}`,
+      };
+
+      return api(originalRequest);
+    } catch (refreshError) {
+      clearAuthTokens();
+      return Promise.reject(refreshError);
+    }
+  }
+);
+
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
+  refreshSession: (refreshToken) => api.post('/auth/refresh', { refreshToken }),
   forgotPassword: (data) => api.post('/auth/forgot-password', data),
   resetPassword: (data) => api.post('/auth/reset-password', data),
   getCurrentUser: () => api.get('/auth/me'),
   getAllUsers: (role) => api.get('/auth/users', { params: { role } }),
   createUser: (data) => api.post('/auth/users/create', data),
+  updateUser: (id, data) => api.patch(`/auth/users/${id}`, data),
   importUsersCsv: (formData) => api.post('/auth/users/import-csv', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
@@ -70,7 +135,11 @@ export const researchAPI = {
   getCategories: () => api.get('/research/categories'),
   trackView: (id) => api.post(`/research/${id}/view`),
   trackDownload: (id) => api.post(`/research/${id}/download`),
-  getFacultyMembers: (department) => api.get('/research/faculty/members', { params: { department } }),
+  getFacultyMembers: (params) => api.get('/research/faculty/members', {
+    params: typeof params === 'string' || params == null
+      ? { department: params || undefined }
+      : params,
+  }),
   getFacultyAssignedPapers: (status) => api.get('/research/faculty/assigned', { params: { status } }),
   getFacultyWorkloadSummary: (overdueDays) => api.get('/research/faculty/workload', { params: { overdueDays } }),
   getDeanChairMembers: (department, includeDean = false) =>
@@ -140,7 +209,7 @@ export const departmentAPI = {
 
 export const aiAPI = {
   chatWithPaper: async (paperId, message) => {
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const token = getAccessToken();
     const response = await fetch(`${API_BASE_URL}/ai/chat`, {
       method: 'POST',
       headers: {
@@ -164,7 +233,7 @@ export const aiAPI = {
   },
 
   extractPdfMetadata: async (file) => {
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const token = getAccessToken();
     const formData = new FormData();
     formData.append('file', file);
 
@@ -190,7 +259,7 @@ export const aiAPI = {
   },
 
   getReviewSummary: async (paperId) => {
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const token = getAccessToken();
     const response = await fetch(`${API_BASE_URL}/ai/review-summary`, {
       method: 'POST',
       headers: {

@@ -1,5 +1,11 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { authAPI } from '../utils/api';
+import { authAPI, unwrapApiData } from '../utils/api';
+import {
+  clearAuthTokens,
+  getAccessToken,
+  getRefreshToken,
+  setAuthTokens,
+} from '../utils/authStorage';
 
 const AuthContext = createContext(null);
 
@@ -16,8 +22,6 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const getStoredToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
-
   useEffect(() => {
     checkAuth();
   }, []);
@@ -31,14 +35,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const checkAuth = async () => {
-    const token = getStoredToken();
-    if (token) {
+    const token = getAccessToken();
+    const refreshToken = getRefreshToken();
+
+    if (token || refreshToken) {
       try {
         const response = await authAPI.getCurrentUser();
-        setUser(response.data.user);
+        setUser(unwrapApiData(response).user || null);
       } catch (err) {
-        localStorage.removeItem('token');
-        sessionStorage.removeItem('token');
+        clearAuthTokens();
         setUser(null);
       }
     }
@@ -49,15 +54,9 @@ export const AuthProvider = ({ children }) => {
     try {
       setError(null);
       const response = await authAPI.login({ email, password });
-      const { token, user } = response.data;
+      const { token, refreshToken, user } = unwrapApiData(response);
 
-      if (rememberMe) {
-        localStorage.setItem('token', token);
-        sessionStorage.removeItem('token');
-      } else {
-        sessionStorage.setItem('token', token);
-        localStorage.removeItem('token');
-      }
+      setAuthTokens(token, refreshToken, rememberMe);
 
       setUser(user);
       return { success: true };
@@ -85,9 +84,8 @@ export const AuthProvider = ({ children }) => {
         department,
         departmentId,
       });
-      const { token, user } = response.data;
-      sessionStorage.setItem('token', token);
-      localStorage.removeItem('token');
+      const { token, refreshToken, user } = unwrapApiData(response);
+      setAuthTokens(token, refreshToken, false);
       setUser(user);
       return { success: true };
     } catch (err) {
@@ -98,8 +96,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('token');
+    clearAuthTokens();
     setUser(null);
   };
 
