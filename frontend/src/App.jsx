@@ -34,17 +34,18 @@ import AdminSystemHealth from './pages/admin/AdminSystemHealth';
 import AdminSettings from './pages/admin/AdminSettings';
 import ProfileDashboard from './pages/shared/ProfileDashboard';
 import Notifications from './pages/shared/Notifications';
+import UserGuide from './pages/shared/UserGuide';
 
 // NEW IMPORT for Research Detail View
 import ResearchDetail from './pages/student/ResearchDetail';
 // FacultyBrowseRepository removed — faculty now uses shared BrowseRepository
-import StaffBrowseRepository from './pages/staff/StaffBrowseRepository';
 
 const DashboardLayout = () => {
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-transparent">
+      <a href="#main-content" className="app-skip-link">Skip to main content</a>
       <Sidebar />
-      <main className="flex-1 overflow-x-hidden p-4 md:p-8">
+      <main id="main-content" className="app-main-content flex-1 overflow-x-hidden">
         <Outlet />
       </main>
     </div>
@@ -158,6 +159,11 @@ function App() {
             <Route path="/notifications" element={
               <ProtectedRoute allowedRoles={['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin']}>
                 <Notifications />
+              </ProtectedRoute>
+            } />
+            <Route path="/guide" element={
+              <ProtectedRoute allowedRoles={['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin']}>
+                <UserGuide />
               </ProtectedRoute>
             } />
             <Route path="/student/profile" element={<Navigate to="/profile" replace />} />

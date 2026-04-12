@@ -244,13 +244,13 @@ const ReviewDetail = () => {
 
   const handleApprove = async () => {
     if (!comments.trim()) {
-      toast.error('Please provide approval comments', { icon: '📝' });
+      toast.error('Please provide approval comments');
       return;
     }
 
     // Adviser must pick a Dean or Program Chair
     if (user?.role === 'faculty' && (!selectedTargetId || !selectedTargetRole)) {
-      toast.error('Please select a Dean or Program Chair to forward the paper to', { icon: '👤' });
+      toast.error('Please select a Dean or Program Chair to forward the paper to');
       return;
     }
     setActionLoading(true);
@@ -264,7 +264,7 @@ const ReviewDetail = () => {
         ? { targetUserId: selectedTargetId, targetRole: selectedTargetRole }
         : {};
       const response = await researchAPI.approveResearch(id, `${comments}${annotationSummary}`, extra);
-      toast.success('Research approved successfully! 🎉', { id: loadingToast, duration: 3000 });
+      toast.success('Research approved successfully.', { id: loadingToast, duration: 3000 });
       const reviewPath = user?.role === 'faculty' ? '/faculty/review'
         : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
         : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
@@ -279,9 +279,7 @@ const ReviewDetail = () => {
 
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      toast.error('Please provide a rejection reason', {
-        icon: '⚠️',
-      });
+      toast.error('Please provide a rejection reason');
       return;
     }
     setActionLoading(true);
@@ -291,7 +289,7 @@ const ReviewDetail = () => {
         ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
         : '';
       await researchAPI.rejectResearch(id, `${rejectionReason}${annotationSummary}`, rejectionCategory);
-      toast.success('Research rejected', { id: loadingToast, icon: '❌' });
+      toast.success('Research rejected', { id: loadingToast });
       const reviewPath = user?.role === 'faculty' ? '/faculty/review'
         : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
         : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
@@ -308,9 +306,7 @@ const ReviewDetail = () => {
 
   const handleRequestRevision = async () => {
     if (!revisionNotes.trim()) {
-      toast.error('Please provide revision notes', {
-        icon: '📋',
-      });
+      toast.error('Please provide revision notes');
       return;
     }
     setActionLoading(true);
@@ -327,7 +323,7 @@ const ReviewDetail = () => {
       console.log('Revision notes:', revisionNotes);
       
       const response = await researchAPI.requestRevision(id, `${revisionNotes}${annotationSummary}`);
-      toast.success('Revision requested successfully! 📝', { id: loadingToast, duration: 3000 });
+      toast.success('Revision requested successfully.', { id: loadingToast, duration: 3000 });
       const reviewPath = user?.role === 'faculty' ? '/faculty/review'
         : ['dean', 'program_chair'].includes(user?.role) ? '/dean/review'
         : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
@@ -343,7 +339,7 @@ const ReviewDetail = () => {
 
   const handleAssignFacultyReviewer = async () => {
     if (!selectedFacultyId) {
-      toast.error('Please select a faculty reviewer', { icon: '👤' });
+      toast.error('Please select a faculty reviewer');
       return;
     }
 
@@ -365,7 +361,7 @@ const ReviewDetail = () => {
 
   const handleSetReviewDeadline = async () => {
     if (!deadlineValue) {
-      toast.error('Please select a deadline date and time', { icon: '⏰' });
+      toast.error('Please select a deadline date and time');
       return;
     }
 
@@ -385,7 +381,7 @@ const ReviewDetail = () => {
 
   const handleReturnToAuthor = async () => {
     if (!returnToAuthorNotes.trim()) {
-      toast.error('Please provide return notes for the author', { icon: '📝' });
+      toast.error('Please provide return notes for the author');
       return;
     }
 
@@ -406,7 +402,7 @@ const ReviewDetail = () => {
 
   const handleCorrectMetadata = async () => {
     if (!metadataForm.title.trim() || !metadataForm.abstract.trim()) {
-      toast.error('Title and abstract are required', { icon: '📝' });
+      toast.error('Title and abstract are required');
       return;
     }
 
@@ -1404,7 +1400,7 @@ const ReviewDetail = () => {
             </div>
             <div className="p-6 space-y-4">
               <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
-                <p className="text-sm text-amber-800 font-medium">⚠️ This action will bypass the normal approval workflow. A mandatory reason is required and will be permanently logged.</p>
+                <p className="text-sm text-amber-800 font-medium">This action bypasses the normal approval workflow. A mandatory reason is required and will be permanently logged.</p>
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">

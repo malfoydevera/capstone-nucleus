@@ -73,6 +73,26 @@ const Landing = () => {
           <div className="h-6 w-px bg-white/20 mx-2"></div>
           {authAction}
         </div>
+
+        <div className="md:hidden">
+          {user ? (
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="rounded-lg bg-[#1C4D8D] px-4 py-2 text-sm font-semibold text-white shadow-md"
+            >
+              Dashboard
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Link to="/login" className="rounded-lg border border-white/20 px-3 py-2 text-sm font-medium text-white/95 backdrop-blur-sm">
+                Sign In
+              </Link>
+              <Link to="/register" className="rounded-lg bg-[#1C4D8D] px-3 py-2 text-sm font-semibold text-white shadow-md">
+                Get Started
+              </Link>
+            </div>
+          )}
+        </div>
       </nav>
 
       {/* Hero Section */}

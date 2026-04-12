@@ -55,7 +55,7 @@ const Login = () => {
         localStorage.removeItem('rememberedEmail');
       }
 
-      toast.success('Welcome back! 👋', {
+      toast.success('Welcome back.', {
         id: loadingToast,
         duration: 2000,
       });
@@ -189,7 +189,7 @@ const Login = () => {
                   <LogIn size={28} className="text-white transition-transform duration-500 hover:scale-110" />
                 </div>
                 <h2 className="text-3xl font-bold text-slate-900 mb-2 transition-all duration-500 hover:text-indigo-700">
-                  Sign In to ResearchHub
+                  Sign In to NUCLEUS
                 </h2>
                 <p className="text-slate-600 font-medium transition-all duration-500 hover:text-slate-700">
                   Enter your institutional credentials
@@ -320,7 +320,7 @@ const Login = () => {
                   </div>
                   <div className="relative flex justify-center text-sm">
                     <span className="px-4 bg-white text-slate-500 font-medium transition-all duration-500 hover:text-slate-700">
-                      New to ResearchHub?
+                      New to NUCLEUS?
                     </span>
                   </div>
                 </div>

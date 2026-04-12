@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { researchAPI, authAPI, aiAPI, departmentsAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import GuidancePanel from '../../components/ui/GuidancePanel';
 
 const TYPE_TO_MIME = {
   pdf: 'application/pdf',
@@ -279,7 +280,6 @@ const SubmitResearch = () => {
         await extractPdfMetadata(uploadedFile);
       } else {
         toast('Metadata extraction is available for PDF uploads only.', {
-          icon: 'ℹ️',
           duration: 2500,
         });
       }
@@ -335,13 +335,11 @@ const SubmitResearch = () => {
       if (extractedTitle || extractedAbstract) {
         toast.success('Title and abstract extracted successfully!', {
           id: 'extract',
-          icon: '✨',
           duration: 3000,
         });
       } else {
         toast('No clear metadata found. Please review fields manually.', {
           id: 'extract',
-          icon: 'ℹ️',
           duration: 3000,
         });
       }
@@ -422,7 +420,6 @@ const SubmitResearch = () => {
     if (!selectedCoAuthors.find(a => a.id === student.id)) {
       setSelectedCoAuthors([...selectedCoAuthors, student]);
       toast.success(`Added ${formatFullName(student)} as co-author`, {
-        icon: '👤',
         duration: 2000,
       });
     }
@@ -434,7 +431,6 @@ const SubmitResearch = () => {
   const removeCoAuthor = (studentId) => {
     setSelectedCoAuthors(selectedCoAuthors.filter(a => a.id !== studentId));
     toast('Co-author removed', {
-      icon: '🗑️',
       duration: 2000,
     });
   };
@@ -510,7 +506,7 @@ const SubmitResearch = () => {
         console.error('Failed to delete server draft after submit:', draftDeleteErr);
       }
       
-      toast.success(resubmitData ? 'Research resubmitted successfully! 🎉' : 'Research submitted successfully! 🎉', {
+      toast.success(resubmitData ? 'Research resubmitted successfully.' : 'Research submitted successfully.', {
         duration: 3000,
       });
       setSuccess(true);
@@ -612,6 +608,19 @@ const SubmitResearch = () => {
               Academic Integrity Verified
             </div>
           </div>
+        </div>
+
+        <div className="mt-6">
+          <GuidancePanel
+            title="Submission Guidance"
+            description="Complete the fields in order so your paper routes to the correct reviewer and can be recovered easily if revision is required."
+            items={[
+              'Upload the final document first so title and abstract extraction can populate the form accurately.',
+              'Confirm your adviser, department, and co-authors before submitting because those values affect routing and notifications.',
+              'Use the draft status message as a checkpoint, then review the policy notes at the bottom before submitting.',
+            ]}
+            tone="blue"
+          />
         </div>
       </div>
 
@@ -927,7 +936,7 @@ const SubmitResearch = () => {
             </div>
             {facultyMembers && facultyMembers.length === 0 && (
               <p className="text-sm text-amber-600">
-                ⚠️ No faculty members found. You can still submit without a faculty advisor.
+                No faculty members found. You can still submit without a faculty advisor.
               </p>
             )}
             {facultyMembers && facultyMembers.length > 0 && (

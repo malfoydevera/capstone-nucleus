@@ -26,6 +26,10 @@ import {
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
+
+const PAGE_SIZE = 4;
 
 const AdminReviewSubmissions = () => {
   const navigate = useNavigate();
@@ -44,6 +48,7 @@ const AdminReviewSubmissions = () => {
     total: 0,
     deleted: 0,
   });
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
@@ -64,6 +69,10 @@ const AdminReviewSubmissions = () => {
   useEffect(() => {
     filterPapers();
   }, [papers, statusFilter, showRecycleBin]);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [statusFilter, showRecycleBin, filteredPapers.length]);
 
   const fetchPapers = async () => {
     try {
@@ -219,6 +228,10 @@ const AdminReviewSubmissions = () => {
     );
   };
 
+  const visiblePapers = filteredPapers.slice(0, visibleCount);
+  const canLoadMore = visibleCount < filteredPapers.length;
+  const loadMoreRef = useAutoLoadMore({ canLoadMore, setVisibleCount, step: PAGE_SIZE });
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -265,6 +278,19 @@ const AdminReviewSubmissions = () => {
               Export Data
             </button> */}
           </div>
+        </div>
+
+        <div className="mb-6">
+          <GuidancePanel
+            title="Final Approval Guidance"
+            description="This queue is for final administrative decisions after earlier reviewers have already completed their part of the workflow."
+            items={[
+              'Prioritize papers marked Awaiting Admin Approval before reviewing historical or already-published records.',
+              'Use status filters carefully because staff-review items and final-approval items imply different next actions.',
+              'When rejecting or restoring a paper, make sure the audit trail and recycle-window implications are clear.',
+            ]}
+            tone="violet"
+          />
         </div>
       </div>
 
@@ -435,7 +461,8 @@ const AdminReviewSubmissions = () => {
               <div>
                 <h3 className="text-xl font-bold text-slate-900">Research Submissions</h3>
                 <p className="text-slate-600 text-sm">
-                  {filteredPapers.length} {filteredPapers.length === 1 ? 'paper' : 'papers'} found
+                  Showing {visiblePapers.length} of {filteredPapers.length}{' '}
+                  {filteredPapers.length === 1 ? 'paper' : 'papers'}
                 </p>
               </div>
             </div>
@@ -447,7 +474,7 @@ const AdminReviewSubmissions = () => {
             </div>
           </div>
 
-          {filteredPapers.map((paper) => {
+          {visiblePapers.map((paper) => {
             const statusConfig = getStatusConfig(paper.deleted_at ? 'deleted' : paper.status);
             const StatusIcon = statusConfig.icon;
 
@@ -596,6 +623,21 @@ const AdminReviewSubmissions = () => {
               </div>
             );
           })}
+
+          {filteredPapers.length > PAGE_SIZE ? (
+            <div ref={loadMoreRef} className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-center">
+              {canLoadMore ? (
+                <button
+                  onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                  className="h-10 px-4 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Load more papers
+                </button>
+              ) : (
+                <p className="text-sm text-slate-600">All matching papers are visible.</p>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
     </div>

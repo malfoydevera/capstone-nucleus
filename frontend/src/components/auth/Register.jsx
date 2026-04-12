@@ -108,17 +108,13 @@ const Register = () => {
     setError('');
 
     if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match', {
-        icon: '🔒',
-      });
+      toast.error('Passwords do not match');
       setError('Passwords do not match');
       return;
     }
 
     if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters', {
-        icon: '⚠️',
-      });
+      toast.error('Password must be at least 6 characters');
       setError('Password must be at least 6 characters');
       return;
     }
@@ -142,7 +138,7 @@ const Register = () => {
     setLoading(false);
 
     if (result.success) {
-      toast.success('Account created successfully! Welcome! 🎉', {
+      toast.success('Account created successfully.', {
         id: loadingToast,
         duration: 3000,
       });
@@ -250,7 +246,7 @@ const Register = () => {
                 <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
                   <BookOpen size={20} className="text-white" />
                 </div>
-                <span className="font-bold text-xl tracking-tight">ResearchHub</span>
+                <span className="font-bold text-xl tracking-tight">NUCLEUS</span>
               </Link>
               <h1 className="text-2xl font-bold">Create Your Account</h1>
             </div>
@@ -264,7 +260,7 @@ const Register = () => {
                   Create Academic Account
                 </h2>
                 <p className="text-slate-600 font-medium text-sm lg:text-base">
-                  Join the ResearchHub community
+                  Join the NUCLEUS community
                 </p>
               </div>
 

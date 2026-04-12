@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 /**
  * M-003: React Error Boundary
@@ -30,7 +31,9 @@ class ErrorBoundary extends Component {
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
-            <div className="text-6xl mb-4">⚠️</div>
+            <div className="mb-4 flex justify-center text-amber-600">
+              <AlertTriangle size={48} />
+            </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
               Something went wrong
             </h1>

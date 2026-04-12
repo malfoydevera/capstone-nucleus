@@ -17,6 +17,8 @@ import {
   Moon
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import { getRoleGuidance } from '../../utils/guidance';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -139,6 +141,7 @@ const CircularProgress = ({ percentage, color, size = 48 }) => {
 const StudentDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const guide = getRoleGuidance(user?.role);
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -274,15 +277,15 @@ const StudentDashboard = () => {
     <div className="min-h-screen bg-slate-50/50">
       <div className="max-w-7xl mx-auto px-6 py-8 animate-fadeIn">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
+        <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-4">
             <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-sm text-slate-600">
               <Calendar size={14} />
               <span>{new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1 p-1 bg-white rounded-lg border border-slate-200">
               <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Sun size={16} /></button>
               <button className="p-1.5 rounded bg-slate-100 text-slate-600"><div className="w-4 h-4 rounded-full bg-slate-600"></div></button>
@@ -294,9 +297,18 @@ const StudentDashboard = () => {
                 alt="Profile"
                 className="w-9 h-9 rounded-full"
               />
-              <span className="text-sm font-medium text-slate-700">{user?.fullName}</span>
+              <span className="text-sm font-medium text-slate-700 hidden sm:inline">{user?.fullName}</span>
             </div>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <GuidancePanel
+            title={guide.heading}
+            description={guide.summary}
+            items={guide.dashboardSteps}
+            tone="blue"
+          />
         </div>
 
         {/* Stats Row 1 */}

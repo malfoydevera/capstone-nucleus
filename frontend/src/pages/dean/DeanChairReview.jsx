@@ -19,8 +19,11 @@ import {
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PAGE_SIZE = 4;
 
 const DeanChairReview = () => {
   const navigate = useNavigate();
@@ -35,6 +38,7 @@ const DeanChairReview = () => {
   const [stats, setStats] = useState({
     pendingReview: 0, revisionRequired: 0, forwarded: 0, total: 0
   });
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const isDean = user?.role === 'dean';
   const pendingStatus = isDean ? 'pending_dean' : 'pending_program_chair';
@@ -52,6 +56,10 @@ const DeanChairReview = () => {
   useEffect(() => {
     filterAndSearchPapers();
   }, [papers, statusFilter, searchTerm]);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [statusFilter, searchTerm, filteredPapers.length]);
 
   const fetchPapers = async (silent = false) => {
     if (!silent) setRefreshing(true);
@@ -193,6 +201,10 @@ const DeanChairReview = () => {
     { id: 'all', label: 'All Assigned', count: stats.total, color: 'from-slate-500 to-slate-700' }
   ];
 
+  const visiblePapers = filteredPapers.slice(0, visibleCount);
+  const canLoadMore = visibleCount < filteredPapers.length;
+  const loadMoreRef = useAutoLoadMore({ canLoadMore, setVisibleCount, step: PAGE_SIZE });
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -232,6 +244,27 @@ const DeanChairReview = () => {
             <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
+        </div>
+
+        <div className="mb-6">
+          <GuidancePanel
+            title={isDean ? 'Dean Queue Guidance' : 'Program Chair Queue Guidance'}
+            description={isDean
+              ? 'Use this queue for dean-level oversight, intervention, and cross-department approvals.'
+              : 'Use this queue to clear program-scoped submissions before editorial review.'}
+            items={isDean
+              ? [
+                  'Prioritize escalated or bypass-sensitive papers first because they affect audit visibility and queue trust.',
+                  'Confirm the author, status, and category on the card before opening the full review detail.',
+                  'Use intervention only when the normal workflow is blocked and document the reason clearly.',
+                ]
+              : [
+                  'Handle pending reviews first so program-level clearance does not delay editorial review.',
+                  'Check deadlines and return notes before opening the paper so the decision context is clear.',
+                  'Only approve when the paper is ready for the next stage, not just academically promising.',
+                ]}
+            tone={isDean ? 'violet' : 'emerald'}
+          />
         </div>
 
         {/* Stats Cards */}
@@ -313,7 +346,24 @@ const DeanChairReview = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {filteredPapers.map((paper) => {
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Assigned Papers</h2>
+              <p className="text-sm text-slate-600">
+                Showing {visiblePapers.length} of {filteredPapers.length} matching papers
+              </p>
+            </div>
+            {canLoadMore ? (
+              <button
+                onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                className="h-10 px-4 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Load more papers
+              </button>
+            ) : null}
+          </div>
+
+          {visiblePapers.map((paper) => {
             const statusConfig = getStatusConfig(paper.status);
             const StatusIcon = statusConfig.icon;
 
@@ -385,6 +435,12 @@ const DeanChairReview = () => {
               </div>
             );
           })}
+
+          {filteredPapers.length > PAGE_SIZE ? (
+            <div ref={loadMoreRef} className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-center text-sm text-slate-600">
+              {canLoadMore ? 'Scroll or use Load more to continue through the queue.' : 'All matching papers are visible.'}
+            </div>
+          ) : null}
         </div>
       )}
     </div>

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { authAPI, departmentsAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName, getInitials } from '../../utils/names';
+import GuidancePanel from '../../components/ui/GuidancePanel';
 
 const emptyCreateForm = {
   email: '',
@@ -46,6 +47,15 @@ const emptyEditForm = {
   departmentId: '',
   program: '',
   programId: '',
+};
+
+const ROLE_SEARCH_TOKENS = {
+  admin: 'admin administrator system admin',
+  faculty: 'faculty adviser adviser reviewer',
+  dean: 'dean dean reviewer',
+  program_chair: 'program chair program_chair chair reviewer',
+  staff: 'staff research editor editor',
+  student: 'student researcher',
 };
 
 const UserManagement = () => {
@@ -84,22 +94,14 @@ const UserManagement = () => {
     const focusOrgGaps = searchParams.get('orgGaps') === '1';
     const focusNameReview = searchParams.get('nameReview') === '1';
     const focusRole = searchParams.get('role') || 'all';
+    const validRole = ['all', 'admin', 'faculty', 'dean', 'program_chair', 'staff', 'student'].includes(focusRole)
+      ? focusRole
+      : 'all';
 
-    if (focusEmail) {
-      setSearchTerm(focusEmail);
-    }
-
-    if (focusOrgGaps) {
-      setShowOnlyOrganizationGaps(true);
-    }
-
-    if (focusNameReview) {
-      setShowOnlyNameReviewGaps(true);
-    }
-
-    if (focusRole && ['all', 'admin', 'faculty', 'dean', 'program_chair', 'staff', 'student'].includes(focusRole)) {
-      setSelectedRole(focusRole);
-    }
+    setSearchTerm(focusEmail);
+    setShowOnlyOrganizationGaps(focusOrgGaps);
+    setShowOnlyNameReviewGaps(focusNameReview);
+    setSelectedRole(validRole);
   }, [searchParams]);
 
   useEffect(() => {
@@ -190,7 +192,10 @@ const UserManagement = () => {
       filtered = filtered.filter(user => 
         formatFullName(user).toLowerCase().includes(lowerSearch) ||
         user.email?.toLowerCase().includes(lowerSearch) ||
-        user.role?.toLowerCase().includes(lowerSearch)
+        user.role?.toLowerCase().includes(lowerSearch) ||
+        (ROLE_SEARCH_TOKENS[user.role] || '').includes(lowerSearch) ||
+        String(user.department || '').toLowerCase().includes(lowerSearch) ||
+        String(user.program || '').toLowerCase().includes(lowerSearch)
       );
     }
 
@@ -358,7 +363,7 @@ const UserManagement = () => {
       const createdUser = unwrapApiData(response).user;
       setUsers(prev => [createdUser, ...prev]);
       toast.success(`${createdUser.role.replace('_', ' ')} account created!`, {
-        id: loadingToast, icon: '✅', duration: 3000
+        id: loadingToast, duration: 3000
       });
       closeCreateModal();
     } catch (err) {
@@ -379,7 +384,6 @@ const UserManagement = () => {
       setUsers(users.filter(u => u.id !== userToDelete.id));
       toast.success(`User ${formatFullName(userToDelete)} deleted successfully`, {
         id: loadingToast,
-        icon: '🗑️',
         duration: 3000,
       });
       setShowDeleteModal(false);
@@ -640,6 +644,19 @@ const UserManagement = () => {
               Add User
             </button>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <GuidancePanel
+            title="User Management Guidance"
+            description="Use this page to fix account scope, resolve name-quality gaps, and keep every role mapped to the right department or program."
+            items={[
+              'Start with Org Gaps and Name Review filters so the highest-risk data issues are corrected first.',
+              'Open Edit before suspending or deleting an account when the issue is incomplete profile data rather than misuse.',
+              'Use the shared User Guide when roles need workflow expectations in addition to account changes.',
+            ]}
+            tone="violet"
+          />
         </div>
       </div>
 

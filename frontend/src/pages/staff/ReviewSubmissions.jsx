@@ -30,6 +30,10 @@ import {
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
+
+const PAGE_SIZE = 4;
 
 const ReviewSubmissions = () => {
   const navigate = useNavigate();
@@ -46,6 +50,7 @@ const ReviewSubmissions = () => {
     rejected: 0,
     revisionRequired: 0
   });
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     fetchPapers();
@@ -61,6 +66,10 @@ const ReviewSubmissions = () => {
   useEffect(() => {
     filterAndSearchPapers();
   }, [papers, statusFilter, searchTerm]);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [statusFilter, searchTerm, filteredPapers.length]);
 
   const fetchPapers = async (silent = false) => {
     if (!silent) setRefreshing(true);
@@ -231,6 +240,10 @@ const ReviewSubmissions = () => {
     { id: 'all', label: 'All Papers', count: papers.length, color: 'from-slate-500 to-slate-700' }
   ];
 
+  const visiblePapers = filteredPapers.slice(0, visibleCount);
+  const canLoadMore = visibleCount < filteredPapers.length;
+  const loadMoreRef = useAutoLoadMore({ canLoadMore, setVisibleCount, step: PAGE_SIZE });
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -265,6 +278,19 @@ const ReviewSubmissions = () => {
               Research Editor
             </div>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <GuidancePanel
+            title="Editorial Queue Guidance"
+            description="Use this queue to validate metadata, identify revisions, and keep each paper moving through the editorial review stage."
+            items={[
+              'Start with Needs Review so waiting papers are handled before already-reviewed items.',
+              'Check the card details first so you know whether you are validating metadata, requesting revision, or reviewing an updated submission.',
+              'When you return a paper, make the correction path explicit so the author knows what to do next.',
+            ]}
+            tone="amber"
+          />
         </div>
 
         <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50 p-5">
@@ -407,12 +433,13 @@ const ReviewSubmissions = () => {
               </div>
             </div>
             <div className="text-sm text-slate-600">
-              Sorted by: <span className="font-medium">Newest First</span>
+              Showing <span className="font-medium">{visiblePapers.length}</span> of{' '}
+              <span className="font-medium">{filteredPapers.length}</span>
             </div>
           </div>
 
           {/* Papers Grid */}
-          {filteredPapers.map((paper) => {
+          {visiblePapers.map((paper) => {
             const statusConfig = getStatusConfig(paper.status);
             const StatusIcon = statusConfig.icon;
             
@@ -520,6 +547,21 @@ const ReviewSubmissions = () => {
               </div>
             );
           })}
+
+          {filteredPapers.length > PAGE_SIZE ? (
+            <div ref={loadMoreRef} className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-center">
+              {canLoadMore ? (
+                <button
+                  onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                  className="h-10 px-4 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Load more papers
+                </button>
+              ) : (
+                <p className="text-sm text-slate-600">All matching papers are visible.</p>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
 

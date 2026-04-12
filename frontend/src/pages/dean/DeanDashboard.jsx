@@ -8,10 +8,13 @@ import {
 } from 'lucide-react';
 import { notificationsAPI, researchAPI } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import { getRoleGuidance } from '../../utils/guidance';
 
 const DeanDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const guide = getRoleGuidance(user?.role);
   const [monitorData, setMonitorData] = useState(null);
   const [deptComparison, setDeptComparison] = useState(null);
   const [escalationAlerts, setEscalationAlerts] = useState([]);
@@ -118,23 +121,41 @@ const DeanDashboard = () => {
   return (
     <div className="min-h-screen bg-slate-50/50">
       <div className="max-w-7xl mx-auto px-6 py-8 animate-fadeIn">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-600 to-purple-600 flex items-center justify-center shadow-lg">
-              <Award size={22} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Dean Dashboard</h1>
-              <p className="text-sm text-slate-500">
-                System overview & monitoring &middot; {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
+        <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-4">
+            <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-sm text-slate-600">
+              <Clock size={14} />
+              <span>{new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
           </div>
-          <button onClick={fetchDashboard} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:border-slate-300 transition-all text-sm font-semibold">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={fetchDashboard}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:border-slate-300 transition-all text-sm font-semibold"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+            <div className="flex items-center gap-2">
+              <img
+                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Dean')}&background=7c3aed&color=fff`}
+                alt="Profile"
+                className="w-9 h-9 rounded-full"
+              />
+              <span className="hidden text-sm font-medium text-slate-700 sm:inline">{user?.fullName}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <GuidancePanel
+            title={guide.heading}
+            description={guide.summary}
+            items={guide.dashboardSteps}
+            tone="violet"
+          />
         </div>
 
         {/* Inactivity Alerts */}
@@ -185,29 +206,35 @@ const DeanDashboard = () => {
           </div>
         )}
 
-        {/* System-wide Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5 mb-5">
           {[
-            { label: 'With Advisers', value: s.pendingFaculty, color: 'from-blue-50 to-indigo-50 border-blue-200', text: 'text-blue-700' },
-            { label: 'With Program Chair', value: s.pendingProgramChair, color: 'from-teal-50 to-cyan-50 border-teal-200', text: 'text-teal-700' },
-            { label: 'With Dean', value: s.pendingDean, color: 'from-violet-50 to-purple-50 border-violet-200', text: 'text-violet-700' },
-            { label: 'With Editor', value: s.pendingEditor, color: 'from-sky-50 to-blue-50 border-sky-200', text: 'text-sky-700' },
-            { label: 'With Admin', value: s.pendingAdmin, color: 'from-indigo-50 to-blue-50 border-indigo-200', text: 'text-indigo-700' },
-            { label: 'Approved', value: s.approved, color: 'from-emerald-50 to-green-50 border-emerald-200', text: 'text-emerald-700' },
-            { label: 'Rejected', value: s.rejected, color: 'from-red-50 to-pink-50 border-red-200', text: 'text-red-700' },
-            { label: 'Revision Req.', value: s.revisionRequired, color: 'from-orange-50 to-amber-50 border-orange-200', text: 'text-orange-700' },
-            { label: 'Bypassed', value: s.bypassed, color: 'from-purple-50 to-violet-50 border-purple-200', text: 'text-purple-700' },
-            { label: 'Total Papers', value: s.total, color: 'bg-white border-slate-200', text: 'text-slate-700' },
-          ].map(card => (
-            <div key={card.label} className={`bg-gradient-to-br ${card.color} rounded-2xl border-2 p-5 shadow-sm hover:shadow-md transition-shadow`}>
-              <p className={`text-xs font-semibold mb-1 ${card.text}`}>{card.label}</p>
-              <p className="text-3xl font-black text-slate-900">{card.value || 0}</p>
-            </div>
-          ))}
+            { label: 'With Program Chair', value: s.pendingProgramChair, hint: 'awaiting chair decision', iconBg: 'bg-teal-50', iconText: 'text-teal-600', icon: Users },
+            { label: 'With Dean', value: s.pendingDean, hint: 'needs dean review', iconBg: 'bg-violet-50', iconText: 'text-violet-600', icon: Award },
+            { label: 'With Editor', value: s.pendingEditor, hint: 'in editorial review', iconBg: 'bg-sky-50', iconText: 'text-sky-600', icon: FileText },
+            { label: 'Approved', value: s.approved, hint: 'published or cleared', iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', icon: Shield },
+            { label: 'Total Papers', value: s.total, hint: `${s.revisionRequired || 0} revision required`, iconBg: 'bg-slate-100', iconText: 'text-slate-600', icon: BookOpen },
+          ].map((card) => {
+            const Icon = card.icon;
+            return (
+              <div key={card.label} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm text-slate-500 mb-1">{card.label}</p>
+                    <p className="text-3xl font-bold text-slate-900">{card.value || 0}</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-xl ${card.iconBg} flex items-center justify-center`}>
+                    <Icon size={20} className={card.iconText} />
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-1">
+                  <span className="text-xs text-slate-400">{card.hint}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
           <button onClick={() => navigate('/dean/review')} className="bg-gradient-to-r from-violet-600 to-purple-600 text-white px-6 py-4 rounded-2xl font-bold flex items-center gap-3 hover:from-violet-700 hover:to-purple-700 transition-all shadow-lg">
             <FileText size={24} /> Review Papers <ChevronRight className="ml-auto" size={20} />
           </button>

@@ -15,6 +15,10 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { notificationsAPI, unwrapApiData } from '../../utils/api';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
+
+const APPROVAL_PAGE_SIZE = 3;
 
 const formatTimeAgo = (isoDate) => {
   if (!isoDate) return 'just now';
@@ -43,6 +47,7 @@ const Notifications = () => {
   const [query, setQuery] = useState('');
   const [showNotes, setShowNotes] = useState(true);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [visibleApprovalCount, setVisibleApprovalCount] = useState(APPROVAL_PAGE_SIZE);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.is_read).length,
@@ -159,8 +164,22 @@ const Notifications = () => {
   const approvalItems = useMemo(() => {
     return searchedNotifications
       .filter((item) => getCategory(item) === 'approval' && item.id !== highPriorityNotification?.id)
-      .slice(0, 6);
   }, [highPriorityNotification?.id, searchedNotifications]);
+
+  const visibleApprovalItems = useMemo(
+    () => approvalItems.slice(0, visibleApprovalCount),
+    [approvalItems, visibleApprovalCount]
+  );
+  const canLoadMoreApprovals = visibleApprovalCount < approvalItems.length;
+  const approvalLoadMoreRef = useAutoLoadMore({
+    canLoadMore: canLoadMoreApprovals,
+    setVisibleCount: setVisibleApprovalCount,
+    step: APPROVAL_PAGE_SIZE,
+  });
+
+  useEffect(() => {
+    setVisibleApprovalCount(APPROVAL_PAGE_SIZE);
+  }, [activeTab, query, approvalItems.length, highPriorityNotification?.id]);
 
   const snapshot = useMemo(() => {
     const pendingRevision = categorized.action.filter((item) => !item.is_read).length;
@@ -289,6 +308,19 @@ const Notifications = () => {
               </button>
             </div>
 
+            <div className="mt-5">
+              <GuidancePanel
+                title="Notification Guidance"
+                description="Use notifications to understand what changed, who acted, and which page to open next."
+                items={[
+                  'Open unread action items first because they usually require a response or a workflow decision.',
+                  'Use search and tabs to separate urgent revisions from general workflow updates.',
+                  'If a notification is unclear, open the linked paper or the User Guide before taking action.',
+                ]}
+                tone="blue"
+              />
+            </div>
+
             <div className="mt-4 space-y-4">
               {highPriorityNotification ? (
                 <article className="rounded-md border border-amber-200 bg-white shadow-sm overflow-hidden animate-slideInLeft">
@@ -360,7 +392,7 @@ const Notifications = () => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {approvalItems.map((item, index) => (
+                    {visibleApprovalItems.map((item, index) => (
                       <article
                         key={item.id}
                         className="rounded-md border border-emerald-100 bg-white p-4 shadow-sm"
@@ -398,6 +430,24 @@ const Notifications = () => {
                         </div>
                       </article>
                     ))}
+
+                    {approvalItems.length > APPROVAL_PAGE_SIZE ? (
+                      <div ref={approvalLoadMoreRef} className="rounded-md border border-emerald-100 bg-white/90 px-4 py-4 text-center">
+                        <p className="text-sm text-slate-600">
+                          Showing {visibleApprovalItems.length} of {approvalItems.length} workflow updates
+                        </p>
+                        {canLoadMoreApprovals ? (
+                          <button
+                            onClick={() => setVisibleApprovalCount((count) => count + APPROVAL_PAGE_SIZE)}
+                            className="mt-3 h-9 px-4 rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            Load more updates
+                          </button>
+                        ) : (
+                          <p className="mt-2 text-xs text-slate-500">All matching workflow updates are visible.</p>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </section>

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { departmentAPI, researchAPI, unwrapApiData } from '../../utils/api';
 import { Download, FileText, Filter, User } from 'lucide-react';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import { getRoleGuidance } from '../../utils/guidance';
 
 const roleLabel = {
   student: 'Student',
@@ -61,6 +63,7 @@ const downloadBlob = (content, fileName, contentType) => {
 
 const ProfileDashboard = () => {
   const { user } = useAuth();
+  const guide = getRoleGuidance(user?.role);
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState([]);
   const [stats, setStats] = useState({ totalRecords: 0, uploadedCount: 0, publishedCount: 0 });
@@ -247,6 +250,17 @@ const ProfileDashboard = () => {
           </div>
         </div>
       </div>
+
+      <GuidancePanel
+        title={`${guide.heading} Support`}
+        description="Use your profile to export records, confirm account scope, and verify that your papers are mapped to the right department or program."
+        items={[
+          'Check your role, department, and program details before reporting missing papers or wrong queue assignments.',
+          'Use filters to narrow exported records so reports match the exact date range or status you need.',
+          'If profile data looks incomplete, open the User Guide and contact the appropriate role owner before continuing.',
+        ]}
+        tone="slate"
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 p-5">

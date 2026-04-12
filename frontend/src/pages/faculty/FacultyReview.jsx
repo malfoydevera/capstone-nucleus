@@ -23,8 +23,11 @@ import {
 } from 'lucide-react';
 import { aiAPI, researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PAGE_SIZE = 4;
 
 const getDepartmentScopeKey = (paper) => paper?.department_id || paper?.department || 'unassigned';
 
@@ -57,6 +60,7 @@ const FacultyReview = () => {
   const [conflictModalPaper, setConflictModalPaper] = useState(null);
   const [conflictReason, setConflictReason] = useState('');
   const [conflictLoading, setConflictLoading] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     fetchPapers();
@@ -71,7 +75,11 @@ const FacultyReview = () => {
 
   useEffect(() => {
     filterAndSearchPapers();
-  }, [papers, statusFilter, searchTerm]);
+  }, [papers, statusFilter, searchTerm, departmentFilter, dateFilter, sortBy]);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [statusFilter, searchTerm, departmentFilter, dateFilter, sortBy, filteredPapers.length]);
 
   const fetchPapers = async (silent = false) => {
     if (!silent) setRefreshing(true);
@@ -117,14 +125,22 @@ const FacultyReview = () => {
 
     // Apply search filter
     if (searchTerm) {
-      filtered = filtered.filter(paper =>
-        paper.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.abstract.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        formatFullName(paper.users).toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.keywords?.some(keyword => 
-          keyword.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      );
+      const normalizedSearch = searchTerm.toLowerCase();
+      filtered = filtered.filter((paper) => {
+        const searchCorpus = [
+          paper.title,
+          paper.abstract,
+          paper.file_name,
+          paper.department,
+          formatFullName(paper.users),
+          ...(paper.keywords || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return searchCorpus.includes(normalizedSearch);
+      });
     }
 
     if (departmentFilter !== 'all') {
@@ -244,6 +260,10 @@ const FacultyReview = () => {
     { id: 'all', label: 'All Assigned', count: stats.total, color: 'from-slate-500 to-slate-700' }
   ];
 
+  const visiblePapers = filteredPapers.slice(0, visibleCount);
+  const canLoadMore = visibleCount < filteredPapers.length;
+  const loadMoreRef = useAutoLoadMore({ canLoadMore, setVisibleCount, step: PAGE_SIZE });
+
   const departmentOptions = [
     { value: 'all', label: 'all' },
     ...Array.from(
@@ -322,7 +342,7 @@ const FacultyReview = () => {
     <div className="max-w-7xl mx-auto px-4 py-8 animate-fadeIn">
       {/* Header */}
       <div className="mb-10">
-        <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
               <GraduationCap size={28} className="text-white" />
@@ -345,6 +365,19 @@ const FacultyReview = () => {
             <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
+        </div>
+
+        <div className="mb-6">
+          <GuidancePanel
+            title="Faculty Queue Guidance"
+            description="Review assigned papers in order, record a clear decision, and make the next step obvious to the student and downstream reviewers."
+            items={[
+              'Filter the queue first so you can separate pending reviews from returned papers with revision notes.',
+              'Open a paper only after checking its status badge, author, and any return notes shown on the card.',
+              'Use approval comments or revision notes that tell the student exactly what happens next.',
+            ]}
+            tone="amber"
+          />
         </div>
 
         {/* Stats Cards */}
@@ -392,16 +425,15 @@ const FacultyReview = () => {
 
       {/* Filter and Search Section */}
       <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 p-6 mb-8 shadow-lg">
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Filter Buttons */}
-          <div className="flex-1">
+        <div className="space-y-6">
+          <div>
             <label className="block text-sm font-bold text-slate-700 mb-3">Filter by Status</label>
             <div className="flex flex-wrap gap-3">
               {filterOptions.map((option) => (
                 <button
                   key={option.id}
                   onClick={() => setStatusFilter(option.id)}
-                  className={`px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 transform hover:-translate-y-0.5 ${
+                  className={`min-h-[52px] px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 transform hover:-translate-y-0.5 ${
                     statusFilter === option.id
                       ? `bg-gradient-to-r ${option.color} text-white shadow-lg`
                       : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-slate-300'
@@ -420,62 +452,63 @@ const FacultyReview = () => {
             </div>
           </div>
 
-          {/* Search */}
-          <div className="lg:w-80">
-            <label className="block text-sm font-bold text-slate-700 mb-3">Search Papers</label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search by title, author, or keywords..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-5 py-3 pl-12 bg-white border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
-              />
-              <Search size={20} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(0,1.15fr)_220px_180px_180px] gap-4 items-end">
+            <div className="min-w-0">
+              <label className="block text-sm font-bold text-slate-700 mb-3">Search Papers</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search by title, author, or keywords..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-5 py-3 pl-12 bg-white border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
+                />
+                <Search size={20} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" />
+              </div>
             </div>
-          </div>
 
-          <div className="lg:w-56">
-            <label className="block text-sm font-bold text-slate-700 mb-3">Department</label>
-            <select
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-              className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
-            >
-              {departmentOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.value === 'all' ? 'All Departments' : option.label === 'unassigned' ? 'Unassigned' : option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-3">Department</label>
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
+              >
+                {departmentOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.value === 'all' ? 'All Departments' : option.label === 'unassigned' ? 'Unassigned' : option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div className="lg:w-48">
-            <label className="block text-sm font-bold text-slate-700 mb-3">Date Range</label>
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
-            >
-              <option value="all">All Dates</option>
-              <option value="7d">Last 7 Days</option>
-              <option value="30d">Last 30 Days</option>
-              <option value="90d">Last 90 Days</option>
-            </select>
-          </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-3">Date Range</label>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
+              >
+                <option value="all">All Dates</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+              </select>
+            </div>
 
-          <div className="lg:w-48">
-            <label className="block text-sm font-bold text-slate-700 mb-3">Sort</label>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
-            >
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
-              <option value="title">Title A-Z</option>
-              <option value="author">Author A-Z</option>
-            </select>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-3">Sort</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="title">Title A-Z</option>
+                <option value="author">Author A-Z</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -495,7 +528,24 @@ const FacultyReview = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {filteredPapers.map((paper) => {
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Assigned Papers</h2>
+              <p className="text-sm text-slate-600">
+                Showing {visiblePapers.length} of {filteredPapers.length} matching papers
+              </p>
+            </div>
+            {canLoadMore ? (
+              <button
+                onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                className="h-10 px-4 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Load more papers
+              </button>
+            ) : null}
+          </div>
+
+          {visiblePapers.map((paper) => {
             const statusConfig = getStatusConfig(paper.status);
             const StatusIcon = statusConfig.icon;
             
@@ -649,6 +699,12 @@ const FacultyReview = () => {
               </div>
             );
           })}
+
+          {filteredPapers.length > PAGE_SIZE ? (
+            <div ref={loadMoreRef} className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-center text-sm text-slate-600">
+              {canLoadMore ? 'Scroll or use Load more to continue through the queue.' : 'All matching papers are visible.'}
+            </div>
+          ) : null}
         </div>
       )}
 

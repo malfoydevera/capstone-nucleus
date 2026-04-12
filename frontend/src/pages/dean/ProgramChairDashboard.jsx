@@ -7,10 +7,13 @@ import {
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import GuidancePanel from '../../components/ui/GuidancePanel';
+import { getRoleGuidance } from '../../utils/guidance';
 
 const ProgramChairDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const guide = getRoleGuidance(user?.role);
   const [programScope, setProgramScope] = useState('');
   const [topKeywords, setTopKeywords] = useState([]);
   const [stats, setStats] = useState({
@@ -112,102 +115,190 @@ const ProgramChairDashboard = () => {
   return (
     <div className="min-h-screen bg-slate-50/50">
       <div className="max-w-7xl mx-auto px-6 py-8 animate-fadeIn">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-600 to-cyan-600 flex items-center justify-center shadow-lg">
-              <Users size={22} className="text-white" />
+        <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-4">
+            <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-sm text-slate-600">
+              <Calendar size={14} />
+              <span>{new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={fetchDashboardData}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:border-slate-300 transition-all text-sm font-semibold"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+            <div className="flex items-center gap-2">
+              <img
+                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Program Chair')}&background=0f766e&color=fff`}
+                alt="Profile"
+                className="w-9 h-9 rounded-full"
+              />
+              <span className="hidden text-sm font-medium text-slate-700 sm:inline">{user?.fullName}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <GuidancePanel
+            title={guide.heading}
+            description={guide.summary}
+            items={guide.dashboardSteps}
+            tone="emerald"
+          />
+        </div>
+
+        <div className="mb-5 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Program Chair Dashboard</h1>
-              <p className="text-sm text-slate-500">
-                {programScope || 'Program Scope'} &middot; {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              <p className="text-sm text-slate-500 mb-1">Program Scope</p>
+              <h2 className="text-xl font-bold text-slate-900">{programScope || 'Unassigned Program'}</h2>
+              <p className="text-sm text-slate-500 mt-2">
+                You are the program-level clearance reviewer before papers move to the research editor.
               </p>
             </div>
+            <div className="w-12 h-12 rounded-xl bg-teal-50 flex items-center justify-center">
+              <Users size={22} className="text-teal-600" />
+            </div>
           </div>
-          <button onClick={fetchDashboardData} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:border-slate-300 transition-all text-sm font-semibold">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Pending Review</p>
+                <p className="text-3xl font-bold text-slate-900">{stats.pending}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center">
+                <Clock size={20} className="text-teal-600" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-1">
+              <span className="text-xs text-teal-600 font-medium">Needs your decision</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Approved</p>
+                <p className="text-3xl font-bold text-slate-900">{stats.approved}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <CheckCircle size={20} className="text-emerald-600" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-1">
+              <span className="text-xs text-emerald-600 font-medium">Forwarded to editor</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Revision Sent</p>
+                <p className="text-3xl font-bold text-slate-900">{stats.revisionRequired}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
+                <Eye size={20} className="text-orange-600" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-1">
+              <span className="text-xs text-orange-600 font-medium">Returned to student</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">Total Assigned</p>
+                <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                <BookOpen size={20} className="text-blue-600" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-1">
+              <span className="text-xs text-slate-400">{stats.thisMonth} received this month</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+          {reviewedPapers > 0 ? (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <CheckCircle size={24} className="text-emerald-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-slate-500">Approval Rate</p>
+                <p className="text-xl font-bold text-slate-900">{approvalRate}%</p>
+                <p className="text-xs text-slate-400">{reviewedPapers} papers reviewed in total</p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <CheckCircle size={24} className="text-emerald-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-slate-500">Approval Rate</p>
+                <p className="text-xl font-bold text-slate-900">0%</p>
+                <p className="text-xs text-slate-400">No completed reviews yet</p>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center">
+              <AlertTriangle size={24} className="text-orange-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-slate-500">Deadline Risk</p>
+              <p className="text-xl font-bold text-slate-900">{deadlineSummary.overdueCount + deadlineSummary.dueSoonCount} Papers</p>
+              <p className="text-xs text-slate-400">{deadlineSummary.overdueCount} overdue, {deadlineSummary.dueSoonCount} due soon</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+          <button
+            onClick={() => navigate('/program-chair/review')}
+            className="group bg-gradient-to-br from-teal-600 to-cyan-600 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <Eye size={24} className="text-white" />
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-white">Review Queue</p>
+                <p className="text-sm text-teal-100">{stats.pending} papers waiting for your review</p>
+              </div>
+              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => navigate('/program-chair/assign-faculty')}
+            className="group bg-gradient-to-br from-slate-700 to-slate-800 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <Users size={24} className="text-white" />
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-white">Assign Faculty</p>
+                <p className="text-sm text-slate-200">Manage reviewer coverage inside your program</p>
+              </div>
+              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+            </div>
           </button>
         </div>
-
-        {/* Primary Reviewer Banner */}
-        <div className="mb-8 bg-gradient-to-r from-teal-600 to-cyan-600 rounded-2xl p-6 text-white shadow-lg">
-          <div className="flex items-center gap-3 mb-2">
-            <Users size={24} className="text-white/80" />
-            <h2 className="text-lg font-bold">Primary Clearance Reviewer</h2>
-          </div>
-          <p className="text-teal-100 text-sm">Program-scoped analytics for {programScope || 'your assigned program'}.</p>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-          <div className="bg-gradient-to-br from-teal-50 to-cyan-50 border-teal-200 rounded-2xl border-2 p-6 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-semibold text-teal-700 mb-1">Awaiting Review</p>
-                <p className="text-4xl font-black text-slate-900">{stats.pending}</p>
-              </div>
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
-                <Clock size={20} className="text-white" />
-              </div>
-            </div>
-            <p className="text-xs mt-3 text-teal-600">Requires your approval</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200 rounded-2xl border-2 p-6 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-semibold text-emerald-700 mb-1">Approved</p>
-                <p className="text-4xl font-black text-slate-900">{stats.approved}</p>
-              </div>
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-green-500 flex items-center justify-center">
-                <CheckCircle size={20} className="text-white" />
-              </div>
-            </div>
-            <p className="text-xs text-emerald-600 mt-3">Forwarded to Editor</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 rounded-2xl border-2 p-6 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-semibold text-orange-700 mb-1">Revision Sent</p>
-                <p className="text-4xl font-black text-slate-900">{stats.revisionRequired}</p>
-              </div>
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
-                <Eye size={20} className="text-white" />
-              </div>
-            </div>
-            <p className="text-xs text-orange-600 mt-3">Returned to student</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 rounded-2xl border-2 p-6 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-semibold text-blue-700 mb-1">Total Assigned</p>
-                <p className="text-4xl font-black text-slate-900">{stats.total}</p>
-              </div>
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
-                <BookOpen size={20} className="text-white" />
-              </div>
-            </div>
-            <p className="text-xs text-blue-600 mt-3">All-time assignments</p>
-          </div>
-        </div>
-
-        {/* Approval Rate */}
-        {reviewedPapers > 0 && (
-          <div className="bg-gradient-to-r from-teal-600 to-cyan-600 rounded-2xl p-6 text-white mb-10 shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/80 text-sm font-medium mb-1">Your Approval Rate</p>
-                <p className="text-4xl font-black">{approvalRate}%</p>
-                <p className="text-white/70 text-xs mt-1">{reviewedPapers} papers reviewed in total</p>
-              </div>
-              <Users size={60} className="text-white/20" />
-            </div>
-          </div>
-        )}
 
         {/* Deadline Monitor */}
         <div className="mb-10 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">

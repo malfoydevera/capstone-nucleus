@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Plus, RefreshCw } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
 
 const getStructuredCoAuthorCount = (paper) =>
   Array.isArray(paper?.structured_authors)
     ? paper.structured_authors.filter((entry) => !entry?.is_primary).length
     : 0;
+
+const PAGE_SIZE = 5;
 
 const MyResearch = () => {
   const navigate = useNavigate();
@@ -16,6 +19,7 @@ const MyResearch = () => {
   const [activeFilter, setActiveFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [expandedActionNotes, setExpandedActionNotes] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     fetchMyResearch();
@@ -125,9 +129,17 @@ const MyResearch = () => {
     });
   }, [activeFilter, papers]);
 
-  const visibleRows = useMemo(() => {
+  const listRows = useMemo(() => {
     return filteredPapers.filter((paper) => paper.id !== topActionPaper?.id);
   }, [filteredPapers, topActionPaper?.id]);
+
+  const visibleRows = useMemo(() => listRows.slice(0, visibleCount), [listRows, visibleCount]);
+  const canLoadMore = visibleCount < listRows.length;
+  const loadMoreRef = useAutoLoadMore({ canLoadMore, setVisibleCount, step: PAGE_SIZE });
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [activeFilter, filteredPapers.length, topActionPaper?.id]);
 
   const sparkline = (color) => (
     <svg viewBox="0 0 80 24" className="h-6 w-16" fill="none" aria-hidden="true">
@@ -290,7 +302,7 @@ const MyResearch = () => {
 
                 {expandedActionNotes ? (
                   <div className="mt-1 rounded-lg bg-slate-100 border border-slate-200 px-3 py-2 text-sm font-mono text-slate-700 whitespace-pre-wrap">
-                    {topActionPaper.revision_notes || topActionPaper.rejection_reason || 'Page 1: hi'}
+                    {topActionPaper.revision_notes || topActionPaper.rejection_reason || 'No detailed revision notes were provided. Open the paper and contact the assigned reviewer if you need clarification.'}
                   </div>
                 ) : null}
 
@@ -308,124 +320,144 @@ const MyResearch = () => {
               </article>
             ) : null}
 
-            {visibleRows.length === 0 ? (
+            {listRows.length === 0 ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                 No research items found for this filter.
               </div>
             ) : (
-              visibleRows.map((paper) => {
-                const stage = getPipelineStage(paper.status);
-                const statusColor = getProgressColor(paper.status);
-                const isPublished = paper.status === 'approved';
-                const isRejected = paper.status === 'rejected';
-                const isRevision = paper.status === 'revision_required';
-                const coAuthorCount = getStructuredCoAuthorCount(paper);
-                const stageNames = ['Adviser', 'Program Chair', 'Editor', 'Admin', 'Publish'];
-                const currentStageName = isPublished ? 'Published' : stageNames[Math.max(0, Math.min(stage - 1, 4))];
-                const progressPercent = Math.max(0, Math.min(100, ((stage - 1) / 4) * 100));
+              <>
+                {visibleRows.map((paper) => {
+                  const stage = getPipelineStage(paper.status);
+                  const statusColor = getProgressColor(paper.status);
+                  const isPublished = paper.status === 'approved';
+                  const isRejected = paper.status === 'rejected';
+                  const isRevision = paper.status === 'revision_required';
+                  const coAuthorCount = getStructuredCoAuthorCount(paper);
+                  const stageNames = ['Adviser', 'Program Chair', 'Editor', 'Admin', 'Publish'];
+                  const currentStageName = isPublished ? 'Published' : stageNames[Math.max(0, Math.min(stage - 1, 4))];
+                  const progressPercent = Math.max(0, Math.min(100, ((stage - 1) / 4) * 100));
 
-                return (
-                  <article
-                    key={paper.id}
-                    className={`rounded-lg border p-3 ${
-                      isPublished
-                        ? 'border-emerald-400 bg-emerald-100/60'
-                        : isRejected
-                        ? 'border-rose-200 bg-rose-50/20'
-                        : isRevision
-                        ? 'border-amber-200 bg-amber-50/20'
-                        : 'border-slate-200 bg-white'
-                    }`}
-                  >
-                    <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1.15fr_auto] items-center gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <p className="font-bold text-slate-900 truncate">{paper.title}</p>
-                          {isPublished ? (
-                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-200 text-emerald-900 border border-emerald-400">
-                              <CheckCircle2 size={11} /> Published
-                            </span>
+                  return (
+                    <article
+                      key={paper.id}
+                      className={`rounded-lg border p-3 ${
+                        isPublished
+                          ? 'border-emerald-400 bg-emerald-100/60'
+                          : isRejected
+                          ? 'border-rose-200 bg-rose-50/20'
+                          : isRevision
+                          ? 'border-amber-200 bg-amber-50/20'
+                          : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1.15fr_auto] items-center gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="font-bold text-slate-900 truncate">{paper.title}</p>
+                            {isPublished ? (
+                              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-200 text-emerald-900 border border-emerald-400">
+                                <CheckCircle2 size={11} /> Published
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-sm text-slate-500">
+                            {getStatusLabel(paper.status)} • Submitted {formatTimeAgo(paper.submission_date || paper.created_at)}
+                          </p>
+                          {coAuthorCount > 0 ? (
+                            <p className="text-xs text-slate-500 mt-1">
+                              {coAuthorCount} canonical co-author{coAuthorCount > 1 ? 's' : ''}
+                            </p>
                           ) : null}
                         </div>
-                        <p className="text-sm text-slate-500">
-                          {getStatusLabel(paper.status)} • Submitted {formatTimeAgo(paper.submission_date || paper.created_at)}
-                        </p>
-                        {coAuthorCount > 0 ? (
-                          <p className="text-xs text-slate-500 mt-1">
-                            {coAuthorCount} canonical co-author{coAuthorCount > 1 ? 's' : ''}
-                          </p>
-                        ) : null}
-                      </div>
 
-                      <div>
-                        <div className="mb-2 flex items-center justify-between text-xs">
-                          <span className="font-semibold text-slate-700">
-                            Current Stage: <span className={`${isPublished ? 'text-emerald-900' : isRevision ? 'text-amber-700' : isRejected ? 'text-rose-700' : 'text-sky-700'}`}>{currentStageName}</span>
-                          </span>
-                          <span className="text-slate-500">Step {stage}/5</span>
-                        </div>
+                        <div>
+                          <div className="mb-2 flex items-center justify-between text-xs">
+                            <span className="font-semibold text-slate-700">
+                              Current Stage: <span className={`${isPublished ? 'text-emerald-900' : isRevision ? 'text-amber-700' : isRejected ? 'text-rose-700' : 'text-sky-700'}`}>{currentStageName}</span>
+                            </span>
+                            <span className="text-slate-500">Step {stage}/5</span>
+                          </div>
 
-                        <div className="relative">
-                          <div className="absolute left-[10%] right-[10%] top-4 h-0.5 bg-slate-200" />
-                          <div className="absolute left-[10%] top-4 h-0.5 bg-emerald-700" style={{ width: `${progressPercent * 0.8}%` }} />
+                          <div className="relative">
+                            <div className="absolute left-[10%] right-[10%] top-4 h-0.5 bg-slate-200" />
+                            <div className="absolute left-[10%] top-4 h-0.5 bg-emerald-700" style={{ width: `${progressPercent * 0.8}%` }} />
 
-                          <div className="relative grid grid-cols-5 gap-1.5 text-xs text-slate-600">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
-                                {stage > 1 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 1 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
-                              </span>
-                              <span className="text-center leading-tight">Adviser</span>
+                            <div className="relative grid grid-cols-5 gap-1.5 text-xs text-slate-600">
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
+                                  {stage > 1 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 1 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
+                                </span>
+                                <span className="text-center leading-tight">Adviser</span>
+                              </div>
+
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
+                                  {stage > 2 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 2 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
+                                </span>
+                                <span className="text-center leading-tight">Chair</span>
+                              </div>
+
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
+                                  {stage > 3 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 3 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
+                                </span>
+                                <span className="text-center leading-tight">Editor</span>
+                              </div>
+
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
+                                  {stage > 4 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 4 ? <Clock3 size={14} className="text-sky-600" /> : <span className={`h-2.5 w-2.5 rounded-full ${statusColor}`} />}
+                                </span>
+                                <span className="text-center leading-tight">Admin</span>
+                              </div>
+
+                              <div className="flex flex-col items-center gap-1">
+                                <span className={`h-8 w-8 rounded-full border inline-flex items-center justify-center shadow-sm ${isPublished ? 'border-emerald-500 bg-emerald-200' : 'border-slate-200 bg-white'}`}>
+                                  {stage >= 5 ? <CheckCircle2 size={15} className="text-emerald-800" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
+                                </span>
+                                <span className={`text-center leading-tight ${isPublished ? 'font-semibold text-emerald-900' : ''}`}>Publish</span>
+                              </div>
                             </div>
+                          </div>
 
-                            <div className="flex flex-col items-center gap-1">
-                              <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
-                                {stage > 2 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 2 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
-                              </span>
-                              <span className="text-center leading-tight">Chair</span>
-                            </div>
-
-                            <div className="flex flex-col items-center gap-1">
-                              <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
-                                {stage > 3 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 3 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
-                              </span>
-                              <span className="text-center leading-tight">Editor</span>
-                            </div>
-
-                            <div className="flex flex-col items-center gap-1">
-                              <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
-                                {stage > 4 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 4 ? <Clock3 size={14} className="text-sky-600" /> : <span className={`h-2.5 w-2.5 rounded-full ${statusColor}`} />}
-                              </span>
-                              <span className="text-center leading-tight">Admin</span>
-                            </div>
-
-                            <div className="flex flex-col items-center gap-1">
-                              <span className={`h-8 w-8 rounded-full border inline-flex items-center justify-center shadow-sm ${isPublished ? 'border-emerald-500 bg-emerald-200' : 'border-slate-200 bg-white'}`}>
-                                {stage >= 5 ? <CheckCircle2 size={15} className="text-emerald-800" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
-                              </span>
-                              <span className={`text-center leading-tight ${isPublished ? 'font-semibold text-emerald-900' : ''}`}>Publish</span>
-                            </div>
+                          <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
+                            <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} className="text-emerald-700" /> Completed</span>
+                            <span className="inline-flex items-center gap-1"><Clock3 size={12} className="text-sky-600" /> Current</span>
+                            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-300" /> Upcoming</span>
                           </div>
                         </div>
 
-                        <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
-                          <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} className="text-emerald-700" /> Completed</span>
-                          <span className="inline-flex items-center gap-1"><Clock3 size={12} className="text-sky-600" /> Current</span>
-                          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-300" /> Upcoming</span>
-                        </div>
+                        <a
+                          href={paper.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="h-9 px-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 inline-flex items-center justify-center"
+                        >
+                          {isPublished ? 'Open Published' : 'View Document'}
+                        </a>
                       </div>
+                    </article>
+                  );
+                })}
 
-                      <a
-                        href={paper.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="h-9 px-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 inline-flex items-center justify-center"
-                      >
-                        {isPublished ? 'Open Published' : 'View Document'}
-                      </a>
-                    </div>
-                  </article>
-                );
-              })
+                {listRows.length > PAGE_SIZE ? (
+                  <div ref={loadMoreRef} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-center">
+                    <p className="text-sm text-slate-600">
+                      Showing {visibleRows.length} of {listRows.length} portfolio items
+                    </p>
+                      {canLoadMore ? (
+                        <button
+                          onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                          className="mt-3 h-9 px-4 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          Load more submissions
+                      </button>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-500">All matching submissions are visible.</p>
+                    )}
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         </section>
