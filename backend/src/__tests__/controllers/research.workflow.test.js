@@ -18,6 +18,7 @@ jest.mock('uuid', () => ({
 const supabase = require('../../config/supabase');
 const { logAuditEvent } = require('../../utils/audit');
 const reviewController = require('../../controllers/review.controller');
+const { supabaseGenericFallback } = require('../helpers/supabaseNotificationsMock');
 
 function createRes() {
   return {
@@ -38,9 +39,7 @@ function mockFetchPaper(paper) {
       };
     }
 
-    return {
-      insert: async () => ({ error: null }),
-    };
+    return supabaseGenericFallback(table);
   });
 }
 
@@ -186,9 +185,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -244,9 +241,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -325,9 +320,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -402,9 +395,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -479,9 +470,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -548,9 +537,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -639,9 +626,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -685,9 +670,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -704,49 +687,7 @@ describe('research workflow endpoints', () => {
     expect(payload.data.plagiarism.score).toBe(27);
   });
 
-  test('runPlagiarismScan stores scan result for staff role', async () => {
-    supabase.from.mockImplementation((table) => {
-      if (table === 'research_papers') {
-        return {
-          select: () => ({
-            eq: () => ({
-              single: async () => ({
-                data: {
-                  id: 'p1',
-                  title: 'Paper Title',
-                  abstract: 'This paper explores method method method.',
-                  status: 'pending_editor',
-                },
-                error: null,
-              }),
-            }),
-          }),
-          update: () => ({
-            eq: () => ({
-              select: () => ({
-                single: async () => ({
-                  data: {
-                    id: 'p1',
-                    plagiarism_status: 'checked',
-                    plagiarism_score: 35,
-                    plagiarism_checked_at: '2026-04-01T01:00:00.000Z',
-                    plagiarism_provider: 'local_stub',
-                    plagiarism_summary: 'Stub plagiarism scan complete.',
-                    plagiarism_report: { mode: 'stub' },
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-
-      return {
-        insert: async () => ({ error: null }),
-      };
-    });
-
+  test('runPlagiarismScan is deprecated and returns 410', async () => {
     const req = {
       params: { id: 'p1' },
       user: { id: 'staff-1', role: 'staff' },
@@ -755,11 +696,11 @@ describe('research workflow endpoints', () => {
 
     await reviewController.runPlagiarismScan(req, res);
 
+    expect(res.status).toHaveBeenCalledWith(410);
     const payload = res.json.mock.calls[0][0];
-    expect(payload.success).toBe(true);
-    expect(payload.message).toBe('Plagiarism scan completed');
-    expect(payload.data.plagiarism.status).toBe('checked');
-    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+    expect(payload.success).toBe(false);
+    expect(payload.error.code).toBe('PLAGIARISM_RUN_DEPRECATED');
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   test('declareConflictOfInterest blocks faculty not assigned to paper', async () => {
@@ -783,9 +724,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -843,9 +782,7 @@ describe('research workflow endpoints', () => {
         };
       }
 
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {

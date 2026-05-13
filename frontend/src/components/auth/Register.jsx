@@ -3,8 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { departmentAPI, unwrapApiData } from '../../utils/api';
+import NucleusLogoMark from '../branding/NucleusLogoMark';
 import { 
-  BookOpen, 
   UserPlus, 
   Mail, 
   User, 
@@ -20,6 +20,9 @@ import {
   FileText
 } from 'lucide-react';
 import nuBuildingImg from '../../assets/dasma.png.jpeg';
+
+const NAME_FIELDS = ['firstName', 'middleName', 'lastName'];
+const NAME_REGEX = /^[A-Za-z][A-Za-z\s'\-]*$/;
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -41,6 +44,7 @@ const Register = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [nameWarnings, setNameWarnings] = useState({ firstName: '', middleName: '', lastName: '' });
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -97,6 +101,15 @@ const Register = () => {
       return;
     }
 
+    if (NAME_FIELDS.includes(e.target.name)) {
+      const raw = e.target.value;
+      const sanitized = raw.replace(/[^A-Za-z\s'\-]/g, '');
+      const warning = raw !== sanitized ? 'Names may only contain letters.' : '';
+      setFormData({ ...formData, [e.target.name]: sanitized });
+      setNameWarnings((prev) => ({ ...prev, [e.target.name]: warning }));
+      return;
+    }
+
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -106,6 +119,27 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!NAME_REGEX.test(formData.firstName.trim())) {
+      toast.error('First name may only contain letters');
+      setError('First name may only contain letters');
+      setNameWarnings((prev) => ({ ...prev, firstName: 'Letters only.' }));
+      return;
+    }
+
+    if (!NAME_REGEX.test(formData.lastName.trim())) {
+      toast.error('Last name may only contain letters');
+      setError('Last name may only contain letters');
+      setNameWarnings((prev) => ({ ...prev, lastName: 'Letters only.' }));
+      return;
+    }
+
+    if (formData.middleName && !NAME_REGEX.test(formData.middleName.trim())) {
+      toast.error('Middle name may only contain letters');
+      setError('Middle name may only contain letters');
+      setNameWarnings((prev) => ({ ...prev, middleName: 'Letters only.' }));
+      return;
+    }
 
     if (formData.password !== formData.confirmPassword) {
       toast.error('Passwords do not match');
@@ -178,9 +212,11 @@ const Register = () => {
           {/* Left Side - Branding and Info */}
           <div className="w-full lg:w-5/12 text-white space-y-6 lg:space-y-8 animate-slideInLeft hidden lg:block">
             <Link to="/" className="flex items-center gap-3 mb-8 group hover:opacity-90 transition-all duration-300">
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-indigo-500/25 transition-all duration-300 group-hover:scale-105">
-                <BookOpen size={24} className="text-white" />
-              </div>
+              <NucleusLogoMark
+                size={48}
+                rounded="rounded-xl"
+                className="shadow-lg transition-all duration-300 group-hover:scale-105"
+              />
               <div className="flex flex-col">
                 <span className="font-bold text-2xl tracking-tight">NUCLEUS</span>
                 <span className="text-sm text-white/70 font-medium">NU Dasmariñas</span>
@@ -243,9 +279,7 @@ const Register = () => {
             {/* Mobile Header - Only visible on mobile */}
             <div className="lg:hidden text-white text-center mb-6">
               <Link to="/" className="inline-flex items-center gap-3 mb-4 group">
-                <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <BookOpen size={20} className="text-white" />
-                </div>
+                <NucleusLogoMark size={40} rounded="rounded-xl" className="shadow-lg" />
                 <span className="font-bold text-xl tracking-tight">NUCLEUS</span>
               </Link>
               <h1 className="text-2xl font-bold">Create Your Account</h1>
@@ -288,9 +322,18 @@ const Register = () => {
                       required
                       value={formData.firstName}
                       onChange={handleChange}
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
+                      inputMode="text"
+                      autoComplete="given-name"
+                      pattern="[A-Za-z][A-Za-z\s'\-]*"
+                      title="Letters only (no numbers or symbols)"
+                      className={`w-full px-4 py-3 bg-white border rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300 ${
+                        nameWarnings.firstName ? 'border-red-300 hover:border-red-400' : 'border-slate-200'
+                      }`}
                       placeholder="Enter first name"
                     />
+                    {nameWarnings.firstName && (
+                      <p className="text-red-500 text-xs font-medium animate-fadeIn">{nameWarnings.firstName}</p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5 transition-all duration-300">
@@ -306,9 +349,18 @@ const Register = () => {
                       type="text"
                       value={formData.middleName}
                       onChange={handleChange}
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
+                      inputMode="text"
+                      autoComplete="additional-name"
+                      pattern="[A-Za-z][A-Za-z\s'\-]*"
+                      title="Letters only (no numbers or symbols)"
+                      className={`w-full px-4 py-3 bg-white border rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300 ${
+                        nameWarnings.middleName ? 'border-red-300 hover:border-red-400' : 'border-slate-200'
+                      }`}
                       placeholder="Optional"
                     />
+                    {nameWarnings.middleName && (
+                      <p className="text-red-500 text-xs font-medium animate-fadeIn">{nameWarnings.middleName}</p>
+                    )}
                   </div>
                 </div>
 
@@ -326,9 +378,18 @@ const Register = () => {
                     required
                     value={formData.lastName}
                     onChange={handleChange}
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
+                    inputMode="text"
+                    autoComplete="family-name"
+                    pattern="[A-Za-z][A-Za-z\s'\-]*"
+                    title="Letters only (no numbers or symbols)"
+                    className={`w-full px-4 py-3 bg-white border rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300 ${
+                      nameWarnings.lastName ? 'border-red-300 hover:border-red-400' : 'border-slate-200'
+                    }`}
                     placeholder="Enter last name"
                   />
+                  {nameWarnings.lastName && (
+                    <p className="text-red-500 text-xs font-medium animate-fadeIn">{nameWarnings.lastName}</p>
+                  )}
                 </div>
 
                 {/* Email Field */}

@@ -19,15 +19,13 @@ import {
   BarChart3,
   Eye,
   Maximize2,
-  MessageSquarePlus,
-  Highlighter,
-  StickyNote,
-  Trash2,
-  MessageSquare,
-  CornerDownRight
+  CornerDownRight,
+  Upload,
+  Award,
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
+import AnnotationsSidePanel from '../../components/pdf/AnnotationsSidePanel';
 import { formatFullName } from '../../utils/names';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -69,18 +67,18 @@ const ReviewDetail = () => {
   const [facultyMembers, setFacultyMembers] = useState([]);
   const [selectedFacultyId, setSelectedFacultyId] = useState('');
   const [assignNotes, setAssignNotes] = useState('');
-  const [plagiarism, setPlagiarism] = useState({
-    status: 'not_checked',
-    score: null,
-    checkedAt: null,
-    provider: null,
-    summary: null,
-    report: null,
-  });
-  const [plagiarismLoading, setPlagiarismLoading] = useState(false);
+  const turnitinUrl = import.meta.env.VITE_TURNITIN_URL || 'https://www.turnitin.com/';
+  const grammarlyUrl = import.meta.env.VITE_GRAMMARLY_URL || 'https://www.grammarly.com/';
   const [annotations, setAnnotations] = useState([]);
-  const [replyingToId, setReplyingToId] = useState(null);
-  const [replyText, setReplyText] = useState('');
+  const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(true);
+  const [reviewPdfPage, setReviewPdfPage] = useState(1);
+  const [reviewPdfNumPages, setReviewPdfNumPages] = useState(null);
+  /** Keeps the same string when polling only rotates signed-query params (stops react-pdf reload flicker). */
+  const [stablePreviewPdfUrl, setStablePreviewPdfUrl] = useState(null);
+  const [annotatedFile, setAnnotatedFile] = useState(null);
+  const [uploadingAnnotatedPDF, setUploadingAnnotatedPDF] = useState(false);
+  const [showPublishDoiModal, setShowPublishDoiModal] = useState(false);
+  const [publishDoiValue, setPublishDoiValue] = useState('');
 
   const getApiErrorMessage = (error, fallback) => {
     const payload = error?.response?.data;
@@ -99,6 +97,26 @@ const ReviewDetail = () => {
         .catch(err => console.error('Failed to fetch dean/chair members:', err));
     }
   }, [user]);
+
+  useEffect(() => {
+    setReviewPdfPage(1);
+    setReviewPdfNumPages(null);
+    setStablePreviewPdfUrl(null);
+  }, [id]);
+
+  useEffect(() => {
+    const raw = paper?.file_url;
+    if (!raw) return;
+    setStablePreviewPdfUrl((prev) => {
+      if (!prev) return raw;
+      try {
+        if (new URL(prev).pathname === new URL(raw).pathname) return prev;
+      } catch {
+        if (prev.split('?')[0] === raw.split('?')[0]) return prev;
+      }
+      return raw;
+    });
+  }, [paper?.file_url]);
 
   useEffect(() => {
     fetchPaperDetail();
@@ -167,21 +185,6 @@ const ReviewDetail = () => {
         setCategories([]);
       }
 
-      if (['staff', 'admin'].includes(user?.role)) {
-        try {
-          const plagResponse = await researchAPI.getPlagiarismReport(id);
-          setPlagiarism(unwrapApiData(plagResponse).plagiarism || {
-            status: 'not_checked',
-            score: null,
-            checkedAt: null,
-            provider: null,
-            summary: null,
-            report: null,
-          });
-        } catch (plagError) {
-          console.error('Failed to fetch plagiarism report:', plagError);
-        }
-      }
     } catch (error) {
       console.error('Failed to fetch paper:', error);
     } finally {
@@ -191,21 +194,15 @@ const ReviewDetail = () => {
 
   const canAnnotate = ['faculty', 'dean', 'program_chair', 'staff', 'admin'].includes(user?.role);
 
-  // Called from SecurePDFViewer toolbar (highlight or sticky note)
-  const handleAddAnnotationFromViewer = useCallback(async ({ annotationType, selectedText, pageNumber: pg, highlightColor: color, note }) => {
+  const handleAddAnnotationFromPanel = useCallback(async (payload) => {
     try {
-      await researchAPI.addAnnotation(id, {
-        note: note || (annotationType === 'highlight' ? 'Highlighted text' : ''),
-        pageNumber: pg || null,
-        selectedText: selectedText || '',
-        annotationType,
-        highlightColor: annotationType === 'highlight' ? (color || 'yellow') : null,
-      });
+      await researchAPI.addAnnotation(id, payload);
       const res = await researchAPI.getAnnotations(id);
       setAnnotations(unwrapApiData(res).annotations || []);
-      toast.success(annotationType === 'highlight' ? 'Highlight added ✨' : 'Note added 📝');
+      toast.success('Saved for the author');
     } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to save annotation'));
+      toast.error(getApiErrorMessage(error, 'Failed to save feedback'));
+      throw error;
     }
   }, [id]);
 
@@ -219,8 +216,8 @@ const ReviewDetail = () => {
     }
   }, [id]);
 
-  const handleSubmitReply = useCallback(async (annotation) => {
-    const trimmed = replyText.trim();
+  const handleSubmitReply = useCallback(async (annotation, replyBody) => {
+    const trimmed = String(replyBody || '').trim();
     if (!trimmed) return;
 
     try {
@@ -234,13 +231,28 @@ const ReviewDetail = () => {
       });
       const res = await researchAPI.getAnnotations(id);
       setAnnotations(unwrapApiData(res).annotations || []);
-      setReplyingToId(null);
-      setReplyText('');
       toast.success('Reply posted');
     } catch (error) {
       toast.error(getApiErrorMessage(error, 'Failed to post reply'));
     }
-  }, [id, replyText]);
+  }, [id]);
+
+  const handleDrawingSaved = useCallback(async (pageNum, blob) => {
+    const formData = new FormData();
+    formData.append('drawing', blob, 'markup.png');
+    const uploadRes = await researchAPI.uploadAnnotationDrawing(id, formData);
+    const url = unwrapApiData(uploadRes)?.url;
+    if (!url) throw new Error('Upload did not return an image URL');
+    await researchAPI.addAnnotation(id, {
+      annotationType: 'draw',
+      pageNumber: pageNum,
+      drawImageUrl: url,
+      note: '',
+    });
+    const res = await researchAPI.getAnnotations(id);
+    setAnnotations(unwrapApiData(res).annotations || []);
+    toast.success('Drawing saved for the author');
+  }, [id]);
 
   const handleApprove = async () => {
     if (!comments.trim()) {
@@ -409,15 +421,28 @@ const ReviewDetail = () => {
     setActionLoading(true);
     const loadingToast = toast.loading('Saving metadata corrections...');
     try {
-      const payload = {
-        title: metadataForm.title.trim(),
-        abstract: metadataForm.abstract.trim(),
-        keywords: metadataForm.keywords,
-        category: metadataForm.category,
-        external_author_notes: metadataForm.coAuthors.trim() || null,
-      };
+      const keywordsParsed = String(metadataForm.keywords || '')
+        .split(',')
+        .map((k) => k.trim())
+        .filter(Boolean);
 
-      await researchAPI.correctMetadata(id, payload);
+      if (user?.role === 'admin' && ['approved', 'published'].includes(paper?.status)) {
+        await researchAPI.adminUpdateResearch(id, {
+          title: metadataForm.title.trim(),
+          abstract: metadataForm.abstract.trim(),
+          keywords: keywordsParsed,
+          category: metadataForm.category,
+          external_author_notes: metadataForm.coAuthors.trim() || null,
+        });
+      } else {
+        await researchAPI.correctMetadata(id, {
+          title: metadataForm.title.trim(),
+          abstract: metadataForm.abstract.trim(),
+          keywords: metadataForm.keywords,
+          category: metadataForm.category,
+          external_author_notes: metadataForm.coAuthors.trim() || null,
+        });
+      }
       await fetchPaperDetail();
       setShowMetadataModal(false);
       toast.success('Metadata corrected successfully', { id: loadingToast, duration: 3000 });
@@ -427,27 +452,6 @@ const ReviewDetail = () => {
       setActionLoading(false);
     }
   };
-
-  const handleRunPlagiarismScan = async () => {
-    setPlagiarismLoading(true);
-    const loadingToast = toast.loading('Running plagiarism scan...');
-    try {
-      const response = await researchAPI.runPlagiarismScan(id);
-      setPlagiarism(response?.data?.plagiarism || plagiarism);
-      toast.success('Plagiarism scan completed', { id: loadingToast });
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to run plagiarism scan'), { id: loadingToast });
-    } finally {
-      setPlagiarismLoading(false);
-    }
-  };
-
-  const ANNOTATION_TYPES = {
-    highlight: { icon: Highlighter, label: 'Highlight', color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200' },
-    note:      { icon: StickyNote,  label: 'Note',      color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-200'  },
-    comment:   { icon: MessageSquare, label: 'Comment', color: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-200'   },
-  };
-  const HL_COLORS = { yellow: 'bg-yellow-300', red: 'bg-red-300', blue: 'bg-blue-300', green: 'bg-green-300' };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -505,8 +509,12 @@ const ReviewDetail = () => {
         icon: Shield, label: 'Awaiting Admin Review'
       },
       approved: {
-        badgeColor: 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 border-green-200',
-        icon: CheckCircle, label: 'Approved'
+        badgeColor: 'bg-gradient-to-r from-amber-50 to-amber-100 text-amber-900 border-amber-200',
+        icon: CheckCircle, label: 'Approved (internal)'
+      },
+      published: {
+        badgeColor: 'bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-900 border-emerald-200',
+        icon: Award, label: 'Published'
       },
       rejected: {
         badgeColor: 'bg-gradient-to-r from-red-100 to-pink-100 text-red-800 border-red-200',
@@ -567,33 +575,33 @@ const ReviewDetail = () => {
         },
       ];
 
-  // Workflow progress tracker
+  // Workflow progress tracker (approved = internal repository; published = formal DOI publication)
   const getWorkflowStage = () => {
     const stages = [
       { key: 'adviser', label: 'Adviser Review', statuses: ['pending_faculty'] },
       { key: 'dean_chair', label: 'Dean / Prog. Chair', statuses: ['pending_dean', 'pending_program_chair'] },
       { key: 'editor', label: 'Research Editor', statuses: ['pending_editor'] },
       { key: 'admin', label: 'Admin Review', statuses: ['pending_admin'] },
-      { key: 'published', label: 'Published', statuses: ['approved'] }
-    ].map(s => ({ ...s, completed: false }));
+      { key: 'approved_repo', label: 'Approved (internal)', statuses: ['approved'] },
+      { key: 'published', label: 'Published', statuses: ['published'] },
+    ].map((s) => ({ ...s, completed: false }));
 
     const paperStatus = paper.status;
-    const stageOrder = ['pending_faculty', 'pending_dean', 'pending_program_chair', 'pending_editor', 'pending_admin', 'approved'];
-    const currentIndex = stageOrder.indexOf(paperStatus);
-
-    // Mark advisers stage completed when past pending_faculty
-    if (currentIndex > stageOrder.indexOf('pending_faculty')) stages[0].completed = true;
-    // Mark dean/chair stage completed when past pending_dean / pending_program_chair
-    if (currentIndex > stageOrder.indexOf('pending_editor') - 1 && currentIndex >= stageOrder.indexOf('pending_editor')) stages[1].completed = true;
-    if (currentIndex >= stageOrder.indexOf('pending_admin')) stages[2].completed = true;
-    if (paperStatus === 'approved') { stages[3].completed = true; stages[4].completed = true; }
-
     let currentStageIndex = -1;
     if (paperStatus === 'pending_faculty') currentStageIndex = 0;
     else if (paperStatus === 'pending_dean' || paperStatus === 'pending_program_chair') currentStageIndex = 1;
-    else if (paperStatus === 'pending_editor') currentStageIndex = 2;
+    else if (paperStatus === 'pending_editor' || paperStatus === 'revision_required') currentStageIndex = 2;
     else if (paperStatus === 'pending_admin') currentStageIndex = 3;
     else if (paperStatus === 'approved') currentStageIndex = 4;
+    else if (paperStatus === 'published') currentStageIndex = 5;
+
+    for (let i = 0; i < stages.length; i++) {
+      if (paperStatus === 'published') {
+        stages[i].completed = true;
+      } else {
+        stages[i].completed = i < currentStageIndex;
+      }
+    }
 
     return { stages, currentStageIndex };
   };
@@ -601,8 +609,14 @@ const ReviewDetail = () => {
   const { stages, currentStageIndex } = getWorkflowStage();
   const structuredCoAuthorNames = getStructuredCoAuthorNames(paper);
 
+  const drawOverlays = annotations
+    .filter((a) => a.annotationType === 'draw' && a.drawImageUrl && a.pageNumber)
+    .map((a) => ({ id: a.id, pageNumber: a.pageNumber, imageUrl: a.drawImageUrl }));
+
+  const previewPdfUrl = stablePreviewPdfUrl ?? paper.file_url;
+
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <div className={`max-w-6xl mx-auto px-4 py-8 ${canAnnotate && annotationsPanelOpen ? 'lg:pr-[26rem]' : ''}`}>
       {/* Header */}
       <div className="mb-8">
         <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors mb-6 group">
@@ -637,7 +651,8 @@ const ReviewDetail = () => {
         paper.status.includes('pending_faculty') || 
         paper.status.includes('pending_editor') || 
         paper.status.includes('pending_admin') || 
-        paper.status === 'approved') && paper.status !== 'rejected' && (
+        paper.status === 'approved' ||
+        paper.status === 'published') && paper.status !== 'rejected' && (
         <div className="mb-8 bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
@@ -796,23 +811,27 @@ const ReviewDetail = () => {
                 </div>
               </div>
 
-              {/* PDF PREVIEW SECTION - Editor Style */}
+              {/* PDF PREVIEW — protected; feedback lives in the right Feedback panel */}
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Maximize2 size={18} className="text-[#1C4D8D]" />
                     <h4 className="text-lg font-bold text-slate-900">Document Preview</h4>
-                    {canAnnotate && <span className="text-xs text-slate-500 font-medium">🔒 Use toolbar to annotate · Fullscreen button in viewer</span>}
+                    {canAnnotate ? (
+                      <span className="text-xs text-slate-500 font-medium">🔒 Read-only · Markup in Feedback panel (duplicate page), notes below</span>
+                    ) : (
+                      <span className="text-xs text-slate-500 font-medium">🔒 View only</span>
+                    )}
                   </div>
                 </div>
-                {paper.file_url ? (
+                {previewPdfUrl ? (
                   <SecurePDFViewer
-                    fileUrl={paper.file_url}
+                    fileUrl={previewPdfUrl}
                     watermarkText="NU"
-                    enableAnnotationSelection={canAnnotate}
-                    annotations={annotations}
-                    onAddAnnotation={canAnnotate ? handleAddAnnotationFromViewer : undefined}
-                    onDeleteAnnotation={canAnnotate ? handleDeleteAnnotation : undefined}
+                    drawOverlays={drawOverlays}
+                    pageNumber={reviewPdfPage}
+                    onPageNumberChange={setReviewPdfPage}
+                    onPdfReady={({ numPages: n }) => setReviewPdfNumPages(n)}
                   />
                 ) : (
                   <div className="h-[300px] flex flex-col items-center justify-center text-slate-400 gap-2 rounded-2xl border-2 border-slate-200">
@@ -821,6 +840,78 @@ const ReviewDetail = () => {
                   </div>
                 )}
               </div>
+
+              {/* Upload Annotated PDF */}
+              {canAnnotate && (
+                <div className="mb-8 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                  <div className="flex items-start gap-3 mb-3">
+                    <Upload size={18} className="text-amber-700 mt-0.5" />
+                    <div className="flex-1">
+                      <h4 className="text-sm font-bold text-slate-900 mb-1">Optional: upload a marked PDF</h4>
+                      <p className="text-xs text-slate-600 mb-3">
+                        If you edited the file in an external PDF app, attach that copy here. Written feedback in the Feedback panel is saved separately for the author.
+                      </p>
+                      <div className="flex gap-2">
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept=".pdf,application/pdf"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file && file.type === 'application/pdf') {
+                                setAnnotatedFile(file);
+                              } else {
+                                toast.error('Please select a PDF file');
+                              }
+                            }}
+                            disabled={uploadingAnnotatedPDF}
+                          />
+                          <span className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg text-sm font-semibold hover:bg-amber-100 transition-colors">
+                            <Upload size={14} />
+                            Choose Annotated PDF
+                          </span>
+                        </label>
+                        {annotatedFile && (
+                          <button
+                            onClick={async () => {
+                              setUploadingAnnotatedPDF(true);
+                              const loadingToast = toast.loading('Uploading annotated PDF...');
+                              try {
+                                const formData = new FormData();
+                                formData.append('annotated_file', annotatedFile);
+                                await researchAPI.uploadAnnotatedPDF(id, formData);
+                                toast.success('Annotated PDF uploaded successfully', { id: loadingToast });
+                                setAnnotatedFile(null);
+                                fetchPaperDetail();
+                              } catch (error) {
+                                toast.error(getApiErrorMessage(error, 'Failed to upload annotated PDF'), { id: loadingToast });
+                              } finally {
+                                setUploadingAnnotatedPDF(false);
+                              }
+                            }}
+                            disabled={uploadingAnnotatedPDF}
+                            className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                          >
+                            {uploadingAnnotatedPDF ? 'Uploading...' : 'Upload'}
+                          </button>
+                        )}
+                      </div>
+                      {annotatedFile && (
+                        <p className="text-xs text-slate-600 mt-2">
+                          Selected: <span className="font-semibold">{annotatedFile.name}</span> ({(annotatedFile.size / 1024 / 1024).toFixed(2)} MB)
+                        </p>
+                      )}
+                      {paper.annotated_file_url && (
+                        <p className="text-xs text-green-700 font-semibold mt-2 flex items-center gap-1">
+                          <CheckCircle size={12} />
+                          Annotated PDF already uploaded and visible to student
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Keywords */}
               {paper.keywords?.length > 0 && (
@@ -836,135 +927,6 @@ const ReviewDetail = () => {
                   </div>
                 </div>
               )}
-
-              {/* Annotation List */}
-              <div className="mb-8">
-                <div className="flex items-center gap-2 mb-3">
-                  <MessageSquarePlus size={18} className="text-[#1C4D8D]" />
-                  <h4 className="text-lg font-bold text-slate-900">Review Annotations</h4>
-                  {annotations.length > 0 && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#1C4D8D]/10 text-[#1C4D8D] text-xs font-bold">{annotations.length}</span>
-                  )}
-                </div>
-
-                {canAnnotate && annotations.length === 0 && (
-                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 mb-4">
-                    <p className="text-sm text-blue-800 font-medium">💡 Use the toolbar above the document to annotate directly:</p>
-                    <ul className="mt-1 text-xs text-blue-700 space-y-1">
-                      <li className="flex items-center gap-1.5"><Highlighter size={11} /> <strong>Highlight</strong> — select text in the document</li>
-                      <li className="flex items-center gap-1.5"><StickyNote size={11} /> <strong>Sticky Note</strong> — click anywhere on the document</li>
-                    </ul>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  {annotations.length === 0 ? (
-                    <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-4 py-6 text-center">
-                      <MessageSquarePlus size={22} className="text-slate-300 mx-auto mb-2" />
-                      No annotations yet. Use the toolbar above the document.
-                    </div>
-                  ) : (() => {
-                    const grouped = {};
-                    annotations.forEach(a => {
-                      const key = a.pageNumber ? `Page ${a.pageNumber}` : 'General';
-                      if (!grouped[key]) grouped[key] = [];
-                      grouped[key].push(a);
-                    });
-                    return Object.entries(grouped).map(([pageLabel, pageAnnotations]) => (
-                      <div key={pageLabel}>
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">{pageLabel}</div>
-                        <div className="space-y-2">
-                          {pageAnnotations.filter((annotation) => !annotation.parentId).map(annotation => {
-                            const replies = pageAnnotations
-                              .filter((item) => item.parentId === annotation.id)
-                              .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-                            const tc = ANNOTATION_TYPES[annotation.annotationType] || ANNOTATION_TYPES.comment;
-                            const TypeIcon = tc.icon;
-                            return (
-                              <div key={annotation.id} className={`${tc.bg} border ${tc.border} rounded-lg p-3 group`}>
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex items-start gap-2 flex-1">
-                                    <TypeIcon size={13} className={`${tc.color} mt-0.5 flex-shrink-0`} />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <span className={`text-xs font-bold ${tc.color}`}>{tc.label}</span>
-                                        {annotation.highlightColor && HL_COLORS[annotation.highlightColor] && (
-                                          <span className={`w-3 h-3 rounded-full ${HL_COLORS[annotation.highlightColor]} inline-block`} />
-                                        )}
-                                        <span className="text-xs text-slate-400">• {annotation.reviewerName}</span>
-                                      </div>
-                                      {annotation.selectedText && <p className="text-xs text-slate-500 mb-1 italic">"{annotation.selectedText}"</p>}
-                                      {annotation.note && <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>}
-                                    </div>
-                                  </div>
-                                  {(annotation.userId === user?.id || user?.role === 'admin') && (
-                                    <button
-                                      onClick={() => handleDeleteAnnotation(annotation.id)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                                      title="Delete"
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
-                                  )}
-                                </div>
-
-                                <div className="mt-2 flex items-center gap-2">
-                                  <button
-                                    onClick={() => {
-                                      if (replyingToId === annotation.id) {
-                                        setReplyingToId(null);
-                                        setReplyText('');
-                                      } else {
-                                        setReplyingToId(annotation.id);
-                                        setReplyText('');
-                                      }
-                                    }}
-                                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-[#1C4D8D]"
-                                  >
-                                    <CornerDownRight size={12} /> Reply
-                                  </button>
-                                </div>
-
-                                {replyingToId === annotation.id && (
-                                  <div className="mt-2 flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      value={replyText}
-                                      onChange={(e) => setReplyText(e.target.value)}
-                                      placeholder="Write a reply..."
-                                      className="flex-1 px-3 py-2 border rounded-lg text-sm"
-                                    />
-                                    <button
-                                      onClick={() => handleSubmitReply(annotation)}
-                                      className="px-3 py-2 bg-[#1C4D8D] text-white rounded-lg text-xs font-bold"
-                                    >
-                                      Send
-                                    </button>
-                                  </div>
-                                )}
-
-                                {replies.length > 0 && (
-                                  <div className="mt-3 space-y-2 border-l-2 border-slate-200 pl-3">
-                                    {replies.map((reply) => (
-                                      <div key={reply.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
-                                        <div className="flex items-center justify-between gap-2 mb-1">
-                                          <span className="text-xs font-bold text-slate-600">{reply.reviewerName}</span>
-                                          <span className="text-xs text-slate-400">{new Date(reply.createdAt).toLocaleString()}</span>
-                                        </div>
-                                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{reply.note}</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -1003,16 +965,6 @@ const ReviewDetail = () => {
                 <button onClick={() => setShowRevisionModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-all font-bold shadow-lg">
                   <AlertCircle size={20} /> Request Revision
                 </button>
-
-                {user?.role === 'staff' && ['pending_editor', 'pending_admin'].includes(paper.status) && (
-                  <button
-                    onClick={handleRunPlagiarismScan}
-                    disabled={plagiarismLoading}
-                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-slate-700 text-white rounded-xl hover:bg-slate-800 transition-all font-bold shadow-lg disabled:opacity-60"
-                  >
-                    <ShieldCheck size={20} /> {plagiarismLoading ? 'Scanning...' : 'Run Plagiarism Scan'}
-                  </button>
-                )}
 
                 {user?.role === 'staff' && ['pending_editor'].includes(paper.status) && (
                   <button
@@ -1063,12 +1015,17 @@ const ReviewDetail = () => {
                   </button>
                 )}
 
-                {/* Dean Bypass Button — only shown for Dean role and when paper is NOT at pending_dean */}
-                {user?.role === 'dean' && paper.status !== 'pending_dean' && !['approved', 'published'].includes(paper.status) && (
-                  <button onClick={() => setShowBypassModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all font-bold shadow-lg mt-2">
-                    <Shield size={20} /> Bypass Approve
-                  </button>
-                )}
+              </div>
+            </div>
+          )}
+
+          {/* Dean Bypass Button - available for Dean except finalized statuses blocked by backend */}
+          {user?.role === 'dean' && !['approved', 'published', 'rejected'].includes(paper.status) && (
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+              <div className="p-6">
+                <button onClick={() => setShowBypassModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all font-bold shadow-lg">
+                  <Shield size={20} /> Bypass Approve
+                </button>
               </div>
             </div>
           )}
@@ -1101,40 +1058,180 @@ const ReviewDetail = () => {
             </div>
           </div>
 
-          {['staff', 'admin'].includes(user?.role) && (
+          {user?.role === 'admin' && ['approved', 'published'].includes(paper.status) && (
+            <div className="bg-white rounded-2xl shadow-lg border border-indigo-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-white flex items-center gap-3">
+                <Award size={20} className="text-indigo-600" />
+                <h3 className="font-bold text-slate-900">Admin: Publish &amp; DOI</h3>
+              </div>
+              <div className="p-6 space-y-3">
+                <p className="text-sm text-slate-600">
+                  Approved papers are visible in the repository as <strong>internal (approved)</strong>. Publishing assigns a DOI and marks the work as formally published.
+                </p>
+                {paper.status === 'published' && paper.doi && (
+                  <p className="text-sm">
+                    <span className="text-slate-500">Current DOI: </span>
+                    <span className="font-mono font-semibold text-slate-900">{paper.doi}</span>
+                  </p>
+                )}
+                <div className="flex flex-col gap-2">
+                  {paper.status === 'approved' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPublishDoiValue('');
+                        setShowPublishDoiModal(true);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700"
+                    >
+                      <Award size={18} /> Mark as published (enter DOI)
+                    </button>
+                  )}
+                  {paper.status === 'published' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPublishDoiValue(paper.doi || '');
+                        setShowPublishDoiModal(true);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700"
+                    >
+                      Update DOI
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowMetadataModal(true)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-indigo-200 text-indigo-800 rounded-xl font-bold hover:bg-indigo-50"
+                  >
+                    <FileText size={18} /> Edit metadata (title, abstract, …)
+                  </button>
+                  {paper.status === 'published' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!window.confirm('Revert this paper to internal (approved) status? The DOI will be cleared.')) return;
+                        setActionLoading(true);
+                        const t = toast.loading('Reverting…');
+                        try {
+                          await researchAPI.adminUnpublishResearch(id);
+                          toast.success('Paper set back to approved (internal)', { id: t });
+                          await fetchPaperDetail();
+                        } catch (error) {
+                          toast.error(getApiErrorMessage(error, 'Unpublish failed'), { id: t });
+                        } finally {
+                          setActionLoading(false);
+                        }
+                      }}
+                      disabled={actionLoading}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-amber-300 text-amber-900 rounded-xl font-bold hover:bg-amber-50 disabled:opacity-50"
+                    >
+                      Revert to internal (approved)
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {user?.role === 'staff' && (
             <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 space-y-4">
               <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
                 <ShieldCheck size={20} className="text-slate-700" />
-                <h3 className="font-bold text-slate-900">Plagiarism Check</h3>
+                <h3 className="font-bold text-slate-900">Similarity check (third party)</h3>
               </div>
-              <div className="text-sm space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Status</span>
-                  <span className="font-bold text-slate-900">{plagiarism.status || 'not_checked'}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Similarity Score</span>
-                  <span className="font-bold text-slate-900">{plagiarism.score === null ? 'N/A' : `${plagiarism.score}%`}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Provider</span>
-                  <span className="font-bold text-slate-900">{plagiarism.provider || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Checked At</span>
-                  <span className="font-bold text-slate-900">{plagiarism.checkedAt ? new Date(plagiarism.checkedAt).toLocaleString() : 'N/A'}</span>
-                </div>
+              <p className="text-sm text-slate-600">
+                In-app plagiarism scanning is turned off. Open your institution&apos;s Turnitin or Grammarly account in a new tab, then upload the manuscript there.
+              </p>
+              <div className="flex flex-col gap-2">
+                <a
+                  href={turnitinUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-900"
+                >
+                  Open Turnitin
+                </a>
+                <a
+                  href={grammarlyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border-2 border-emerald-600 text-emerald-800 font-bold hover:bg-emerald-50"
+                >
+                  Open Grammarly
+                </a>
               </div>
-              {plagiarism.summary && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold text-slate-500 mb-1">Summary</p>
-                  <p className="text-sm text-slate-700">{plagiarism.summary}</p>
-                </div>
-              )}
+              <p className="text-xs text-slate-500">
+                Set <code className="bg-slate-100 px-1 rounded">VITE_TURNITIN_URL</code> and{' '}
+                <code className="bg-slate-100 px-1 rounded">VITE_GRAMMARLY_URL</code> in the frontend env to point to your campus login pages.
+              </p>
             </div>
           )}
         </div>
       </div>
+
+      {/* Admin publish / DOI */}
+      {showPublishDoiModal && user?.role === 'admin' && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border">
+            <div className="px-6 py-4 bg-indigo-50 border-b border-indigo-100 flex items-center gap-3">
+              <Award size={20} className="text-indigo-600" />
+              <h3 className="text-xl font-bold text-slate-900">
+                {paper?.status === 'published' ? 'Update DOI' : 'Mark as published'}
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <label className="block text-sm font-bold text-slate-700">
+                DOI <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={publishDoiValue}
+                onChange={(e) => setPublishDoiValue(e.target.value)}
+                placeholder="e.g. 10.1234/nucleus.2026.001"
+                className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+              />
+              <p className="text-xs text-slate-500">
+                Use the DOI issued by your publisher or repository. You may paste a full https://doi.org/… link; it will be normalized.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPublishDoiModal(false);
+                    setPublishDoiValue('');
+                  }}
+                  className="flex-1 py-3 border rounded-xl font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={actionLoading || !publishDoiValue.trim()}
+                  onClick={async () => {
+                    setActionLoading(true);
+                    const t = toast.loading(paper?.status === 'published' ? 'Updating DOI…' : 'Publishing…');
+                    try {
+                      await researchAPI.adminPublishResearch(id, { doi: publishDoiValue.trim() });
+                      toast.success(paper?.status === 'published' ? 'DOI updated' : 'Paper published', { id: t });
+                      setShowPublishDoiModal(false);
+                      setPublishDoiValue('');
+                      await fetchPaperDetail();
+                    } catch (error) {
+                      toast.error(getApiErrorMessage(error, 'Request failed'), { id: t });
+                    } finally {
+                      setActionLoading(false);
+                    }
+                  }}
+                  className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50"
+                >
+                  {paper?.status === 'published' ? 'Save DOI' : 'Publish'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals remain the same as previous logic */}
       {/* Approve Modal */}
@@ -1439,12 +1536,13 @@ const ReviewDetail = () => {
                     try {
                       await researchAPI.deanBypassApprove(id, bypassReason, bypassTarget);
                       toast.success('Paper bypass-approved successfully! ✅', { id: loadingToast, duration: 3000 });
+                      setShowBypassModal(false);
+                      setBypassReason('');
                       navigate('/dean/review');
                     } catch (error) {
                       toast.error(getApiErrorMessage(error, 'Failed to bypass approve'), { id: loadingToast });
                     } finally {
                       setActionLoading(false);
-                      setShowBypassModal(false);
                     }
                   }}
                   disabled={actionLoading || !bypassReason.trim()}
@@ -1566,6 +1664,26 @@ const ReviewDetail = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Annotations Side Panel */}
+      {canAnnotate && (
+        <AnnotationsSidePanel
+          annotations={annotations}
+          isOpen={annotationsPanelOpen}
+          onToggle={() => setAnnotationsPanelOpen(!annotationsPanelOpen)}
+          canEdit={canAnnotate}
+          onReply={handleSubmitReply}
+          onDelete={handleDeleteAnnotation}
+          onAddAnnotation={handleAddAnnotationFromPanel}
+          currentUserId={user?.id}
+          userRole={user?.role}
+          pdfFileUrl={previewPdfUrl}
+          pdfPageNumber={reviewPdfPage}
+          pdfNumPages={reviewPdfNumPages}
+          onPdfPageChange={setReviewPdfPage}
+          onSaveDrawing={handleDrawingSaved}
+        />
       )}
     </div>
   );

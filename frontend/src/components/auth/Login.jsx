@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import NucleusLogoMark from '../branding/NucleusLogoMark';
 import {
-  BookOpen,
   Lock,
   Mail,
   Eye,
@@ -115,9 +115,11 @@ const Login = () => {
               to="/"
               className="flex items-center gap-3 mb-8 group hover:opacity-90 transition-all duration-500"
             >
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-indigo-500/25 transition-all duration-500 group-hover:scale-105 group-hover:rotate-3">
-                <BookOpen size={24} className="text-white transition-transform duration-500 group-hover:scale-110" />
-              </div>
+              <NucleusLogoMark
+                size={48}
+                rounded="rounded-xl"
+                className="shadow-lg transition-all duration-500 group-hover:scale-105 group-hover:rotate-3"
+              />
               <div className="flex flex-col transform transition-all duration-500 group-hover:translate-x-1">
                 <span className="font-bold text-2xl tracking-tight">NUCLEUS</span>
                 <span className="text-sm text-white/70 font-medium">NU Dasmariñas</span>

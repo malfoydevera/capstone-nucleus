@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { 
   FileText, 
   Clock, 
@@ -33,27 +33,20 @@ const PAGE_SIZE = 4;
 
 const AdminReviewSubmissions = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const [papers, setPapers] = useState([]);
   const [filteredPapers, setFilteredPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('needs_action');
-  const [showRecycleBin, setShowRecycleBin] = useState(false);
   const [stats, setStats] = useState({
-    pending: 0,
+    pendingStaff: 0,
     pendingAdmin: 0,
     approved: 0,
+    published: 0,
     rejected: 0,
     revisionRequired: 0,
     total: 0,
-    deleted: 0,
   });
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-
-  useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    setShowRecycleBin(searchParams.get('recycleBin') === '1');
-  }, [location.search]);
 
   useEffect(() => {
     fetchPapers();
@@ -68,28 +61,29 @@ const AdminReviewSubmissions = () => {
 
   useEffect(() => {
     filterPapers();
-  }, [papers, statusFilter, showRecycleBin]);
+  }, [papers, statusFilter]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [statusFilter, showRecycleBin, filteredPapers.length]);
+  }, [statusFilter, filteredPapers.length]);
 
   const fetchPapers = async () => {
     try {
-      const response = await researchAPI.adminGetAllResearch(showRecycleBin ? 'true' : undefined);
+      const response = await researchAPI.adminGetAllResearch();
       const allPapers = unwrapApiData(response).papers || [];
-      
-      setPapers(allPapers);
-      
-      // Calculate stats
+      const activePapers = allPapers.filter((p) => !p.deleted_at);
+
+      setPapers(activePapers);
+
+      // Calculate stats (active papers only)
       setStats({
-        pending: 0,
-        pendingAdmin: allPapers.filter(p => p.status === 'pending_admin').length,
-        approved: allPapers.filter(p => p.status === 'approved').length,
-        rejected: allPapers.filter(p => p.status === 'rejected').length,
-        revisionRequired: allPapers.filter(p => p.status === 'revision_required').length,
-        total: allPapers.length,
-        deleted: allPapers.filter(p => p.deleted_at).length,
+        pendingStaff: activePapers.filter(p => ['pending_faculty', 'pending_editor'].includes(p.status)).length,
+        pendingAdmin: activePapers.filter(p => p.status === 'pending_admin').length,
+        approved: activePapers.filter(p => p.status === 'approved').length,
+        published: activePapers.filter(p => p.status === 'published').length,
+        rejected: activePapers.filter(p => p.status === 'rejected').length,
+        revisionRequired: activePapers.filter(p => p.status === 'revision_required').length,
+        total: activePapers.length,
       });
     } catch (error) {
       console.error('Failed to fetch papers:', error);
@@ -98,25 +92,17 @@ const AdminReviewSubmissions = () => {
     }
   };
 
-  useEffect(() => {
-    fetchPapers();
-  }, [showRecycleBin]);
-
   const filterPapers = () => {
     let filtered = papers;
-
-    if (showRecycleBin) {
-      filtered = filtered.filter((p) => p.deleted_at);
-    } else {
-      filtered = filtered.filter((p) => !p.deleted_at);
-    }
     
     if (statusFilter === 'all') {
       filtered = filtered;
     } else if (statusFilter === 'needs_action') {
-      filtered = filtered.filter(p => p.status === 'pending_admin');
+      filtered = filtered.filter(p => ['pending_admin', 'pending_faculty', 'pending_editor'].includes(p.status));
     } else if (statusFilter === 'pending_admin') {
       filtered = filtered.filter(p => p.status === 'pending_admin');
+    } else if (statusFilter === 'pending_faculty') {
+      filtered = filtered.filter(p => ['pending_faculty', 'pending_editor'].includes(p.status));
     } else {
       filtered = filtered.filter(p => p.status === statusFilter);
     }
@@ -125,21 +111,6 @@ const AdminReviewSubmissions = () => {
     filtered.sort((a, b) => new Date(b.submission_date) - new Date(a.submission_date));
     
     setFilteredPapers(filtered);
-  };
-
-  const handleRestorePaper = async (paperId, e) => {
-    e.stopPropagation();
-    try {
-      await researchAPI.adminRestoreResearch(paperId);
-      await fetchPapers();
-    } catch (error) {
-      console.error('Failed to restore paper:', error);
-    }
-  };
-
-  const toggleRecycleBin = () => {
-    const nextValue = !showRecycleBin;
-    navigate(nextValue ? '/admin/papers?recycleBin=1' : '/admin/papers');
   };
 
   const formatDate = (dateString) => {
@@ -160,18 +131,32 @@ const AdminReviewSubmissions = () => {
     });
   };
 
-  const getRecycleCountdown = (deletedAt) => {
-    if (!deletedAt) return null;
-    const deleted = new Date(deletedAt);
-    const expiry = new Date(deleted);
-    expiry.setDate(expiry.getDate() + 30);
-    const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / 86400000);
-    if (daysLeft <= 0) return 'Expired';
-    return daysLeft === 1 ? '1 day left' : `${daysLeft} days left`;
-  };
-
   const getStatusConfig = (status) => {
     const configs = {
+      pending_admin: {
+        color: 'from-[#1C4D8D] to-[#2563eb]',
+        bgColor: 'bg-gradient-to-r from-blue-100 to-indigo-100',
+        textColor: 'text-indigo-900',
+        borderColor: 'border-indigo-200',
+        icon: Eye,
+        label: 'Awaiting Admin Approval'
+      },
+      pending_editor: {
+        color: 'from-yellow-500 to-amber-500',
+        bgColor: 'bg-gradient-to-r from-yellow-100 to-amber-100',
+        textColor: 'text-yellow-800',
+        borderColor: 'border-yellow-200',
+        icon: Clock,
+        label: 'Pending Staff Review'
+      },
+      pending_faculty: {
+        color: 'from-yellow-500 to-amber-500',
+        bgColor: 'bg-gradient-to-r from-yellow-100 to-amber-100',
+        textColor: 'text-yellow-800',
+        borderColor: 'border-yellow-200',
+        icon: Clock,
+        label: 'Pending Faculty Review'
+      },
       pending: {
         color: 'from-yellow-500 to-amber-500',
         bgColor: 'bg-gradient-to-r from-yellow-100 to-amber-100',
@@ -186,6 +171,14 @@ const AdminReviewSubmissions = () => {
         textColor: 'text-green-800',
         borderColor: 'border-green-200',
         icon: CheckCircle,
+        label: 'Approved (internal)'
+      },
+      published: {
+        color: 'from-emerald-500 to-teal-500',
+        bgColor: 'bg-gradient-to-r from-emerald-100 to-teal-100',
+        textColor: 'text-emerald-800',
+        borderColor: 'border-emerald-200',
+        icon: Award,
         label: 'Published'
       },
       rejected: {
@@ -204,14 +197,6 @@ const AdminReviewSubmissions = () => {
         icon: AlertCircle,
         label: 'Revision Required'
       },
-      deleted: {
-        color: 'from-slate-300 to-slate-400',
-        bgColor: 'bg-gradient-to-r from-slate-100 to-slate-200',
-        textColor: 'text-slate-700',
-        borderColor: 'border-slate-300',
-        icon: XCircle,
-        label: 'In Recycle Bin'
-      }
     };
     return configs[status] || configs.pending;
   };
@@ -287,7 +272,7 @@ const AdminReviewSubmissions = () => {
             items={[
               'Prioritize papers marked Awaiting Admin Approval before reviewing historical or already-published records.',
               'Use status filters carefully because staff-review items and final-approval items imply different next actions.',
-              'When rejecting or restoring a paper, make sure the audit trail and recycle-window implications are clear.',
+              'When rejecting a paper, make sure the audit trail and workflow implications are clear.',
             ]}
             tone="violet"
           />
@@ -295,7 +280,7 @@ const AdminReviewSubmissions = () => {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-8">
         {[
           { 
             label: 'Total Papers', 
@@ -312,17 +297,24 @@ const AdminReviewSubmissions = () => {
             change: null 
           },
           { 
-            label: 'Published', 
-            value: stats.approved, 
-            icon: CheckCircle, 
-            color: 'from-emerald-500 to-green-500',
-            change: '+12%' 
-          },
-          { 
-            label: 'Staff Review', 
-            value: stats.pending, 
+            label: 'Faculty / Staff review', 
+            value: stats.pendingStaff, 
             icon: Clock, 
             color: 'from-amber-500 to-orange-500',
+            change: null 
+          },
+          { 
+            label: 'Approved (internal)', 
+            value: stats.approved, 
+            icon: CheckCircle, 
+            color: 'from-green-500 to-emerald-500',
+            change: null 
+          },
+          { 
+            label: 'Published', 
+            value: stats.published, 
+            icon: Award, 
+            color: 'from-emerald-600 to-teal-600',
             change: null 
           },
           { 
@@ -330,7 +322,7 @@ const AdminReviewSubmissions = () => {
             value: stats.rejected, 
             icon: XCircle, 
             color: 'from-red-500 to-pink-500',
-            change: '-3%' 
+            change: null 
           },
         ].map((stat, index) => {
           const Icon = stat.icon;
@@ -376,9 +368,10 @@ const AdminReviewSubmissions = () => {
           <div className="flex flex-wrap gap-3">
             {[
               { key: 'pending_admin', label: 'Awaiting Admin Approval', count: stats.pendingAdmin, color: '[#1C4D8D]' },
-              { key: 'needs_action', label: 'Needs Action', count: stats.pending + stats.pendingAdmin, color: '[#1C4D8D]' },
-              { key: 'pending', label: 'Pending Staff Review', count: stats.pending, color: 'amber' },
-              { key: 'approved', label: 'Published', count: stats.approved, color: 'emerald' },
+              { key: 'needs_action', label: 'Needs Action', count: stats.pendingStaff + stats.pendingAdmin, color: '[#1C4D8D]' },
+              { key: 'pending_faculty', label: 'Pending Faculty', count: stats.pendingStaff, color: 'amber' },
+              { key: 'approved', label: 'Approved (internal)', count: stats.approved, color: 'emerald' },
+              { key: 'published', label: 'Published', count: stats.published, color: 'teal' },
               { key: 'rejected', label: 'Rejected', count: stats.rejected, color: 'red' },
               { key: 'all', label: 'All Papers', count: stats.total, color: 'slate' },
             ].map((filter) => (
@@ -403,21 +396,6 @@ const AdminReviewSubmissions = () => {
                 </div>
               </button>
             ))}
-            <button
-              onClick={toggleRecycleBin}
-              className={`group px-5 py-3 rounded-xl font-medium transition-all duration-300 ${
-                showRecycleBin
-                  ? 'bg-gradient-to-r from-slate-700 to-slate-900 text-white shadow-lg'
-                  : 'bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-slate-400'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span>Recycle Bin</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${showRecycleBin ? 'bg-white/20' : 'bg-slate-200 text-slate-700'}`}>
-                  {stats.deleted}
-                </span>
-              </div>
-            </button>
           </div>
         </div>
       </div>
@@ -475,7 +453,7 @@ const AdminReviewSubmissions = () => {
           </div>
 
           {visiblePapers.map((paper) => {
-            const statusConfig = getStatusConfig(paper.deleted_at ? 'deleted' : paper.status);
+            const statusConfig = getStatusConfig(paper.status);
             const StatusIcon = statusConfig.icon;
 
             return (
@@ -553,17 +531,6 @@ const AdminReviewSubmissions = () => {
                       </div>
                     )}
 
-                    {paper.deleted_at && (
-                      <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-300">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center flex-shrink-0">
-                          <Clock size={18} className="text-slate-700" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">Recycle Window</p>
-                          <p className="text-slate-600 text-sm">{getRecycleCountdown(paper.deleted_at)}</p>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   {/* Keywords */}
@@ -593,31 +560,21 @@ const AdminReviewSubmissions = () => {
 
                   {/* Action Button */}
                   <div className="pt-6 border-t border-slate-200">
-                    {paper.deleted_at ? (
-                      <button
-                        onClick={(e) => handleRestorePaper(paper.id, e)}
-                        className="inline-flex items-center gap-2 text-emerald-700 hover:text-emerald-800 font-bold group/btn transition-colors"
-                      >
-                        Restore Paper
-                        <ChevronRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/admin/review/${paper.id}`);
-                        }}
-                        className="inline-flex items-center gap-2 text-[#1C4D8D] hover:text-[#1C4D8D]/80 font-bold group/btn transition-colors"
-                      >
-                        {paper.status === 'pending_admin' 
-                          ? 'Final Approval Required'
-                          : paper.status === 'pending'
-                            ? 'View Staff Review Progress'
-                            : 'Review Details'
-                        }
-                        <ChevronRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
-                      </button>
-                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/admin/review/${paper.id}`);
+                      }}
+                      className="inline-flex items-center gap-2 text-[#1C4D8D] hover:text-[#1C4D8D]/80 font-bold group/btn transition-colors"
+                    >
+                      {paper.status === 'pending_admin' 
+                        ? 'Final Approval Required'
+                        : paper.status === 'pending'
+                          ? 'View Staff Review Progress'
+                          : 'Review Details'
+                      }
+                      <ChevronRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
+                    </button>
                   </div>
                 </div>
               </div>

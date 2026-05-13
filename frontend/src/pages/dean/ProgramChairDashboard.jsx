@@ -276,7 +276,7 @@ const ProgramChairDashboard = () => {
                 <Eye size={24} className="text-white" />
               </div>
               <div className="text-left">
-                <p className="font-semibold text-white">Review Queue</p>
+                <p className="font-semibold text-white">Review Submissions</p>
                 <p className="text-sm text-teal-100">{stats.pending} papers waiting for your review</p>
               </div>
               <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
@@ -284,7 +284,7 @@ const ProgramChairDashboard = () => {
           </button>
 
           <button
-            onClick={() => navigate('/program-chair/assign-faculty')}
+            onClick={() => navigate('/program-chair/repository')}
             className="group bg-gradient-to-br from-slate-700 to-slate-800 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
           >
             <div className="flex items-center gap-4">
@@ -292,8 +292,8 @@ const ProgramChairDashboard = () => {
                 <Users size={24} className="text-white" />
               </div>
               <div className="text-left">
-                <p className="font-semibold text-white">Assign Faculty</p>
-                <p className="text-sm text-slate-200">Manage reviewer coverage inside your program</p>
+                <p className="font-semibold text-white">Program Repository</p>
+                <p className="text-sm text-slate-200">Browse approved research from your program</p>
               </div>
               <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
             </div>

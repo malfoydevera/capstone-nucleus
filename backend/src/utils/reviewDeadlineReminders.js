@@ -1,4 +1,5 @@
 const supabase = require('../config/supabase');
+const { notifyUser } = require('./notify');
 
 const toPositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -77,17 +78,14 @@ const runReviewDeadlineReminderSweep = async () => {
       ? `Review deadline passed for "${paper.title}". Please complete the Program Chair review as soon as possible.`
       : `Review deadline for "${paper.title}" is in ${hoursLeft} hour(s).`;
 
-    const { error: notificationError } = await supabase.from('notifications').insert([
-      {
-        user_id: paper.dean_chair_id,
-        research_id: paper.id,
-        type: 'review_deadline_reminder',
-        title: isOverdue ? 'Review Deadline Overdue' : 'Review Deadline Reminder',
-        message,
-      },
-    ]);
-
-    if (notificationError) throw notificationError;
+    const result = await notifyUser({
+      userId: paper.dean_chair_id,
+      researchId: paper.id,
+      type: 'review_deadline_reminder',
+      title: isOverdue ? 'Review Deadline Overdue' : 'Review Deadline Reminder',
+      message,
+    });
+    if (result?.error) throw result.error;
 
     if (hasReminderColumn) {
       const { error: updateError } = await supabase

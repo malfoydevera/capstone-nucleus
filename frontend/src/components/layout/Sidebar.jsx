@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { notificationsAPI, researchAPI, unwrapApiData } from '../../utils/api';
+import NucleusLogoMark from '../branding/NucleusLogoMark';
 import {
   LayoutDashboard,
   BookOpen,
+  ListChecks,
   LogOut,
   ChevronLeft,
   Users,
@@ -12,24 +14,21 @@ import {
   Bell,
   User,
   Shield,
-  Database,
   Award,
   FileCheck,
-  Grid,
   PieChart,
   UserCog,
   FileEdit,
   Eye,
   PlusCircle,
   Search,
-  Trash2,
   UserPlus,
   Menu,
   X,
   CircleHelp,
 } from 'lucide-react';
 
-const MobileNavItem = ({ to, onClick, icon: Icon, label, badge, active, collapsed }) => {
+const MobileNavItem = ({ to, onClick, icon: Icon, label, badge, badgeWarning, active, collapsed }) => {
   const commonClassName = `group relative flex items-center rounded-2xl border text-sm font-medium ${
     collapsed ? 'justify-center px-3 py-3' : 'gap-3 px-4 py-3'
   } ${
@@ -43,7 +42,12 @@ const MobileNavItem = ({ to, onClick, icon: Icon, label, badge, active, collapse
       <Icon size={18} className="flex-shrink-0" />
       {!collapsed ? <span className="min-w-0 flex-1 truncate">{label}</span> : null}
       {!collapsed && badge ? (
-        <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-[#1C4D8D] px-2 py-0.5 text-[11px] font-bold text-white">
+        <span
+          className={`inline-flex min-w-6 items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${
+            badgeWarning ? 'bg-rose-500' : 'bg-[#1C4D8D]'
+          }`}
+          title={badgeWarning ? 'Notification fetch failed' : undefined}
+        >
           {badge}
         </span>
       ) : null}
@@ -76,6 +80,7 @@ const Sidebar = () => {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [stats, setStats] = useState({ staffPending: 0, adminPending: 0, facultyPending: 0, deanChairPending: 0 });
   const [notifications, setNotifications] = useState([]);
+  const [notificationsError, setNotificationsError] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -110,24 +115,21 @@ const Sidebar = () => {
             adminPending: papers.filter((paper) => paper.status === 'pending_admin').length,
           }));
         }
-      } catch {
-        // Intentionally silent: navigation should stay usable even if badges fail.
+      } catch (err) {
+        console.warn('[Sidebar] badge stats fetch failed', err);
       }
     };
 
     const fetchNotifications = async () => {
       try {
-        const res = await notificationsAPI.getMine({ limit: 30 });
-        const rows = res.data.notifications || [];
-        const grouped = rows.reduce((acc, notification) => {
-          if (notification.is_read) return acc;
-          const key = notification.type || 'general';
-          acc[key] = (acc[key] || 0) + 1;
-          return acc;
-        }, {});
-        setNotifications(Object.entries(grouped).map(([type, count], index) => ({ id: `${type}-${index}`, type, count })));
-      } catch {
-        // Intentionally silent.
+        const res = await notificationsAPI.getUnreadCount();
+        const count = unwrapApiData(res).unreadCount ?? 0;
+        // Store as a single synthetic entry so totalNotifications computation below still works
+        setNotifications(count > 0 ? [{ id: 'unread', type: 'unread', count }] : []);
+        setNotificationsError(false);
+      } catch (err) {
+        console.warn('[Sidebar] notifications fetch failed', err);
+        setNotificationsError(true);
       }
     };
 
@@ -165,10 +167,7 @@ const Sidebar = () => {
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { name: 'User Management', icon: UserCog, path: '/admin/users' },
         { name: 'Research Papers', icon: FileEdit, path: '/admin/papers', badge: stats.adminPending || null },
-        { name: 'Recycle Bin', icon: Trash2, path: '/admin/papers?recycleBin=1' },
         { name: 'Analytics', icon: PieChart, path: '/admin/analytics' },
-        { name: 'System Health', icon: Database, path: '/admin/health' },
-        { name: 'Settings', icon: Grid, path: '/admin/settings' },
       ],
       staff: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -189,11 +188,12 @@ const Sidebar = () => {
       ],
       program_chair: [
         { name: 'Program Analytics', icon: LayoutDashboard, path: '/program-chair/analytics' },
-        { name: 'Assign Faculty', icon: FileCheck, path: '/program-chair/review', badge: stats.deanChairPending || null },
+        { name: 'Review Submissions', icon: FileCheck, path: '/program-chair/review', badge: stats.deanChairPending || null },
         { name: 'Repository', icon: Search, path: '/program-chair/repository' },
       ],
       student: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+        { name: 'My Research', icon: ListChecks, path: '/student/my-research' },
         { name: 'Portfolio', icon: FileText, path: '/student/portfolio' },
         { name: 'Submit Research', icon: PlusCircle, path: '/student/submit' },
         { name: 'Co-author Invites', icon: UserPlus, path: '/student/co-author-invitations' },
@@ -204,12 +204,18 @@ const Sidebar = () => {
     return {
       primary: menuConfig[user?.role] || [],
       secondary: [
-        { name: 'Notifications', icon: Bell, path: '/notifications', badge: totalNotifications || null },
+        {
+          name: 'Notifications',
+          icon: Bell,
+          path: '/notifications',
+          badge: notificationsError ? '!' : (totalNotifications || null),
+          badgeWarning: notificationsError,
+        },
         { name: 'Profile', icon: User, path: '/profile' },
         { name: 'User Guide', icon: CircleHelp, path: '/guide' },
       ],
     };
-  }, [notifications, stats.adminPending, stats.deanChairPending, stats.facultyPending, stats.staffPending, user?.role]);
+  }, [notifications, notificationsError, stats.adminPending, stats.deanChairPending, stats.facultyPending, stats.staffPending, user?.role]);
 
   const roleLabel = (user?.role || 'user').replace(/_/g, ' ').replace(/\b\w/g, (value) => value.toUpperCase());
 
@@ -251,18 +257,14 @@ const Sidebar = () => {
         <div className={`flex items-center border-b border-slate-200 ${isCollapsed ? 'justify-center px-3 py-5' : 'justify-between px-5 py-5'}`}>
           {!isCollapsed ? (
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1C4D8D] text-white shadow-sm">
-                <BookOpen size={18} />
-              </div>
+              <NucleusLogoMark size={44} className="shadow-md" ringClassName="ring-1 ring-slate-200/70" />
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#1C4D8D]">NUCLEUS</p>
                 <p className="text-xs text-slate-500">Research portal</p>
               </div>
             </div>
           ) : (
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1C4D8D] text-white shadow-sm">
-              <BookOpen size={18} />
-            </div>
+            <NucleusLogoMark size={44} className="shadow-md" ringClassName="ring-1 ring-slate-200/70" />
           )}
 
           <div className="flex items-center gap-2">
@@ -323,6 +325,7 @@ const Sidebar = () => {
                   icon={item.icon}
                   label={item.name}
                   badge={item.badge}
+                  badgeWarning={item.badgeWarning}
                   active={isActive(item.path)}
                   collapsed={isCollapsed}
                 />

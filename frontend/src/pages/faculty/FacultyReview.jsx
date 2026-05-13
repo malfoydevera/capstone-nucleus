@@ -55,6 +55,7 @@ const FacultyReview = () => {
     facultyApproved: 0,
     total: 0
   });
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [summaryByPaper, setSummaryByPaper] = useState({});
   const [summaryLoadingByPaper, setSummaryLoadingByPaper] = useState({});
   const [conflictModalPaper, setConflictModalPaper] = useState(null);
@@ -102,12 +103,22 @@ const FacultyReview = () => {
       };
       
       setStats(statsData);
+      setLastRefreshed(new Date());
     } catch (error) {
       console.error('Failed to fetch papers:', error);
     } finally {
       if (!silent) setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  const formatRelativeTime = (date) => {
+    if (!date) return null;
+    const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    return date.toLocaleTimeString();
   };
 
   const filterAndSearchPapers = () => {
@@ -348,19 +359,29 @@ const FacultyReview = () => {
               <GraduationCap size={28} className="text-white" />
             </div>
             <div>
-              <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                Faculty Review Dashboard
-              </h1>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <h1 className="text-3xl md:text-4xl font-black text-slate-900">
+                  Review Submissions
+                </h1>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+                  <Award size={12} /> Faculty Adviser
+                </span>
+              </div>
               <p className="text-lg text-slate-600 font-medium">
                 Review research submissions assigned to you
               </p>
+              {lastRefreshed && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Last refreshed {formatRelativeTime(lastRefreshed)}
+                </p>
+              )}
             </div>
           </div>
-          
+
           <button
             onClick={() => fetchPapers()}
             disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-white to-slate-50 border border-slate-200 text-slate-700 font-semibold hover:from-slate-50 hover:to-white transition-all duration-300 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white font-semibold shadow-md hover:shadow-lg transition-all duration-300 disabled:opacity-50"
           >
             <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Refreshing...' : 'Refresh'}
@@ -380,46 +401,75 @@ const FacultyReview = () => {
           />
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gradient-to-br from-yellow-50 to-amber-50 rounded-2xl border-2 border-yellow-200 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-yellow-700 font-semibold mb-1">Pending Review</p>
-                <p className="text-4xl font-black text-yellow-900">{stats.pendingFaculty}</p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-500 to-amber-500 flex items-center justify-center">
-                <Clock size={24} className="text-white" />
-              </div>
+        {/* Stats Bar */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('pending_faculty')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'pending_faculty'
+                ? 'border-yellow-300 bg-gradient-to-br from-yellow-50 to-amber-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-yellow-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Clock size={14} className="text-yellow-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Pending</p>
             </div>
-            <p className="text-sm text-yellow-600 mt-3">Requires your attention</p>
-          </div>
+            <p className="text-3xl font-black text-slate-900">{stats.pendingFaculty}</p>
+            <p className="text-xs text-slate-500 mt-1">Awaiting your action</p>
+          </button>
 
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl border-2 border-green-200 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-green-700 font-semibold mb-1">Approved by You</p>
-                <p className="text-4xl font-black text-green-900">{stats.facultyApproved}</p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
-                <CheckCircle size={24} className="text-white" />
-              </div>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('revision_required')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'revision_required'
+                ? 'border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-orange-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle size={14} className="text-orange-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Revisions</p>
             </div>
-            <p className="text-sm text-green-600 mt-3">Moved to next stage</p>
-          </div>
+            <p className="text-3xl font-black text-slate-900">{stats.revisionRequired}</p>
+            <p className="text-xs text-slate-500 mt-1">In revision loop</p>
+          </button>
 
-          <div className="bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border-2 border-[#1C4D8D]/20 p-6 shadow-lg transform transition-all duration-300 hover:scale-105">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[#1C4D8D] font-semibold mb-1">Total Assigned</p>
-                <p className="text-4xl font-black text-slate-900">{stats.total}</p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center">
-                <BookOpen size={24} className="text-white" />
-              </div>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('pending_editor')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'pending_editor'
+                ? 'border-emerald-300 bg-gradient-to-br from-green-50 to-emerald-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-emerald-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <CheckCircle size={14} className="text-emerald-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Approved by You</p>
             </div>
-            <p className="text-sm text-[#1C4D8D]/80 mt-3">All-time assignments</p>
-          </div>
+            <p className="text-3xl font-black text-slate-900">{stats.facultyApproved}</p>
+            <p className="text-xs text-slate-500 mt-1">Moved to next stage</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'all'
+                ? 'border-[#1C4D8D]/40 bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 shadow-md'
+                : 'border-slate-200 bg-white hover:border-[#1C4D8D]/20'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen size={14} className="text-[#1C4D8D]" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Total Assigned</p>
+            </div>
+            <p className="text-3xl font-black text-slate-900">{stats.total}</p>
+            <p className="text-xs text-slate-500 mt-1">All-time assignments</p>
+          </button>
         </div>
       </div>
 

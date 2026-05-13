@@ -114,6 +114,7 @@ export const notificationsAPI = {
   getUnreadCount: () => api.get('/auth/notifications/unread-count'),
   markRead: (id) => api.patch(`/auth/notifications/${id}/read`),
   markAllRead: () => api.patch('/auth/notifications/read-all'),
+  deleteOne: (id) => api.delete(`/auth/notifications/${id}`),
 };
 
 export const researchAPI = {
@@ -154,7 +155,7 @@ export const researchAPI = {
   adminUpdateResearch: (id, data) => api.put(`/research/admin/${id}`, data),
   adminDeleteResearch: (id) => api.delete(`/research/admin/${id}`),
   adminRestoreResearch: (id) => api.post(`/research/admin/${id}/restore`),
-  adminPublishResearch: (id) => api.post(`/research/admin/${id}/publish`),
+  adminPublishResearch: (id, data) => api.post(`/research/admin/${id}/publish`, data || {}),
   adminUnpublishResearch: (id) => api.post(`/research/admin/${id}/unpublish`),
   getWorkflowStages: () => api.get('/research/admin/workflow-stages'),
   validateWorkflowStages: () => api.get('/research/admin/workflow-stages/validate'),
@@ -170,7 +171,14 @@ export const researchAPI = {
   getAnnotations: (id) => api.get(`/research/${id}/annotations`),
   addAnnotation: (id, data) => api.post(`/research/${id}/annotations`, data),
   deleteAnnotation: (id, annotationId) => api.delete(`/research/${id}/annotations/${annotationId}`),
-  deanBypassApprove: (id, bypassReason, target) => api.post(`/research/${id}/dean-bypass`, { bypassReason, target }),
+  uploadAnnotatedPDF: (id, formData) => api.post(`/research/${id}/annotated-file`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  uploadAnnotationDrawing: (id, formData) => api.post(`/research/${id}/annotation-drawing`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  // Backend expects { reason, targetStatus } for dean bypass actions.
+  deanBypassApprove: (id, bypassReason, target) => api.post(`/research/${id}/dean-bypass`, { reason: bypassReason, targetStatus: target }),
   getDeanActivityMonitor: (params) => api.get('/research/dean/activity-monitor', { params }),
   getAuditLogs: (params) => api.get('/research/dean/audit-logs', { params }),
   getAuditLogsPdf: (params) => api.get('/research/dean/audit-logs/pdf', { params, responseType: 'blob' }),

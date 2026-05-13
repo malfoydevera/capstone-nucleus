@@ -6,7 +6,7 @@ import {
   BookOpen, Award, Users, AlertTriangle, Shield, Activity,
   BarChart3, Search, Bell
 } from 'lucide-react';
-import { notificationsAPI, researchAPI } from '../../utils/api';
+import { notificationsAPI, researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 import GuidancePanel from '../../components/ui/GuidancePanel';
 import { getRoleGuidance } from '../../utils/guidance';
@@ -33,7 +33,7 @@ const DeanDashboard = () => {
 
       setMonitorData(monitorRes.data);
       setDeptComparison(comparisonRes.data);
-      const escalation = (notificationRes.data.notifications || [])
+      const escalation = (unwrapApiData(notificationRes).notifications || [])
         .filter((item) => item.type === 'escalation_alert')
         .slice(0, 5);
       setEscalationAlerts(escalation);

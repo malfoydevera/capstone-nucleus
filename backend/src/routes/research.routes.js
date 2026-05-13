@@ -31,6 +31,15 @@ const upload = multer({
   }
 });
 
+const uploadDrawing = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 4 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = ['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype);
+    cb(ok ? null : new Error('Only PNG, JPEG, or WebP images are allowed'), ok);
+  },
+});
+
 // ========== PUBLIC ROUTES ==========
 router.get('/published', submissionController.getPublishedResearch);
 router.get('/categories', submissionController.getCategories);
@@ -64,6 +73,20 @@ router.delete(
   authenticate,
   authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'),
   annotationController.deletePaperAnnotation
+);
+router.post(
+  '/:id/annotated-file',
+  authenticate,
+  upload.single('annotated_file'),
+  authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'),
+  reviewController.uploadAnnotatedFile
+);
+router.post(
+  '/:id/annotation-drawing',
+  authenticate,
+  authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'),
+  uploadDrawing.single('drawing'),
+  reviewController.uploadAnnotationDrawing
 );
 router.get('/:id/file',     authenticate, submissionController.getResearchFile);
 router.get('/:id',          authenticate, submissionController.getResearchById);

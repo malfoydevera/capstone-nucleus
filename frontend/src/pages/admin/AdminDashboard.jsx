@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Sun,
   Moon,
-  Settings,
   BarChart3,
   Shield
 } from 'lucide-react';
@@ -459,21 +458,6 @@ const AdminDashboard = () => {
             </div>
           </button>
 
-          <button
-            onClick={() => navigate('/admin/settings')}
-            className="group bg-gradient-to-br from-slate-600 to-slate-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <Settings size={24} className="text-white" />
-              </div>
-              <div className="text-left flex-1">
-                <p className="font-semibold text-white">Settings</p>
-                <p className="text-sm text-slate-300">System config</p>
-              </div>
-              <ChevronRight size={20} className="text-white/70 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
         </div>
 
         {/* Recent Papers Table */}

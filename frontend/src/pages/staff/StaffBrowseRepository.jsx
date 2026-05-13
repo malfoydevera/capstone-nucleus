@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, 
   Filter, 
-  Download, 
   Eye, 
   Calendar, 
   User, 
@@ -181,9 +180,10 @@ const StaffBrowseRepository = () => {
   const getStatusBadge = (status) => {
     const badges = {
       pending_editor: { label: 'Pending Review', class: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-      approved: { label: 'Approved', class: 'bg-green-100 text-green-800 border-green-200' },
+      approved: { label: 'Internal (approved)', class: 'bg-amber-50 text-amber-900 border-amber-200' },
+      published: { label: 'Published', class: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
     };
-    return badges[status] || badges.pending_editor;
+    return badges[status] || { label: status || '—', class: 'bg-slate-100 text-slate-700 border-slate-200' };
   };
 
   const formatDate = (dateString) => {
@@ -560,15 +560,6 @@ const StaffBrowseRepository = () => {
                       Review
                     </button>
                     
-                    {paper.file_url && (
-                      <button
-                        onClick={() => window.open(paper.file_url, '_blank')}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                      >
-                        <Download size={14} />
-                        Download
-                      </button>
-                    )}
                     
                     <button
                       onClick={() => copyToClipboard(window.location.origin + `/research/${paper.id}`)}

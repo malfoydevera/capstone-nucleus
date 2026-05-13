@@ -13,6 +13,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import FacultyDashboard from './pages/faculty/FacultyDashboard';
 import SubmitResearch from './pages/student/SubmitResearch';
 import MyResearch from './pages/student/MyResearch';
+import SubmissionUpdates from './pages/student/SubmissionUpdates';
 import StudentPortfolio from './pages/student/StudentPortfolio';
 import BrowseRepository from './pages/student/BrowseRepository';
 import ReviewSubmissions from './pages/staff/ReviewSubmissions';
@@ -30,8 +31,6 @@ import DeanAuditLogs from './pages/dean/DeanAuditLogs';
 import Landing from './pages/Landing';
 import UserManagement from './pages/admin/UserManagement';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
-import AdminSystemHealth from './pages/admin/AdminSystemHealth';
-import AdminSettings from './pages/admin/AdminSettings';
 import ProfileDashboard from './pages/shared/ProfileDashboard';
 import Notifications from './pages/shared/Notifications';
 import UserGuide from './pages/shared/UserGuide';
@@ -126,6 +125,16 @@ function App() {
             <Route path="/dashboard" element={<DashboardRouter />} />
 
             {/* Student Specific Routes */}
+            <Route path="/student/my-research/:id" element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <SubmissionUpdates />
+              </ProtectedRoute>
+            } />
+            <Route path="/student/submission/:id" element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <SubmissionUpdates />
+              </ProtectedRoute>
+            } />
             <Route path="/student/my-research" element={
               <ProtectedRoute allowedRoles={['student']}>
                 <MyResearch />
@@ -277,16 +286,6 @@ function App() {
             <Route path="/admin/analytics" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminAnalytics />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/health" element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <AdminSystemHealth />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/settings" element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <AdminSettings />
               </ProtectedRoute>
             } />
           </Route>

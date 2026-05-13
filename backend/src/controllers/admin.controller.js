@@ -7,6 +7,7 @@ const { resolvePaperFileUrl } = require('../utils/fileAccess');
 const { sendSuccess, sendError } = require('../utils/response');
 const { attachFullName } = require('../utils/name');
 const { validateWorkflowStages } = require('../utils/workflowEngine');
+const { notifyUser, notifyCoAuthors } = require('../utils/notify');
 
 const RECYCLE_BIN_RETENTION_DAYS = Number.parseInt(process.env.RECYCLE_BIN_RETENTION_DAYS || '30', 10);
 const WORKFLOW_STAGE_MUTATION_MESSAGE = 'Workflow stages are fixed and cannot be modified through the admin UI.';
@@ -31,6 +32,44 @@ const normalizeExternalAuthorNotes = (value) => {
   const normalized = String(value).trim();
   return normalized || null;
 };
+
+/** Fields admins may PATCH via PUT /research/admin/:id (status changes use dedicated endpoints). */
+const ADMIN_UPDATE_ALLOWED_KEYS = new Set([
+  'title',
+  'abstract',
+  'keywords',
+  'category',
+  'doi',
+  'citation_key',
+  'external_author_notes',
+  'department_id',
+  'program_id',
+]);
+
+function pickAdminUpdatePayload(body) {
+  if (!body || typeof body !== 'object') return {};
+  const out = {};
+  for (const key of Object.keys(body)) {
+    if (ADMIN_UPDATE_ALLOWED_KEYS.has(key)) out[key] = body[key];
+  }
+  return out;
+}
+
+/** Loose DOI check: optional https://doi.org/ prefix, then common DOI patterns */
+function normalizeDoiInput(raw) {
+  if (raw === undefined || raw === null) return '';
+  let s = String(raw).trim();
+  if (!s) return '';
+  s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '');
+  return s.trim();
+}
+
+function isValidDoiFormat(doi) {
+  if (!doi || doi.length > 512) return false;
+  // Typical Crossref-style DOI
+  if (/^10\.\d{4,9}\/\S+$/i.test(doi)) return true;
+  return false;
+}
 
 exports.getAllResearch = async (req, res) => {
   try {
@@ -87,11 +126,31 @@ exports.adminGetAllResearch = async (req, res) => {
 exports.adminUpdateResearch = async (req, res) => {
   try {
     const { id } = req.params;
-    const { data: updatedPaper, error } = await supabase.from('research_papers')
-      .update(req.body).eq('id', id)
-      .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)').single();
+    const payload = pickAdminUpdatePayload(req.body);
+    if (Object.keys(payload).length === 0) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'No allowed fields to update' });
+    }
+    if (payload.doi !== undefined && payload.doi !== null && String(payload.doi).trim()) {
+      const nd = normalizeDoiInput(payload.doi);
+      if (!isValidDoiFormat(nd)) {
+        return sendError(res, { status: 400, code: 'INVALID_DOI', message: 'Invalid DOI format' });
+      }
+      payload.doi = nd;
+    }
+    const { data: updatedPaper, error } = await supabase
+      .from('research_papers')
+      .update(payload)
+      .eq('id', id)
+      .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)')
+      .single();
     if (error) throw error;
-    return sendSuccess(res, { message: 'Research updated successfully', data: { paper: { ...updatedPaper, users: attachFullName(updatedPaper.author) } } });
+    if (!updatedPaper) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+    return sendSuccess(res, {
+      message: 'Research updated successfully',
+      data: { paper: { ...updatedPaper, users: attachFullName(updatedPaper.author) } },
+    });
   } catch (error) {
     console.error('Admin update error:', error);
     return sendError(res, { status: 500, code: 'ADMIN_UPDATE_RESEARCH_FAILED', message: 'Failed to update research' });
@@ -168,15 +227,92 @@ exports.adminRestoreResearch = async (req, res) => {
 exports.adminPublishResearch = async (req, res) => {
   try {
     const { id } = req.params;
-    const { data: publishedPaper, error } = await supabase.from('research_papers')
-      .update({ status: 'published', published_date: new Date().toISOString() })
-      .eq('id', id).select('*, author:users!author_id (id, first_name, middle_name, last_name, email)').single();
+    const doiRaw = req.body?.doi;
+    const doiNormalized = normalizeDoiInput(doiRaw);
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('research_papers')
+      .select('id, status, title, author_id, doi')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!existing) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // Already published: allow DOI / citation metadata updates only
+    if (existing.status === 'published') {
+      if (!doiNormalized || !isValidDoiFormat(doiNormalized)) {
+        return sendError(res, {
+          status: 400,
+          code: 'INVALID_DOI',
+          message: 'A valid DOI is required to update a published record',
+        });
+      }
+      const { data: updated, error: updErr } = await supabase
+        .from('research_papers')
+        .update({ doi: doiNormalized, updated_at: nowIso })
+        .eq('id', id)
+        .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)')
+        .single();
+      if (updErr) throw updErr;
+      return sendSuccess(res, { data: { paper: { ...updated, users: attachFullName(updated.author) } } });
+    }
+
+    if (existing.status !== 'approved') {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_WORKFLOW_TRANSITION',
+        message: `Only approved research can be marked published (current status: ${existing.status})`,
+      });
+    }
+
+    if (!doiNormalized || !isValidDoiFormat(doiNormalized)) {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_DOI',
+        message: 'A valid DOI is required to publish',
+      });
+    }
+
+    const { data: publishedPaper, error } = await supabase
+      .from('research_papers')
+      .update({
+        status: 'published',
+        published_date: nowIso,
+        doi: doiNormalized,
+        updated_at: nowIso,
+      })
+      .eq('id', id)
+      .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)')
+      .single();
     if (error) throw error;
-    await supabase.from('notifications').insert([{
-      user_id: publishedPaper.author_id, research_id: id, type: 'publication',
+
+    await notifyUser({
+      userId: publishedPaper.author_id,
+      researchId: id,
+      type: 'publication',
       title: 'Research Published',
-      message: `Congratulations! Your research "${publishedPaper.title}" is now available.`,
-    }]);
+      message: `Congratulations! Your research "${publishedPaper.title}" is now published (DOI: ${doiNormalized}).`,
+      senderUserId: req.user?.id || null,
+    });
+
+    try {
+      await notifyCoAuthors({
+        researchId: id,
+        type: 'publication',
+        title: 'Co-authored Paper Published',
+        message: `The paper "${publishedPaper.title}" you co-authored is now published (DOI: ${doiNormalized}).`,
+        senderUserId: req.user?.id || null,
+        alreadyNotifiedIds: [publishedPaper.author_id],
+      });
+    } catch (coAuthorErr) {
+      console.error('[adminPublishResearch] co-author notification failed:', coAuthorErr.message);
+    }
+
     return sendSuccess(res, { data: { paper: { ...publishedPaper, users: attachFullName(publishedPaper.author) } } });
   } catch (error) {
     console.error('Publish error:', error);
@@ -188,7 +324,7 @@ exports.adminUnpublishResearch = async (req, res) => {
   try {
     const { id } = req.params;
     const { data: unpublishedPaper, error } = await supabase.from('research_papers')
-      .update({ status: 'approved', published_date: null })
+      .update({ status: 'approved', published_date: null, doi: null })
       .eq('id', id).select('*, author:users!author_id (id, first_name, middle_name, last_name, email)').single();
     if (error) throw error;
     return sendSuccess(res, { data: { paper: { ...unpublishedPaper, users: attachFullName(unpublishedPaper.author) } } });

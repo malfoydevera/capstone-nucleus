@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, 
   Filter, 
-  Download, 
   Eye, 
   Calendar, 
   User, 
@@ -75,6 +74,16 @@ const getPrimaryAuthor = (paper) => {
 
 const getAdditionalAuthors = (paper) =>
   getPaperAuthors(paper).filter((entry) => !entry?.is_primary);
+
+const getRepositoryListingBadge = (paper) => {
+  if (paper?.status === 'published') {
+    return { label: 'Published', className: 'bg-emerald-100 text-emerald-800 border border-emerald-200' };
+  }
+  if (paper?.status === 'approved') {
+    return { label: 'Internal (approved)', className: 'bg-amber-50 text-amber-900 border border-amber-200' };
+  }
+  return { label: 'Repository', className: 'bg-slate-100 text-slate-700 border border-slate-200' };
+};
 
 const FacultyBrowseRepository = () => {
   const navigate = useNavigate();
@@ -470,13 +479,21 @@ const FacultyBrowseRepository = () => {
                         </div>
                       </div>
 
-                      {paper.category && (
-                        <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center gap-2 mb-3 flex-wrap">
+                        {paper.category ? (
                           <span className="px-3 py-1 bg-[#1C4D8D]/10 text-[#1C4D8D] text-xs font-medium rounded-full">
                             {getCategoryName(paper.category)}
                           </span>
-                        </div>
-                      )}
+                        ) : null}
+                        {(() => {
+                          const b = getRepositoryListingBadge(paper);
+                          return (
+                            <span className={`px-3 py-1 text-xs font-semibold rounded-full ${b.className}`}>
+                              {b.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
 
@@ -536,16 +553,6 @@ const FacultyBrowseRepository = () => {
                       <Eye size={14} />
                       View Details
                     </button>
-                    
-                    {paper.file_url && (
-                      <button
-                        onClick={() => window.open(paper.file_url, '_blank')}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                      >
-                        <Download size={14} />
-                        Download
-                      </button>
-                    )}
                     
                     <button
                       onClick={() => copyToClipboard(window.location.origin + `/research/${paper.id}`)}

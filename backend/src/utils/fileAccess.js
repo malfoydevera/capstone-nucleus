@@ -18,6 +18,11 @@ function canAccessPaper(user, paper) {
   if (paper.dean_chair_id === user.id) return true;
   if (['admin', 'staff'].includes(user.role)) return true;
 
+  // If the paper was fetched with its research_authors relation, check co-authorship
+  if (Array.isArray(paper.research_authors)) {
+    if (paper.research_authors.some((a) => a.user_id === user.id)) return true;
+  }
+
   return false;
 }
 

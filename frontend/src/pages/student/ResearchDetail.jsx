@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../contexts/AuthContext';
 import { 
   ArrowLeft, 
   FileText, 
@@ -17,6 +18,7 @@ import {
   Share2,
   Copy,
   Printer,
+  Download,
   ChevronRight,
   BookOpen,
   TrendingUp,
@@ -34,6 +36,7 @@ import { formatFullName } from '../../utils/names';
 const ResearchDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [paper, setPaper] = useState(null);
   const [loading, setLoading] = useState(true);
   const [relatedPapers, setRelatedPapers] = useState([]);
@@ -42,6 +45,25 @@ const ResearchDetail = () => {
   const [viewCount, setViewCount] = useState(0);
   const [annotations, setAnnotations] = useState([]);
   const [workflowHistory, setWorkflowHistory] = useState([]);
+
+  const isAuthorOrCoAuthor = useMemo(() => {
+    if (!user || !paper) return false;
+    if (paper.users?.id === user.id || paper.author_id === user.id) return true;
+    const list = Array.isArray(paper.structured_authors) ? paper.structured_authors : [];
+    return list.some((entry) => (
+      entry?.user_id === user.id ||
+      entry?.author_id === user.id ||
+      entry?.author?.id === user.id
+    ));
+  }, [user, paper]);
+
+  const drawOverlays = useMemo(
+    () =>
+      annotations
+        .filter((a) => a.annotationType === 'draw' && a.drawImageUrl && a.pageNumber)
+        .map((a) => ({ id: a.id, pageNumber: a.pageNumber, imageUrl: a.drawImageUrl })),
+    [annotations]
+  );
 
   useEffect(() => {
     fetchPaperDetail();
@@ -164,18 +186,36 @@ const ResearchDetail = () => {
     ]));
   };
 
+  const INTERNAL_CITE_NOTE = 'NUCLEUS internal repository — not for external reference.';
+
+  const isFormalPublished = paper?.status === 'published' && paper?.doi;
+
   const formatApaCitation = () => {
     const authors = getAuthors();
     const authorText = authors.length > 0 ? authors.join(', ') : 'Unknown Author';
     const year = getCitationYear();
-    return `${authorText} (${year}). ${paper?.title || 'Untitled research paper'}. NUCLEUS Research Repository.`;
+    const title = paper?.title || 'Untitled research paper';
+    let line = `${authorText} (${year}). ${title}. NUCLEUS Research Repository.`;
+    if (isFormalPublished) {
+      line += ` https://doi.org/${paper.doi}`;
+    } else {
+      line += ` ${INTERNAL_CITE_NOTE}`;
+    }
+    return line;
   };
 
   const formatIeeeCitation = () => {
     const authors = getAuthors();
     const authorText = authors.length > 0 ? authors.join(', ') : 'Unknown Author';
     const year = getCitationYear();
-    return `${authorText}, "${paper?.title || 'Untitled research paper'}," NUCLEUS Research Repository, ${year}.`;
+    const title = paper?.title || 'Untitled research paper';
+    let line = `${authorText}, "${title}," NUCLEUS Research Repository, ${year}.`;
+    if (isFormalPublished) {
+      line += ` doi: ${paper.doi}`;
+    } else {
+      line += ` ${INTERNAL_CITE_NOTE}`;
+    }
+    return line;
   };
 
   const formatWorkflowLabel = (entry) => {
@@ -272,20 +312,45 @@ const ResearchDetail = () => {
                   <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
                     Research <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">Details</span>
                   </h1>
-                  <div className="flex items-center gap-4">
-                    <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800 border border-emerald-200">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <span
+                      className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold border ${
+                        paper.status === 'published'
+                          ? 'bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-900 border-emerald-200'
+                          : 'bg-gradient-to-r from-amber-50 to-amber-100 text-amber-900 border-amber-200'
+                      }`}
+                    >
                       <ShieldCheck size={14} />
-                      Published
+                      {paper.status === 'published' ? 'Published' : 'Approved (internal repository)'}
                     </span>
                     <span className="text-sm text-slate-600 font-medium">
-                      Published {formatDate(paper.published_date || paper.created_at)}
+                      {paper.status === 'published'
+                        ? `Published ${formatDate(paper.published_date || paper.created_at)}`
+                        : `In repository ${formatDate(paper.published_date || paper.submission_date || paper.created_at)}`}
                     </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Download button removed - PDF is view-only */}
+            {user?.role === 'admin' && paper.file_url && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await researchAPI.trackDownload(id);
+                    window.open(paper.file_url, '_blank', 'noopener,noreferrer');
+                    toast.success('Download logged');
+                  } catch (e) {
+                    toast.error('Unable to download');
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
+              >
+                <Download size={16} />
+                Download PDF (admin)
+              </button>
+            )}
           </div>
         </div>
 
@@ -356,9 +421,10 @@ const ResearchDetail = () => {
                     </span>
                   </div>
                   {paper.file_url ? (
-                    <SecurePDFViewer 
-                      fileUrl={paper.file_url} 
+                    <SecurePDFViewer
+                      fileUrl={paper.file_url}
                       watermarkText="NU"
+                      drawOverlays={drawOverlays}
                     />
                   ) : (
                     <div className="h-[300px] flex items-center justify-center text-slate-400 rounded-2xl border-2 border-slate-200 bg-slate-100">
@@ -438,6 +504,24 @@ const ResearchDetail = () => {
                 {/* Citation Generation */}
                 <div className="mt-8 p-4 rounded-xl bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200">
                   <h4 className="text-lg font-bold text-slate-900 mb-3">Cite This Paper</h4>
+                  {!isFormalPublished && (
+                    <p className="mb-3 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      {INTERNAL_CITE_NOTE}
+                    </p>
+                  )}
+                  {isFormalPublished && paper.doi && (
+                    <p className="mb-3 text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                      DOI:{' '}
+                      <a
+                        href={`https://doi.org/${paper.doi}`}
+                        className="font-mono underline hover:no-underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {paper.doi}
+                      </a>
+                    </p>
+                  )}
                   <div className="space-y-3">
                     <div className="bg-white border border-slate-200 rounded-lg p-3">
                       <div className="flex items-center justify-between gap-3 mb-2">
@@ -469,6 +553,7 @@ const ResearchDetail = () => {
                   </div>
                 </div>
 
+                {isAuthorOrCoAuthor && (
                 <div className="mt-8 p-4 rounded-xl bg-white border border-slate-200">
                   <div className="flex items-center gap-2 mb-3">
                     <MessageSquare size={18} className="text-indigo-600" />
@@ -495,7 +580,16 @@ const ResearchDetail = () => {
                               {annotation.selectedText && (
                                 <p className="text-xs text-slate-600 mb-1">Selected: "{annotation.selectedText}"</p>
                               )}
-                              <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                              {annotation.drawImageUrl && (
+                                <img
+                                  src={annotation.drawImageUrl}
+                                  alt="Reviewer drawing"
+                                  className="mb-2 max-h-52 w-full rounded-lg border border-slate-200 object-contain bg-white"
+                                />
+                              )}
+                              {annotation.note?.trim() ? (
+                                <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                              ) : null}
 
                               {replies.length > 0 && (
                                 <div className="mt-3 border-l-2 border-slate-200 pl-3 space-y-2">
@@ -516,7 +610,9 @@ const ResearchDetail = () => {
                     </div>
                   )}
                 </div>
+                )}
 
+                {isAuthorOrCoAuthor && (
                 <div className="mt-8 p-4 rounded-xl bg-white border border-slate-200">
                   <div className="flex items-center gap-2 mb-3">
                     <Clock size={18} className="text-indigo-600" />
@@ -548,6 +644,7 @@ const ResearchDetail = () => {
                     </div>
                   )}
                 </div>
+                )}
               </div>
             </div>
           </div>

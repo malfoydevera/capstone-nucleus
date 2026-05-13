@@ -36,7 +36,7 @@ describe('submission getPublishedResearch', () => {
 
       return {
         select: () => ({
-          eq: () => ({
+          in: () => ({
             is: () => ({
               order: async () => ({
                 data: [

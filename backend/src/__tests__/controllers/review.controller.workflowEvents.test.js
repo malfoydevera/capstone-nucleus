@@ -46,6 +46,7 @@ jest.mock('pdfkit', () => jest.fn());
 const supabase = require('../../config/supabase');
 const { logAuditEvent } = require('../../utils/audit');
 const reviewController = require('../../controllers/review.controller');
+const { supabaseGenericFallback } = require('../helpers/supabaseNotificationsMock');
 
 function createRes() {
   return {
@@ -122,15 +123,7 @@ describe('review controller workflow event compatibility', () => {
         };
       }
 
-      if (table === 'notifications') {
-        return {
-          insert: async () => ({ error: null }),
-        };
-      }
-
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -237,15 +230,7 @@ describe('review controller workflow event compatibility', () => {
         };
       }
 
-      if (table === 'notifications') {
-        return {
-          insert: async () => ({ error: null }),
-        };
-      }
-
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -324,15 +309,7 @@ describe('review controller workflow event compatibility', () => {
         };
       }
 
-      if (table === 'notifications') {
-        return {
-          insert: async () => ({ error: null }),
-        };
-      }
-
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {
@@ -403,15 +380,7 @@ describe('review controller workflow event compatibility', () => {
         };
       }
 
-      if (table === 'notifications') {
-        return {
-          insert: async () => ({ error: null }),
-        };
-      }
-
-      return {
-        insert: async () => ({ error: null }),
-      };
+      return supabaseGenericFallback(table);
     });
 
     const req = {

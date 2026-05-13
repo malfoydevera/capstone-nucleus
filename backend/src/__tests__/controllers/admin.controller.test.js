@@ -28,6 +28,20 @@ describe('admin controller', () => {
     supabase.from.mockImplementation((table) => {
       if (table === 'research_papers') {
         return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  id: 'paper-1',
+                  status: 'approved',
+                  title: 'Paper',
+                  author_id: 'author-1',
+                  doi: null,
+                },
+                error: null,
+              }),
+            }),
+          }),
           update: (payload) => {
             updatePayload = payload;
             return {
@@ -40,6 +54,7 @@ describe('admin controller', () => {
                       title: 'Paper',
                       status: 'published',
                       published_date: '2026-04-10T00:00:00.000Z',
+                      doi: '10.1000/182',
                       author: {
                         id: 'author-1',
                         first_name: 'Author',
@@ -66,12 +81,16 @@ describe('admin controller', () => {
       return {};
     });
 
-    const req = { params: { id: 'paper-1' }, user: { id: 'admin-1', role: 'admin' } };
+    const req = {
+      params: { id: 'paper-1' },
+      user: { id: 'admin-1', role: 'admin' },
+      body: { doi: '10.1000/182' },
+    };
     const res = createRes();
 
     await adminController.adminPublishResearch(req, res);
 
-    expect(updatePayload).toEqual(expect.objectContaining({ status: 'published' }));
+    expect(updatePayload).toEqual(expect.objectContaining({ status: 'published', doi: '10.1000/182' }));
     expect(updatePayload).not.toHaveProperty('is_published');
     expect(res.json).toHaveBeenCalled();
   });
@@ -187,7 +206,7 @@ describe('admin controller', () => {
 
     await adminController.adminUnpublishResearch(req, res);
 
-    expect(updatePayload).toEqual(expect.objectContaining({ status: 'approved', published_date: null }));
+    expect(updatePayload).toEqual(expect.objectContaining({ status: 'approved', published_date: null, doi: null }));
     expect(updatePayload).not.toHaveProperty('is_published');
     expect(res.json).toHaveBeenCalled();
   });

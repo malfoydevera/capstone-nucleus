@@ -4,7 +4,8 @@
  */
 const supabase = require('../config/supabase');
 const { logAuditEvent } = require('../utils/audit');
-const { resolvePaperFileUrl } = require('../utils/fileAccess');
+const { resolvePaperFileUrl, createSignedUrl, canAccessPaper } = require('../utils/fileAccess');
+const { notifyUser, notifyUsers, notifyCoAuthors } = require('../utils/notify');
 const { WORKFLOW_POLICY, validateWorkflowAction } = require('../utils/workflowPolicy');
 const {
   getActiveWorkflowStages,
@@ -16,9 +17,11 @@ const {
 const { sendSuccess, sendError } = require('../utils/response');
 const { attachFullName, buildFullName } = require('../utils/name');
 const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/workflowEmail');
-const { runPlagiarismCheck } = require('../utils/plagiarism');
 const PDFDocument = require('pdfkit');
+const path = require('path');
+const crypto = require('crypto');
 
+const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'research-papers';
 const FINAL_STATUSES = ['approved', 'published', 'rejected'];
 const WORKFLOW_EVENT_STATUS_BY_ACTION = {
   approve: 'approved',
@@ -237,7 +240,7 @@ exports.declareConflictOfInterest = async (req, res) => {
         message: `A faculty reviewer declared a conflict for "${paper.title}". Reassignment is required.`,
       }));
 
-      await supabase.from('notifications').insert([
+      await notifyUsers([
         {
           user_id: paper.author_id,
           research_id: id,
@@ -353,107 +356,13 @@ exports.getPlagiarismReport = async (req, res) => {
   }
 };
 
-exports.runPlagiarismScan = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (req.user.role !== 'staff') {
-      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Only research editor can run plagiarism scan' });
-    }
-
-    const { data: paper, error } = await supabase
-      .from('research_papers')
-      .select('id, title, abstract, status')
-      .eq('id', id)
-      .single();
-
-    if (error || !paper) {
-      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Paper not found' });
-    }
-
-    if (!['pending_editor', 'pending_admin'].includes(paper.status)) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_WORKFLOW_TRANSITION',
-        message: `Cannot run plagiarism scan from status "${paper.status}"`,
-      });
-    }
-
-    const scan = await runPlagiarismCheck({ title: paper.title, abstract: paper.abstract });
-    const nowIso = new Date().toISOString();
-
-    const updatePayload = {
-      plagiarism_status: 'checked',
-      plagiarism_score: scan.score,
-      plagiarism_checked_at: nowIso,
-      plagiarism_provider: scan.provider,
-      plagiarism_summary: scan.summary,
-      plagiarism_report: {
-        ...scan.report,
-        paperId: id,
-      },
-      updated_at: nowIso,
-    };
-
-    const { data: updated, error: updateError } = await supabase
-      .from('research_papers')
-      .update(updatePayload)
-      .eq('id', id)
-      .select('id, plagiarism_status, plagiarism_score, plagiarism_checked_at, plagiarism_provider, plagiarism_summary, plagiarism_report')
-      .single();
-
-    if (updateError) {
-      const missingColumn = String(updateError.message || '').includes('plagiarism_');
-      if (missingColumn) {
-        return sendError(res, {
-          status: 500,
-          code: 'PLAGIARISM_MIGRATION_REQUIRED',
-          message: 'Plagiarism columns are missing. Apply add_plagiarism_checks.sql migration first.',
-        });
-      }
-
-      return sendError(res, {
-        status: 500,
-        code: 'RUN_PLAGIARISM_SCAN_FAILED',
-        message: 'Failed to save plagiarism scan result',
-      });
-    }
-
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: 'plagiarism_scan',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        paperTitle: paper.title,
-        score: updated.plagiarism_score,
-        provider: updated.plagiarism_provider,
-      },
-    });
-
-    return sendSuccess(res, {
-      message: 'Plagiarism scan completed',
-      data: {
-        plagiarism: {
-          status: updated.plagiarism_status,
-          score: updated.plagiarism_score,
-          checkedAt: updated.plagiarism_checked_at,
-          provider: updated.plagiarism_provider,
-          summary: updated.plagiarism_summary,
-          report: updated.plagiarism_report,
-        },
-      },
-    });
-  } catch (error) {
-    console.error('Run plagiarism scan error:', error.message);
-    return sendError(res, {
-      status: 500,
-      code: 'RUN_PLAGIARISM_SCAN_FAILED',
-      message: 'Server error',
-    });
-  }
-};
+exports.runPlagiarismScan = async (req, res) =>
+  sendError(res, {
+    status: 410,
+    code: 'PLAGIARISM_RUN_DEPRECATED',
+    message:
+      'Integrated plagiarism scanning is disabled. Use your institution\'s Turnitin or Grammarly workflow via the links in the review UI.',
+  });
 
 exports.approveResearch = async (req, res) => {
   try {
@@ -562,7 +471,32 @@ exports.approveResearch = async (req, res) => {
       newStatus,
     });
     await logAuditEvent({ userId: reviewerId, userRole: reviewerRole, action: 'approve', targetType: 'research_paper', targetId: id, details: { previousStatus: paper.status, newStatus, paperTitle: paper.title } });
-    try { await supabase.from('notifications').insert([{ user_id: paper.author_id, research_id: id, type: 'approval', title: 'Research Approved', message: notificationMessage }]); } catch {}
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: 'approval',
+      title: 'Research Approved',
+      message: notificationMessage,
+      senderUserId: reviewerId,
+    });
+
+    // Notify co-authors about the approval / status advancement
+    try {
+      const isFullyApproved = newStatus === 'approved';
+      await notifyCoAuthors({
+        researchId: id,
+        type: 'approval',
+        title: isFullyApproved ? 'Co-authored Paper Approved' : 'Co-authored Paper Advanced',
+        message: isFullyApproved
+          ? `The paper "${paper.title}" that you co-authored has been approved.`
+          : `The paper "${paper.title}" that you co-authored has been advanced to the next review stage.`,
+        senderUserId: reviewerId,
+        alreadyNotifiedIds: [paper.author_id],
+      });
+    } catch (coAuthorErr) {
+      console.error('[approveResearch] co-author notification failed:', coAuthorErr.message);
+    }
+
     await sendPaperStatusEmail({
       user: paper.author,
       paperTitle: paper.title,
@@ -571,7 +505,7 @@ exports.approveResearch = async (req, res) => {
     });
 
     if (nextReviewers.length > 0) {
-      try { await supabase.from('notifications').insert(nextReviewers.map(rId => ({ user_id: rId, research_id: id, type: 'review_request', title: 'New Research for Review', message: `Research "${paper.title}" is ready for your review` }))); } catch {}
+      await notifyUsers(nextReviewers.map((rId) => ({ user_id: rId, research_id: id, type: 'review_request', title: 'New Research for Review', message: `Research "${paper.title}" is ready for your review` })));
       try {
         const { data: reviewerUsers } = await supabase
           .from('users')
@@ -625,15 +559,28 @@ exports.rejectResearch = async (req, res) => {
       .eq('id', id);
     if (updateError) return sendError(res, { status: 500, code: 'REJECT_RESEARCH_FAILED', message: 'Failed to reject paper' });
 
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: 'rejection',
+      title: 'Research Rejected',
+      message: reason.trim(),
+      senderUserId: req.user.id,
+    });
+
+    // Notify co-authors about the rejection
     try {
-      await supabase.from('notifications').insert([{
-        user_id: paper.author_id,
-        research_id: id,
+      await notifyCoAuthors({
+        researchId: id,
         type: 'rejection',
-        title: 'Research Rejected',
-        message: reason.trim(),
-      }]);
-    } catch {}
+        title: 'Co-authored Paper Rejected',
+        message: `The paper "${paper.title}" that you co-authored has been rejected. Please check the feedback.`,
+        senderUserId: req.user.id,
+        alreadyNotifiedIds: [paper.author_id],
+      });
+    } catch (coAuthorErr) {
+      console.error('[rejectResearch] co-author notification failed:', coAuthorErr.message);
+    }
 
     await insertApprovalWorkflowEvent({
       researchId: id,
@@ -731,8 +678,30 @@ exports.requestRevision = async (req, res) => {
     if (updateError) return sendError(res, { status: 500, code: 'UPDATE_PAPER_STATUS_FAILED', message: 'Failed to update paper status' });
 
     if (notificationUserId) {
-      const { error: notifError } = await supabase.from('notifications').insert({ user_id: notificationUserId, research_id: id, type: newStatus === 'revision_required' ? 'revision_required' : 'returned_for_review', title: notificationTitle, message: notificationMessage });
-      if (notifError) console.error('Notification error:', notifError);
+      await notifyUser({
+        userId: notificationUserId,
+        researchId: id,
+        type: newStatus === 'revision_required' ? 'revision_required' : 'returned_for_review',
+        title: notificationTitle,
+        message: notificationMessage,
+        senderUserId: req.user.id,
+      });
+
+      // When paper goes back to the student for revision, also notify co-authors
+      if (newStatus === 'revision_required') {
+        try {
+          await notifyCoAuthors({
+            researchId: id,
+            type: 'revision_required',
+            title: 'Revision Requested for Co-authored Paper',
+            message: `Revision has been requested for the paper "${paper.title}". Please check the feedback.`,
+            senderUserId: req.user.id,
+            alreadyNotifiedIds: [notificationUserId],
+          });
+        } catch (coAuthorErr) {
+          console.error('[requestRevision] co-author notification failed:', coAuthorErr.message);
+        }
+      }
 
       try {
         const { data: recipient } = await supabase
@@ -752,7 +721,7 @@ exports.requestRevision = async (req, res) => {
     } else if (newStatus === 'pending_editor') {
       const { data: staffUsers } = await supabase.from('users').select('id').eq('role', 'staff');
       if (staffUsers?.length > 0) {
-        await supabase.from('notifications').insert(staffUsers.map(s => ({ user_id: s.id, research_id: id, type: 'returned_for_review', title: notificationTitle, message: notificationMessage })));
+        await notifyUsers(staffUsers.map((s) => ({ user_id: s.id, research_id: id, type: 'returned_for_review', title: notificationTitle, message: notificationMessage })));
 
         try {
           const { data: staffRecipients } = await supabase
@@ -864,15 +833,28 @@ exports.returnToAuthor = async (req, res) => {
       newStatus,
     });
 
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: 'returned_to_author',
+      title: `Returned for Author Revision: ${paper.title}`,
+      message: `Your paper has been returned by the Research Editor. Notes: ${notes.trim()}`,
+      senderUserId: req.user.id,
+    });
+
+    // Notify co-authors that the paper was returned for revision
     try {
-      await supabase.from('notifications').insert([{
-        user_id: paper.author_id,
-        research_id: id,
+      await notifyCoAuthors({
+        researchId: id,
         type: 'returned_to_author',
-        title: `Returned for Author Revision: ${paper.title}`,
-        message: `Your paper has been returned by the Research Editor. Notes: ${notes.trim()}`,
-      }]);
-    } catch {}
+        title: 'Co-authored Paper Returned for Revision',
+        message: `The paper "${paper.title}" has been returned for revision by the Research Editor.`,
+        senderUserId: req.user.id,
+        alreadyNotifiedIds: [paper.author_id],
+      });
+    } catch (coAuthorErr) {
+      console.error('[returnToAuthor] co-author notification failed:', coAuthorErr.message);
+    }
 
     await sendPaperStatusEmail({
       user: paper.author,
@@ -996,15 +978,28 @@ exports.correctMetadata = async (req, res) => {
       });
     }
 
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: 'metadata_corrected',
+      title: 'Paper Metadata Updated by Research Editor',
+      message: 'Your paper metadata was corrected by the Research Editor.',
+      senderUserId: req.user.id,
+    });
+
+    // Notify co-authors about the metadata correction
     try {
-      await supabase.from('notifications').insert([{
-        user_id: paper.author_id,
-        research_id: id,
+      await notifyCoAuthors({
+        researchId: id,
         type: 'metadata_corrected',
-        title: 'Paper Metadata Updated by Research Editor',
-        message: 'Your paper metadata was corrected by the Research Editor.',
-      }]);
-    } catch {}
+        title: 'Co-authored Paper Metadata Updated',
+        message: `Metadata for the paper "${paper.title}" was corrected by the Research Editor.`,
+        senderUserId: req.user.id,
+        alreadyNotifiedIds: [paper.author_id],
+      });
+    } catch (coAuthorErr) {
+      console.error('[correctMetadata] co-author notification failed:', coAuthorErr.message);
+    }
 
     await logAuditEvent({
       userId: req.user.id,
@@ -1097,7 +1092,29 @@ exports.deanBypassApprove = async (req, res) => {
       },
       reason,
     });
-    try { await supabase.from('notifications').insert([{ user_id: paper.author_id, research_id: id, type: 'bypass_approval', title: 'Research Bypass Approved by Dean', message: `The Dean has bypass-approved your research "${paper.title}". Reason: ${reason}` }]); } catch {}
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: 'bypass_approval',
+      title: 'Research Bypass Approved by Dean',
+      message: `The Dean has bypass-approved your research "${paper.title}". Reason: ${reason}`,
+      senderUserId: deanId,
+    });
+
+    // Notify co-authors about the dean bypass approval
+    try {
+      await notifyCoAuthors({
+        researchId: id,
+        type: 'bypass_approval',
+        title: 'Co-authored Paper Bypass Approved by Dean',
+        message: `The paper "${paper.title}" that you co-authored has been bypass-approved by the Dean.`,
+        senderUserId: deanId,
+        alreadyNotifiedIds: [paper.author_id],
+      });
+    } catch (coAuthorErr) {
+      console.error('[deanBypassApprove] co-author notification failed:', coAuthorErr.message);
+    }
+
     await sendPaperStatusEmail({
       user: paper.author,
       paperTitle: paper.title,
@@ -1222,24 +1239,22 @@ exports.assignFacultyReviewer = async (req, res) => {
       },
     });
 
-    try {
-      await supabase.from('notifications').insert([
-        {
-          user_id: faculty.id,
-          research_id: id,
-          type: 'review_request',
-          title: 'Paper Assigned for Faculty Review',
-          message: `Research "${paper.title}" was assigned to you for review${notes ? `: ${notes}` : ''}`,
-        },
-        {
-          user_id: paper.author_id,
-          research_id: id,
-          type: 'workflow_update',
-          title: 'Paper Reassigned to Faculty',
-          message: `Your paper "${paper.title}" has been reassigned to a faculty reviewer.`,
-        },
-      ]);
-    } catch {}
+    await notifyUsers([
+      {
+        user_id: faculty.id,
+        research_id: id,
+        type: 'review_request',
+        title: 'Paper Assigned for Faculty Review',
+        message: `Research "${paper.title}" was assigned to you for review${notes ? `: ${notes}` : ''}`,
+      },
+      {
+        user_id: paper.author_id,
+        research_id: id,
+        type: 'workflow_update',
+        title: 'Paper Reassigned to Faculty',
+        message: `Your paper "${paper.title}" has been reassigned to a faculty reviewer.`,
+      },
+    ]);
 
     await sendReviewAssignmentEmail({
       user: faculty,
@@ -1600,15 +1615,13 @@ exports.setProgramChairReviewDeadline = async (req, res) => {
       });
     }
 
-    try {
-      await supabase.from('notifications').insert([{
-        user_id: req.user.id,
-        research_id: id,
-        type: 'review_deadline_set',
-        title: 'Review Deadline Set',
-        message: `Deadline set for "${paper.title}" on ${parsedDeadline.toLocaleString()}.`,
-      }]);
-    } catch {}
+    await notifyUser({
+      userId: req.user.id,
+      researchId: id,
+      type: 'review_deadline_set',
+      title: 'Review Deadline Set',
+      message: `Deadline set for "${paper.title}" on ${parsedDeadline.toLocaleString()}.`,
+    });
 
     await logAuditEvent({
       userId: req.user.id,
@@ -1963,5 +1976,156 @@ exports.exportAuditLogsPdf = async (req, res) => {
   } catch (error) {
     console.error('Export audit logs PDF error:', error);
     return sendError(res, { status: 500, code: 'EXPORT_AUDIT_LOGS_PDF_FAILED', message: 'Failed to export audit logs PDF' });
+  }
+};
+
+exports.uploadAnnotationDrawing = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const file = req.file;
+    if (!file) {
+      return sendError(res, { status: 400, code: 'NO_FILE', message: 'No image uploaded' });
+    }
+
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowed.includes(file.mimetype)) {
+      return sendError(res, { status: 400, code: 'INVALID_FILE_TYPE', message: 'Only PNG, JPEG, or WebP images are allowed' });
+    }
+
+    const privilegedRoles = ['faculty', 'dean', 'program_chair', 'staff', 'admin'];
+    if (!privilegedRoles.includes(req.user.role)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
+    }
+
+    const { data: paper, error: paperError } = await supabase
+      .from('research_papers')
+      .select(`
+        id, status, author_id, faculty_id, dean_chair_id,
+        research_authors!research_authors_research_id_fkey (user_id)
+      `)
+      .eq('id', id)
+      .single();
+
+    if (paperError || !paper) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+    if (!canAccessPaper(req.user, paper)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
+    }
+
+    const ext = file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/webp' ? 'webp' : 'jpg';
+    const storagePath = `annotation-drawings/${id}/${crypto.randomUUID()}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('Annotation drawing upload error:', uploadError);
+      return sendError(res, { status: 500, code: 'UPLOAD_FAILED', message: 'Failed to upload image' });
+    }
+
+    const { data: publicUrlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+    const url = publicUrlData?.publicUrl || null;
+    if (!url) {
+      return sendError(res, { status: 500, code: 'UPLOAD_FAILED', message: 'Could not resolve public URL' });
+    }
+
+    return sendSuccess(res, { data: { url } });
+  } catch (error) {
+    console.error('Upload annotation drawing error:', error);
+    return sendError(res, { status: 500, code: 'UPLOAD_ANNOTATION_DRAWING_FAILED', message: 'Failed to upload drawing' });
+  }
+};
+
+exports.uploadAnnotatedFile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const file = req.file;
+
+    if (!file) {
+      return sendError(res, { status: 400, code: 'NO_FILE', message: 'No file uploaded' });
+    }
+
+    if (file.mimetype !== 'application/pdf') {
+      return sendError(res, { status: 400, code: 'INVALID_FILE_TYPE', message: 'Only PDF files are allowed' });
+    }
+
+    const { data: paper, error: paperError} = await supabase
+      .from('research_papers')
+      .select('id, status, author_id, faculty_id, dean_chair_id')
+      .eq('id', id)
+      .single();
+
+    if (paperError || !paper) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+
+    const privilegedRoles = ['faculty', 'dean', 'program_chair', 'staff', 'admin'];
+    if (!privilegedRoles.includes(req.user.role)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
+    }
+
+    const timestamp = Date.now();
+    const sanitized = path.parse(file.originalname).name.replace(/[^a-z0-9_-]/gi, '_');
+    const storagePath = `annotated/${id}_${sanitized}_${timestamp}.pdf`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, file.buffer, {
+        contentType: 'application/pdf',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('Annotated file upload error:', uploadError);
+      return sendError(res, { status: 500, code: 'UPLOAD_FAILED', message: 'Failed to upload annotated file' });
+    }
+
+    const { data: publicUrlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+    const annotatedFileUrl = publicUrlData?.publicUrl || null;
+
+    const { error: updateError } = await supabase
+      .from('research_papers')
+      .update({
+        annotated_file_url: annotatedFileUrl,
+        annotated_file_storage_path: storagePath,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+
+    if (updateError) {
+      console.error('Failed to update paper with annotated file:', updateError);
+      return sendError(res, { status: 500, code: 'UPDATE_FAILED', message: 'Failed to update paper record' });
+    }
+
+    await logAuditEvent({
+      userId: req.user.id,
+      userRole: req.user.role,
+      userName: buildFullName(req.user) || null,
+      action: 'upload_annotated_pdf',
+      targetType: 'research_paper',
+      targetId: id,
+      details: { fileName: file.originalname, fileSize: file.size },
+    });
+
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: 'review',
+      title: 'Annotated PDF available',
+      message: 'Your reviewer uploaded a marked-up PDF copy. Open your paper to download it.',
+    });
+
+    return sendSuccess(res, {
+      message: 'Annotated PDF uploaded successfully',
+      data: { annotatedFileUrl },
+    });
+  } catch (error) {
+    console.error('Upload annotated file error:', error);
+    return sendError(res, { status: 500, code: 'UPLOAD_ANNOTATED_FILE_FAILED', message: 'Failed to upload annotated file' });
   }
 };

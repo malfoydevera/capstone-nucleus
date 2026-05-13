@@ -13,6 +13,7 @@ jest.mock('../../utils/mailer', () => ({
 
 const supabase = require('../../config/supabase');
 const controller = require('../../controllers/coauthorInvitation.controller');
+const { mockNotificationsTable } = require('../helpers/supabaseNotificationsMock');
 
 function createRes() {
   return {
@@ -167,9 +168,7 @@ describe('coauthorInvitation controller compatibility', () => {
       }
 
       if (table === 'notifications') {
-        return {
-          insert: async () => ({ error: null }),
-        };
+        return mockNotificationsTable();
       }
 
       return {};

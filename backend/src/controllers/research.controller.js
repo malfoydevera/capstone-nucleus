@@ -2,6 +2,7 @@ const supabase = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 const reviewController = require('./review.controller');
 const { attachFullName, buildFullName, splitFullName } = require('../utils/name');
+const { notifyUser, notifyUsers } = require('../utils/notify');
 
 const normalizeResearchAuthors = (researchAuthors = []) =>
   [...(researchAuthors || [])]
@@ -378,13 +379,13 @@ exports.submitResearch = async (req, res) => {
 
     // Notify the assigned faculty member for new submissions
     if (!id && facultyId) {
-      await supabase.from('notifications').insert([{
-        user_id: facultyId,
-        research_id: research.id,
+      await notifyUser({
+        userId: facultyId,
+        researchId: research.id,
         type: 'submission',
         title: 'New Research Submission',
-        message: `${authorDisplayName} submitted "${title}" for your review`
-      }]);
+        message: `${authorDisplayName} submitted "${title}" for your review`,
+      });
     }
     
     // Notify staff for revisions or if no faculty assigned (legacy flow)
@@ -395,15 +396,15 @@ exports.submitResearch = async (req, res) => {
         .eq('role', 'staff');
 
       if (staffUsers && staffUsers.length > 0) {
-        const notifications = staffUsers.map(staff => ({
+        const notifications = staffUsers.map((staff) => ({
           user_id: staff.id,
           research_id: research.id,
           type: 'submission',
           title: id ? 'Research Revised' : 'New Research Submission',
-          message: `${authorDisplayName} ${id ? 'resubmitted' : 'submitted'} "${title}" for review`
+          message: `${authorDisplayName} ${id ? 'resubmitted' : 'submitted'} "${title}" for review`,
         }));
 
-        await supabase.from('notifications').insert(notifications);
+        await notifyUsers(notifications);
       }
     }
 
@@ -622,13 +623,13 @@ exports.adminPublishResearch = async (req, res) => {
 
     if (updateError) throw updateError;
 
-    await supabase.from('notifications').insert([{
-      user_id: publishedPaper.author_id,
-      research_id: id,
+    await notifyUser({
+      userId: publishedPaper.author_id,
+      researchId: id,
       type: 'publication',
       title: 'Research Published',
-      message: `Congratulations! Your research "${publishedPaper.title}" is now available.`
-    }]);
+      message: `Congratulations! Your research "${publishedPaper.title}" is now available.`,
+    });
 
     res.json({ success: true, paper: { ...publishedPaper, users: attachFullName(publishedPaper.author) } });
   } catch (error) {
@@ -784,34 +785,29 @@ exports.approveResearch = async (req, res) => {
       metadata: reviewerRole === 'faculty' ? { assignedProgramChairId: extraUpdate.dean_chair_id } : {},
     });
 
-    // Notify author (optional - skip if table doesn't exist)
+    // Notify author
     try {
-      await supabase.from('notifications').insert([{
-        user_id: paper.author_id, 
-        research_id: id, 
-        type: 'approval', 
-        title: 'Research Approved', 
-        message: notificationMessage
-      }]);
+      await notifyUser({
+        userId: paper.author_id,
+        researchId: id,
+        type: 'approval',
+        title: 'Research Approved',
+        message: notificationMessage,
+      });
     } catch (notifError) {
       console.log('Notifications table not available, skipping...', notifError.message);
     }
 
-    // Notify next reviewers in the workflow (optional)
     if (nextReviewers.length > 0) {
-      try {
-        const nextNotifications = nextReviewers.map(reviewerId => ({
-          user_id: reviewerId,
-          research_id: id,
-          type: 'review_request',
-          title: 'New Research for Review',
-          message: `Research "${paper.title}" is ready for your review`
-        }));
-        
-        await supabase.from('notifications').insert(nextNotifications);
-      } catch (notifError) {
-        console.log('Could not send notifications to next reviewers:', notifError.message);
-      }
+      const nextNotifications = nextReviewers.map((reviewerId) => ({
+        user_id: reviewerId,
+        research_id: id,
+        type: 'review_request',
+        title: 'New Research for Review',
+        message: `Research "${paper.title}" is ready for your review`,
+      }));
+
+      await notifyUsers(nextNotifications);
     }
 
     res.json({ 
@@ -936,38 +932,30 @@ exports.deanInterveneResearch = async (req, res) => {
       },
     });
 
-    try {
-      await supabase.from('notifications').insert([{
-        user_id: paper.author_id,
-        research_id: id,
-        type: decision === 'approve' ? 'approval' : workflowStatus,
-        title: notificationTitle,
-        message: notificationMessage,
-      }]);
-    } catch (notifError) {
-      console.log('Dean intervention notification skipped:', notifError.message);
-    }
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: decision === 'approve' ? 'approval' : workflowStatus,
+      title: notificationTitle,
+      message: notificationMessage,
+    });
 
     if (newStatus === 'pending_editor') {
-      try {
-        const { data: staffUsers } = await supabase
-          .from('users')
-          .select('id')
-          .eq('role', 'staff');
+      const { data: staffUsers } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'staff');
 
-        if (staffUsers?.length) {
-          await supabase.from('notifications').insert(
-            staffUsers.map((staffUser) => ({
-              user_id: staffUser.id,
-              research_id: id,
-              type: 'review_request',
-              title: 'Dean Forwarded Research for Review',
-              message: `Research "${paper.title}" was forwarded by the Dean for Research Editor review.`,
-            }))
-          );
-        }
-      } catch (notifError) {
-        console.log('Dean intervention editor notifications skipped:', notifError.message);
+      if (staffUsers?.length) {
+        await notifyUsers(
+          staffUsers.map((staffUser) => ({
+            user_id: staffUser.id,
+            research_id: id,
+            type: 'review_request',
+            title: 'Dean Forwarded Research for Review',
+            message: `Research "${paper.title}" was forwarded by the Dean for Research Editor review.`,
+          }))
+        );
       }
     }
 
@@ -1144,29 +1132,25 @@ exports.requestRevision = async (req, res) => {
     
     // Create notifications
     if (notificationUserId) {
-      // Single recipient (student, faculty, dean, or program_chair)
-      const { error: notifError } = await supabase
-        .from('notifications')
-        .insert({
-          user_id: notificationUserId,
-          research_id: id,
-          type: newStatus === 'revision_required' ? 'revision_required' : 'returned_for_review',
-          title: notificationTitle,
-          message: notificationMessage
-        });
-      if (notifError) console.error('Notification error:', notifError);
+      await notifyUser({
+        userId: notificationUserId,
+        researchId: id,
+        type: newStatus === 'revision_required' ? 'revision_required' : 'returned_for_review',
+        title: notificationTitle,
+        message: notificationMessage,
+      });
     } else if (newStatus === 'pending_editor') {
       // Admin returned to Research Editor — notify all staff
       const { data: staffUsers } = await supabase
         .from('users').select('id').eq('role', 'staff');
       if (staffUsers?.length > 0) {
-        await supabase.from('notifications').insert(
-          staffUsers.map(s => ({
+        await notifyUsers(
+          staffUsers.map((s) => ({
             user_id: s.id,
             research_id: id,
             type: 'returned_for_review',
             title: notificationTitle,
-            message: notificationMessage
+            message: notificationMessage,
           }))
         );
       }

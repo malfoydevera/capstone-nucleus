@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import nuBuildingImg from '../assets/dasma.png.jpeg';
 import nuLogoLeft from '../assets/left.png';
 
+import NucleusLogoMark from '../components/branding/NucleusLogoMark';
 import { 
   BookOpen, 
   Search, 
@@ -16,7 +17,6 @@ import {
   GraduationCap,
   Users,
   BarChart3,
-  Library,
   Globe,
   Shield,
   MapPin,
@@ -32,6 +32,14 @@ import {
 const Landing = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [navScrolled, setNavScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setNavScrolled(window.scrollY > 60);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const authAction = user ? (
     <button 
@@ -54,44 +62,79 @@ const Landing = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white font-sans text-slate-900 antialiased">
       {/* Navigation */}
-      <nav className="flex items-center justify-between px-6 md:px-16 py-6 absolute top-0 w-full z-50 bg-gradient-to-b from-slate-900/90 to-transparent backdrop-blur-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] rounded-xl flex items-center justify-center shadow-lg">
-            <Library size={24} className="text-white" />
-          </div>
-          <div className="flex flex-col">
-            <span className="font-bold text-xl tracking-tight text-white">
-              NUCLEUS
-            </span>
-            <span className="text-xs text-white/70 font-medium">NU Dasmariñas</span>
-          </div>
-        </div>
-        
-        <div className="hidden md:flex items-center gap-8">
-          <a href="#features" className="text-sm font-medium text-white/90 hover:text-white transition-colors hover:underline decoration-[#1C4D8D] decoration-2 underline-offset-4">Features</a>
-          <a href="#stats" className="text-sm font-medium text-white/90 hover:text-white transition-colors hover:underline decoration-[#1C4D8D] decoration-2 underline-offset-4">Impact</a>
-          <div className="h-6 w-px bg-white/20 mx-2"></div>
-          {authAction}
-        </div>
-
-        <div className="md:hidden">
-          {user ? (
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="rounded-lg bg-[#1C4D8D] px-4 py-2 text-sm font-semibold text-white shadow-md"
-            >
-              Dashboard
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Link to="/login" className="rounded-lg border border-white/20 px-3 py-2 text-sm font-medium text-white/95 backdrop-blur-sm">
-                Sign In
-              </Link>
-              <Link to="/register" className="rounded-lg bg-[#1C4D8D] px-3 py-2 text-sm font-semibold text-white shadow-md">
-                Get Started
-              </Link>
+      <nav
+        className={`fixed top-0 w-full z-50 transition-all duration-300 ${
+          navScrolled
+            ? 'bg-white/95 backdrop-blur-md shadow-lg border-b border-slate-200'
+            : 'bg-gradient-to-b from-slate-900/80 to-transparent backdrop-blur-sm'
+        }`}
+      >
+        <div className={`flex items-center justify-between max-w-7xl mx-auto px-6 md:px-12 transition-all duration-300 ${navScrolled ? 'py-3' : 'py-5'}`}>
+          <div className="flex items-center gap-3">
+            <NucleusLogoMark
+              size={navScrolled ? 40 : 48}
+              rounded="rounded-xl"
+              className="shadow-lg transition-all duration-300"
+              ringClassName={navScrolled ? 'ring-1 ring-slate-200/80' : 'ring-1 ring-white/25'}
+            />
+            <div className="flex flex-col">
+              <span className={`font-bold tracking-tight transition-colors duration-300 ${navScrolled ? 'text-[#1C4D8D] text-lg' : 'text-white text-xl'}`}>
+                NUCLEUS
+              </span>
+              <span className={`text-xs font-medium transition-colors duration-300 ${navScrolled ? 'text-slate-500' : 'text-white/70'}`}>
+                NU Dasmariñas
+              </span>
             </div>
-          )}
+          </div>
+
+          <div className="hidden md:flex items-center gap-8">
+            <a
+              href="#features"
+              className={`text-sm font-medium transition-colors hover:underline decoration-[#1C4D8D] decoration-2 underline-offset-4 ${
+                navScrolled ? 'text-slate-700 hover:text-[#1C4D8D]' : 'text-white/90 hover:text-white'
+              }`}
+            >
+              Features
+            </a>
+            <a
+              href="#stats"
+              className={`text-sm font-medium transition-colors hover:underline decoration-[#1C4D8D] decoration-2 underline-offset-4 ${
+                navScrolled ? 'text-slate-700 hover:text-[#1C4D8D]' : 'text-white/90 hover:text-white'
+              }`}
+            >
+              Impact
+            </a>
+            <div className={`h-6 w-px mx-2 ${navScrolled ? 'bg-slate-300' : 'bg-white/20'}`}></div>
+            {authAction}
+          </div>
+
+          <div className="md:hidden flex items-center gap-2">
+            {user ? (
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="rounded-lg bg-[#1C4D8D] px-4 py-2 text-sm font-semibold text-white shadow-md"
+              >
+                Dashboard
+              </button>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+                    navScrolled ? 'border-slate-300 text-slate-700' : 'border-white/20 text-white/95 backdrop-blur-sm'
+                  }`}
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  className="rounded-lg bg-[#1C4D8D] px-3 py-2 text-sm font-semibold text-white shadow-md"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
+          </div>
         </div>
       </nav>
 
@@ -99,69 +142,99 @@ const Landing = () => {
       <section className="relative min-h-screen flex items-center pt-24 pb-20 overflow-hidden">
         {/* Background Image with Enhanced Overlay */}
         <div className="absolute inset-0 z-0">
-          <img 
-            src={nuBuildingImg} 
-            alt="NU Building Background" 
+          <motion.img
+            src={nuBuildingImg}
+            alt="NU Building Background"
             className="w-full h-full object-cover"
+            initial={{ scale: 1.1, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 1.4, ease: 'easeOut' }}
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#1C4D8D]/70 via-[#1C4D8D]/50 to-[#1C4D8D]/40" />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0f2e57]/85 via-[#1C4D8D]/70 to-[#1C4D8D]/40" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent" />
+          <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-yellow-300/10 blur-3xl" />
+          <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-[#2563eb]/20 blur-3xl" />
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 md:px-16 relative z-10 w-full">
+        <div className="max-w-7xl mx-auto px-6 md:px-12 relative z-10 w-full">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white text-sm font-semibold mb-8 tracking-wide backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white text-sm font-semibold mb-8 tracking-wide backdrop-blur-md"
+            >
               <GraduationCap size={16} className="text-yellow-300" />
               National University Dasmariñas • Academic Repository
-            </div>
-            
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-black text-white tracking-tight mb-6 leading-[1.1]">
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="text-5xl md:text-6xl lg:text-7xl font-black text-white tracking-tight mb-6 leading-[1.05]"
+            >
               Preserving Knowledge, <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-200 to-yellow-300">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-300">
                 Empowering Innovation
               </span>
-            </h1>
-            
-            <p className="text-lg md:text-xl text-slate-200 max-w-2xl mb-10 leading-relaxed font-medium">
-              A centralized digital ecosystem for academic excellence. Explore, submit, and discover 
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.3 }}
+              className="text-lg md:text-xl text-slate-200 max-w-2xl mb-10 leading-relaxed font-medium"
+            >
+              A centralized digital ecosystem for academic excellence. Explore, submit, and discover
               verified research works from the National University Dasmariñas community.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row items-center gap-5 mb-16">
-              <button 
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-16"
+            >
+              <button
                 onClick={() => navigate(user ? '/dashboard' : '/register')}
-                className="w-full sm:w-auto px-8 py-3.5 bg-[#1C4D8D] hover:bg-[#163a6b] text-white rounded-xl font-bold text-base transition-all shadow-xl hover:shadow-2xl hover:shadow-[#1C4D8D]/30 flex items-center justify-center gap-3 group transform hover:-translate-y-0.5"
+                className="px-8 py-4 bg-[#1C4D8D] hover:bg-[#163a6b] text-white rounded-xl font-bold text-base transition-all shadow-xl hover:shadow-2xl hover:shadow-[#1C4D8D]/30 flex items-center justify-center gap-3 group transform hover:-translate-y-0.5"
               >
                 <BookOpen size={20} />
-                Explore Repository
+                {user ? 'Go to Dashboard' : 'Get Started'}
                 <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
               </button>
-              
-              <div className="flex items-center gap-3 px-6 py-3 rounded-xl bg-white/5 border border-white/15 backdrop-blur-md">
-                <Shield size={18} className="text-yellow-400" />
-                <span className="text-white/95 font-semibold text-sm">Institutional Verification</span>
-              </div>
-            </div>
+
+              <a
+                href="#features"
+                className="px-8 py-4 bg-white/10 hover:bg-white/15 border border-white/25 text-white rounded-xl font-semibold text-base transition-all backdrop-blur-md flex items-center justify-center gap-3"
+              >
+                Learn More
+              </a>
+            </motion.div>
 
             {/* Stats Bar */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl">
-              <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10">
-                <div className="text-2xl font-bold text-white mb-1">500+</div>
-                <div className="text-sm text-slate-300">Research Papers</div>
-              </div>
-              <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10">
-                <div className="text-2xl font-bold text-white mb-1">100+</div>
-                <div className="text-sm text-slate-300">Faculty</div>
-              </div>
-              <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10">
-                <div className="text-2xl font-bold text-white mb-1">10K+</div>
-                <div className="text-sm text-slate-300">Monthly Views</div>
-              </div>
-              <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10">
-                <div className="text-2xl font-bold text-white mb-1">50+</div>
-                <div className="text-sm text-slate-300">Departments</div>
-              </div>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.55 }}
+              className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl"
+            >
+              {[
+                { value: '500+', label: 'Research Papers' },
+                { value: '100+', label: 'Faculty' },
+                { value: '10K+', label: 'Monthly Views' },
+                { value: '50+', label: 'Departments' },
+              ].map((stat) => (
+                <div
+                  key={stat.label}
+                  className="bg-white/8 backdrop-blur-md rounded-xl p-4 border border-white/15 hover:bg-white/12 transition-colors"
+                >
+                  <div className="text-2xl md:text-3xl font-black text-white mb-1">{stat.value}</div>
+                  <div className="text-sm text-slate-300 font-medium">{stat.label}</div>
+                </div>
+              ))}
+            </motion.div>
           </div>
         </div>
       </section>

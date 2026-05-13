@@ -9,7 +9,6 @@ import {
   User,
   Tag,
   FileText,
-  ExternalLink,
   Grid,
   List,
   TrendingUp,
@@ -75,6 +74,17 @@ const getPrimaryAuthor = (paper) => {
 
 const getAdditionalAuthors = (paper) =>
   getPaperAuthors(paper).filter((entry) => !entry?.is_primary);
+
+/** Repository listing includes approved (internal) and published papers */
+const getRepositoryListingBadge = (paper) => {
+  if (paper?.status === 'published') {
+    return { label: 'Published', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+  }
+  if (paper?.status === 'approved') {
+    return { label: 'Internal (approved)', className: 'bg-amber-50 text-amber-900 border-amber-200' };
+  }
+  return { label: 'Repository', className: 'bg-slate-100 text-slate-700 border-slate-200' };
+};
 
 const BrowseRepository = () => {
   const navigate = useNavigate();
@@ -249,16 +259,6 @@ const BrowseRepository = () => {
     if (!categoryId) return 'from-gray-500 to-slate-500';
     const index = categories.findIndex(cat => cat.id === categoryId);
     return colors[index % colors.length] || 'from-gray-500 to-slate-500';
-  };
-
-  const handleDownload = async (paper, e) => {
-    e.stopPropagation();
-    try {
-      window.open(paper.file_url, '_blank');
-      // Optional: Track download here
-    } catch (error) {
-      console.error('Download error:', error);
-    }
   };
 
   const handleViewDetails = (paper) => {
@@ -713,10 +713,20 @@ const BrowseRepository = () => {
 
                 {/* Content */}
                 <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <span className="px-3 py-1 rounded-full bg-gradient-to-r from-slate-100 to-slate-50 text-slate-700 text-xs font-medium">
-                      {getCategoryName(paper.category)}
-                    </span>
+                  <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-3 py-1 rounded-full bg-gradient-to-r from-slate-100 to-slate-50 text-slate-700 text-xs font-medium">
+                        {getCategoryName(paper.category)}
+                      </span>
+                      {(() => {
+                        const b = getRepositoryListingBadge(paper);
+                        return (
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${b.className}`}>
+                            {b.label}
+                          </span>
+                        );
+                      })()}
+                    </div>
                     <div className="flex gap-3 text-slate-500 text-xs">
                       <span className="flex items-center gap-1">
                         <Eye size={12} />
@@ -788,25 +798,10 @@ const BrowseRepository = () => {
                     </div>
                   )}
 
-                  {/* Actions */}
-                  <div className="flex gap-2 pt-4 border-t border-slate-100">
-                    <button
-                      onClick={(e) => handleDownload(paper, e)}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl hover:from-[#163a6b] hover:to-[#1C4D8D] transition-all font-medium text-sm"
-                    >
-                      <Download size={16} />
-                      Download PDF
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.open(paper.file_url, '_blank');
-                      }}
-                      className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-xl hover:border-slate-400 transition-colors"
-                      title="Preview PDF"
-                    >
-                      <ExternalLink size={16} />
-                    </button>
+                  <div className="pt-4 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 text-center">
+                      PDFs open in the paper detail page (view only). Only an administrator can download the file.
+                    </p>
                   </div>
                 </div>
                     </>
@@ -834,10 +829,18 @@ const BrowseRepository = () => {
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-3">
                         <div>
-                          <div className="flex items-center gap-3 mb-2">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
                             <span className={`px-3 py-1 rounded-full bg-gradient-to-r ${getCategoryColor(paper.category)} text-white text-xs font-bold`}>
                               {getCategoryName(paper.category)}
                             </span>
+                            {(() => {
+                              const b = getRepositoryListingBadge(paper);
+                              return (
+                                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${b.className}`}>
+                                  {b.label}
+                                </span>
+                              );
+                            })()}
                             <div className="flex gap-4 text-sm text-slate-500">
                               <span className="flex items-center gap-1">
                                 <Eye size={14} />
@@ -870,7 +873,10 @@ const BrowseRepository = () => {
                         </div>
                         <div className="flex items-center gap-2">
                           <Calendar size={14} />
-                          <span>Published {formatDate(paper.published_date || paper.created_at)}</span>
+                          <span>
+                            {paper.status === 'published' ? 'Published' : 'Listed'}{' '}
+                            {formatDate(paper.published_date || paper.submission_date || paper.created_at)}
+                          </span>
                         </div>
                         {paper.keywords && paper.keywords.length > 0 && (
                           <div className="flex items-center gap-2">
@@ -893,15 +899,11 @@ const BrowseRepository = () => {
                         className="px-4 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl hover:from-[#163a6b] hover:to-[#1C4D8D] transition-colors font-medium text-sm flex items-center justify-center gap-2"
                       >
                         <Eye size={16} />
-                        View Details
+                        View details
                       </button>
-                      <button
-                        onClick={(e) => handleDownload(paper, e)}
-                        className="px-4 py-3 border border-slate-300 text-slate-700 rounded-xl hover:border-slate-400 transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                      >
-                        <Download size={16} />
-                        Download PDF
-                      </button>
+                      <p className="text-xs text-slate-500 text-center px-1">
+                        Download is restricted to administrators.
+                      </p>
                     </div>
                   </div>
                 </div>

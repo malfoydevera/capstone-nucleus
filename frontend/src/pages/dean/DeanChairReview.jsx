@@ -38,6 +38,10 @@ const DeanChairReview = () => {
   const [stats, setStats] = useState({
     pendingReview: 0, revisionRequired: 0, forwarded: 0, total: 0
   });
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const isDean = user?.role === 'dean';
@@ -55,11 +59,11 @@ const DeanChairReview = () => {
 
   useEffect(() => {
     filterAndSearchPapers();
-  }, [papers, statusFilter, searchTerm]);
+  }, [papers, statusFilter, searchTerm, departmentFilter, dateFilter, sortBy]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [statusFilter, searchTerm, filteredPapers.length]);
+  }, [statusFilter, searchTerm, departmentFilter, dateFilter, sortBy, filteredPapers.length]);
 
   const fetchPapers = async (silent = false) => {
     if (!silent) setRefreshing(true);
@@ -77,6 +81,7 @@ const DeanChairReview = () => {
         forwarded: allPapers.filter(p => ['pending_editor', 'pending_admin', 'approved', 'published'].includes(p.status)).length,
         total: allPapers.length
       });
+      setLastRefreshed(new Date());
     } catch (error) {
       console.error('Failed to fetch papers:', error);
     } finally {
@@ -84,6 +89,31 @@ const DeanChairReview = () => {
       setRefreshing(false);
     }
   };
+
+  const formatRelativeTime = (date) => {
+    if (!date) return null;
+    const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    return date.toLocaleTimeString();
+  };
+
+  const getDepartmentScopeKey = (paper) => paper?.department_id || paper?.department || 'unassigned';
+  const getDepartmentScopeLabel = (paper) => {
+    if (paper?.department) return paper.department;
+    if (paper?.department_id) return `Department ${String(paper.department_id).slice(0, 8)}`;
+    return 'unassigned';
+  };
+
+  const departmentOptions = [
+    { value: 'all', label: 'all' },
+    ...Array.from(
+      new Map(
+        papers.map((paper) => [getDepartmentScopeKey(paper), getDepartmentScopeLabel(paper)])
+      ).entries()
+    ).map(([value, label]) => ({ value, label })),
+  ].sort((left, right) => left.label.localeCompare(right.label));
 
   const filterAndSearchPapers = () => {
     let filtered = [...papers];
@@ -106,9 +136,32 @@ const DeanChairReview = () => {
       );
     }
 
-    filtered.sort((a, b) =>
-      new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at)
-    );
+    if (departmentFilter !== 'all') {
+      filtered = filtered.filter((paper) => getDepartmentScopeKey(paper) === departmentFilter);
+    }
+
+    if (dateFilter !== 'all') {
+      const now = Date.now();
+      const windowDays = dateFilter === '7d' ? 7 : dateFilter === '30d' ? 30 : 90;
+      filtered = filtered.filter((paper) => {
+        const submitted = new Date(paper.submission_date || paper.created_at).getTime();
+        if (Number.isNaN(submitted)) return false;
+        return now - submitted <= windowDays * 24 * 60 * 60 * 1000;
+      });
+    }
+
+    filtered.sort((a, b) => {
+      if (sortBy === 'oldest') {
+        return new Date(a.submission_date || a.created_at) - new Date(b.submission_date || b.created_at);
+      }
+      if (sortBy === 'title') {
+        return (a.title || '').localeCompare(b.title || '');
+      }
+      if (sortBy === 'author') {
+        return formatFullName(a.users).localeCompare(formatFullName(b.users));
+      }
+      return new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at);
+    });
 
     setFilteredPapers(filtered);
   };
@@ -227,19 +280,31 @@ const DeanChairReview = () => {
               {isDean ? <Award size={28} className="text-white" /> : <Users size={28} className="text-white" />}
             </div>
             <div>
-              <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                {isDean ? 'Dean' : 'Program Chair'} Review Queue
-              </h1>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <h1 className="text-3xl md:text-4xl font-black text-slate-900">
+                  {isDean ? 'Dean Review Queue' : 'Review Submissions'}
+                </h1>
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${isDean ? 'bg-violet-50 border-violet-200 text-violet-700' : 'bg-teal-50 border-teal-200 text-teal-700'}`}>
+                  <Award size={12} /> {isDean ? 'Dean' : 'Program Chair'}
+                </span>
+              </div>
               <p className="text-lg text-slate-600 font-medium">
-                Research papers forwarded to you by advisers
+                {isDean
+                  ? 'Research papers forwarded to you by advisers'
+                  : 'Research papers awaiting your program-chair review'}
               </p>
+              {lastRefreshed && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Last refreshed {formatRelativeTime(lastRefreshed)}
+                </p>
+              )}
             </div>
           </div>
 
           <button
             onClick={() => fetchPapers()}
             disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-white to-slate-50 border border-slate-200 text-slate-700 font-semibold hover:from-slate-50 hover:to-white transition-all duration-300 disabled:opacity-50"
+            className={`flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r ${accentFrom} ${accentTo} text-white font-semibold shadow-md hover:shadow-lg transition-all duration-300 disabled:opacity-50`}
           >
             <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Refreshing...' : 'Refresh'}
@@ -267,31 +332,82 @@ const DeanChairReview = () => {
           />
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className={`bg-gradient-to-br ${isDean ? 'from-violet-50 to-purple-50 border-violet-200' : 'from-teal-50 to-cyan-50 border-teal-200'} rounded-2xl border-2 p-5 shadow-sm`}>
-            <p className={`text-sm font-semibold mb-1 ${isDean ? 'text-violet-700' : 'text-teal-700'}`}>Pending Review</p>
+        {/* Stats Bar */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('needs_review')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'needs_review'
+                ? `${isDean ? 'border-violet-300 bg-gradient-to-br from-violet-50 to-purple-50' : 'border-teal-300 bg-gradient-to-br from-teal-50 to-cyan-50'} shadow-md`
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Clock size={14} className={isDean ? 'text-violet-600' : 'text-teal-600'} />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Pending</p>
+            </div>
             <p className="text-3xl font-black text-slate-900">{stats.pendingReview}</p>
-          </div>
-          <div className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 rounded-2xl border-2 p-5 shadow-sm">
-            <p className="text-sm font-semibold text-orange-700 mb-1">Revision Sent</p>
+            <p className="text-xs text-slate-500 mt-1">Awaiting your action</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('revision_required')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'revision_required'
+                ? 'border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-orange-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle size={14} className="text-orange-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Revision Sent</p>
+            </div>
             <p className="text-3xl font-black text-slate-900">{stats.revisionRequired}</p>
-          </div>
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 rounded-2xl border-2 p-5 shadow-sm">
-            <p className="text-sm font-semibold text-blue-700 mb-1">Forwarded to Editor</p>
+            <p className="text-xs text-slate-500 mt-1">In revision loop</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('forwarded')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'forwarded'
+                ? 'border-blue-300 bg-gradient-to-br from-blue-50 to-indigo-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-blue-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Eye size={14} className="text-blue-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Forwarded</p>
+            </div>
             <p className="text-3xl font-black text-slate-900">{stats.forwarded}</p>
-          </div>
-          <div className="bg-white border-slate-200 rounded-2xl border-2 p-5 shadow-sm">
-            <p className="text-sm font-semibold text-slate-600 mb-1">Total Assigned</p>
+            <p className="text-xs text-slate-500 mt-1">Past your stage</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'all'
+                ? 'border-slate-300 bg-slate-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen size={14} className="text-slate-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Total Assigned</p>
+            </div>
             <p className="text-3xl font-black text-slate-900">{stats.total}</p>
-          </div>
+            <p className="text-xs text-slate-500 mt-1">All-time queue</p>
+          </button>
         </div>
       </div>
 
       {/* Filter & Search */}
       <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 p-6 mb-8 shadow-sm">
-        <div className="flex flex-col lg:flex-row gap-6">
-          <div className="flex-1">
+        <div className="space-y-6">
+          <div>
             <label className="block text-sm font-bold text-slate-700 mb-3">Filter by Status</label>
             <div className="flex flex-wrap gap-3">
               {filterOptions.map((option) => (
@@ -315,17 +431,62 @@ const DeanChairReview = () => {
             </div>
           </div>
 
-          <div className="lg:w-80">
-            <label className="block text-sm font-bold text-slate-700 mb-3">Search Papers</label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search by title, author, keywords..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className={`w-full px-5 py-3 pl-12 bg-white border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 ${accentRing} focus:border-transparent transition-all duration-300`}
-              />
-              <Search size={20} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(0,1.15fr)_220px_180px_180px] gap-4 items-end">
+            <div className="min-w-0">
+              <label className="block text-sm font-bold text-slate-700 mb-3">Search Papers</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search by title, author, keywords..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className={`w-full px-5 py-3 pl-12 bg-white border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 ${accentRing} focus:border-transparent transition-all duration-300`}
+                />
+                <Search size={20} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-3">Department</label>
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className={`w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 ${accentRing} focus:border-transparent transition-all duration-300`}
+              >
+                {departmentOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.value === 'all' ? 'All Departments' : option.label === 'unassigned' ? 'Unassigned' : option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-3">Date Range</label>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className={`w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 ${accentRing} focus:border-transparent transition-all duration-300`}
+              >
+                <option value="all">All Dates</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-3">Sort</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className={`w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 ${accentRing} focus:border-transparent transition-all duration-300`}
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="title">Title A-Z</option>
+                <option value="author">Author A-Z</option>
+              </select>
             </div>
           </div>
         </div>

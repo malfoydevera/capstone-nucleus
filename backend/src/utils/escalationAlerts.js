@@ -1,4 +1,5 @@
 const supabase = require('../config/supabase');
+const { notifyUser } = require('./notify');
 
 const toPositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -55,18 +56,15 @@ const runEscalationAlertSweep = async () => {
       if (existingError) throw existingError;
       if (existing?.id) continue;
 
-      const { error: insertError } = await supabase.from('notifications').insert([
-        {
-          user_id: deanId,
-          research_id: paper.id,
-          type: 'escalation_alert',
-          title: 'Escalation: Program Chair Delay',
-          message: `"${paper.title}" has been pending program chair review for ${daysStale} day(s).`,
-        },
-      ]);
-
-      if (insertError) throw insertError;
-      alertsCreated += 1;
+      const result = await notifyUser({
+        userId: deanId,
+        researchId: paper.id,
+        type: 'escalation_alert',
+        title: 'Escalation: Program Chair Delay',
+        message: `"${paper.title}" has been pending program chair review for ${daysStale} day(s).`,
+      });
+      if (result?.error) throw result.error;
+      if (!result?.skipped) alertsCreated += 1;
     }
   }
 

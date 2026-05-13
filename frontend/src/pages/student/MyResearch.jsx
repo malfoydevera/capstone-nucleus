@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Plus, RefreshCw } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Plus, RefreshCw, LayoutList } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import useAutoLoadMore from '../../hooks/useAutoLoadMore';
 
@@ -427,14 +427,24 @@ const MyResearch = () => {
                           </div>
                         </div>
 
-                        <a
-                          href={paper.file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="h-9 px-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 inline-flex items-center justify-center"
-                        >
-                          {isPublished ? 'Open Published' : 'View Document'}
-                        </a>
+                        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/student/my-research/${paper.id}`)}
+                            className="h-9 px-3 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 inline-flex items-center justify-center gap-1.5"
+                          >
+                            <LayoutList size={15} />
+                            Status &amp; reviewer feedback
+                          </button>
+                          <a
+                            href={paper.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="h-9 px-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 inline-flex items-center justify-center"
+                          >
+                            {isPublished ? 'Open Published' : 'View Document'}
+                          </a>
+                        </div>
                       </div>
                     </article>
                   );

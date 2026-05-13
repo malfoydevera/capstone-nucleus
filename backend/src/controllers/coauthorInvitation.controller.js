@@ -3,6 +3,7 @@ const supabase = require('../config/supabase');
 const { sendSuccess, sendError } = require('../utils/response');
 const { attachFullName, buildFullName } = require('../utils/name');
 const { sendTransactionalEmail } = require('../utils/mailer');
+const { notifyUser } = require('../utils/notify');
 
 const INVITE_TTL_DAYS = 7;
 
@@ -165,15 +166,13 @@ exports.createCoAuthorInvitations = async (req, res) => {
 
       created.push(invite);
 
-      try {
-        await supabase.from('notifications').insert({
-          user_id: inviteeId,
-          research_id: researchId,
-          type: 'coauthor_invite',
-          title: 'Co-author Invitation',
-          message: `You were invited to co-author "${paper.title}". Open your invitations to accept or decline.`,
-        });
-      } catch {}
+      await notifyUser({
+        userId: inviteeId,
+        researchId,
+        type: 'coauthor_invite',
+        title: 'Co-author Invitation',
+        message: `You were invited to co-author "${paper.title}". Open your invitations to accept or decline.`,
+      });
 
       const inviteeName = buildFullName(candidate) || candidate.email;
       const invitationLink = buildInvitationLink(token);
@@ -337,15 +336,13 @@ exports.acceptCoAuthorInvitation = async (req, res) => {
       throw acceptError;
     }
 
-    try {
-      await supabase.from('notifications').insert({
-        user_id: invite.inviter_id,
-        research_id: invite.research_id,
-        type: 'coauthor_invite_accepted',
-        title: 'Co-author Invitation Accepted',
-        message: `${req.user.fullName || req.user.email} accepted your co-author invitation for "${paper.title}".`,
-      });
-    } catch {}
+    await notifyUser({
+      userId: invite.inviter_id,
+      researchId: invite.research_id,
+      type: 'coauthor_invite_accepted',
+      title: 'Co-author Invitation Accepted',
+      message: `${req.user.fullName || req.user.email} accepted your co-author invitation for "${paper.title}".`,
+    });
 
     return sendSuccess(res, {
       message: 'Invitation accepted',
@@ -393,15 +390,22 @@ exports.declineCoAuthorInvitation = async (req, res) => {
       throw declineError;
     }
 
-    try {
-      await supabase.from('notifications').insert({
-        user_id: invite.inviter_id,
-        research_id: invite.research_id,
-        type: 'coauthor_invite_declined',
-        title: 'Co-author Invitation Declined',
-        message: `${req.user.fullName || req.user.email} declined your co-author invitation.`,
-      });
-    } catch {}
+    // Defensive cleanup: ensure declined users are not linked as co-authors.
+    // This guarantees they no longer receive participant notifications.
+    await supabase
+      .from('research_authors')
+      .delete()
+      .eq('research_id', invite.research_id)
+      .eq('user_id', req.user.id)
+      .eq('is_primary', false);
+
+    await notifyUser({
+      userId: invite.inviter_id,
+      researchId: invite.research_id,
+      type: 'coauthor_invite_declined',
+      title: 'Co-author Invitation Declined',
+      message: `${req.user.fullName || req.user.email} declined your co-author invitation.`,
+    });
 
     return sendSuccess(res, { message: 'Invitation declined', data: {} });
   } catch (error) {

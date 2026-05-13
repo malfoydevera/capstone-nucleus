@@ -15,6 +15,7 @@ const { getOrSet, TTL } = require('../utils/cache'); // P-001
 const { attachFullName, buildFullName } = require('../utils/name');
 const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/workflowEmail');
 const { getSystemPolicy, isFileAllowedByPolicy } = require('../utils/systemPolicy');
+const { notifyUser, notifyUsers, notifyCoAuthors } = require('../utils/notify');
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -410,12 +411,71 @@ exports.submitResearch = async (req, res) => {
     const { data: author } = await supabase.from('users').select('first_name, middle_name, last_name, email').eq('id', userId).single();
     const authorName = buildFullName(author) || author?.email;
 
+    // Notify the submitting author about the successful upload / resubmission
+    try {
+      if (!id) {
+        await notifyUser({
+          userId,
+          researchId: research.id,
+          type: 'paper_uploaded',
+          title: 'Paper Uploaded Successfully',
+          message: `Your paper "${title}" has been uploaded and is now pending review.`,
+        });
+      } else {
+        await notifyUser({
+          userId,
+          researchId: research.id,
+          type: 'paper_resubmitted',
+          title: 'Revision Submitted Successfully',
+          message: `Your revision for "${title}" has been submitted and routed to the next reviewer.`,
+        });
+      }
+    } catch (notifyErr) {
+      console.error('[submitResearch] author self-notification failed:', notifyErr.message);
+    }
+
+    // Notify newly-added co-authors (only on first submission or when co-author list changes)
+    if (normalizedCoAuthorIds.length > 0) {
+      try {
+        const coAuthorNotifications = normalizedCoAuthorIds.map((coAuthorId) => ({
+          user_id: coAuthorId,
+          research_id: research.id,
+          type: 'coauthor_added',
+          title: 'You Were Added as a Co-author',
+          message: `You have been added as a co-author of the paper "${title}".`,
+          sender_user_id: userId,
+        }));
+        await notifyUsers(coAuthorNotifications);
+      } catch (notifyErr) {
+        console.error('[submitResearch] co-author notification failed:', notifyErr.message);
+      }
+    }
+
+    // On revision resubmit, notify existing accepted co-authors about the resubmission
+    if (id && normalizedCoAuthorIds.length === 0) {
+      try {
+        await notifyCoAuthors({
+          researchId: research.id,
+          type: 'paper_resubmitted',
+          title: 'Co-authored Paper Revision Submitted',
+          message: `A revision has been submitted for the paper "${title}" that you co-authored.`,
+          senderUserId: userId,
+          excludeUserId: userId,
+        });
+      } catch (notifyErr) {
+        console.error('[submitResearch] co-author resubmit notification failed:', notifyErr.message);
+      }
+    }
+
     if (!id && facultyId) {
-      await supabase.from('notifications').insert([{
-        user_id: facultyId, research_id: research.id, type: 'submission',
+      await notifyUser({
+        userId: facultyId,
+        researchId: research.id,
+        type: 'submission',
         title: 'New Research Submission',
         message: `${authorName} submitted "${title}" for your review`,
-      }]);
+        senderUserId: userId,
+      });
 
       try {
         const { data: facultyUser } = await supabase
@@ -432,11 +492,14 @@ exports.submitResearch = async (req, res) => {
     if (id || !facultyId) {
       const { data: staffUsers } = await supabase.from('users').select('id').eq('role', 'staff');
       if (staffUsers?.length > 0) {
-        await supabase.from('notifications').insert(
-          staffUsers.map(staff => ({
-            user_id: staff.id, research_id: research.id, type: 'submission',
+        await notifyUsers(
+          staffUsers.map((staff) => ({
+            user_id: staff.id,
+            research_id: research.id,
+            type: 'submission',
             title: id ? 'Research Revised' : 'New Research Submission',
             message: `${authorName} ${id ? 'resubmitted' : 'submitted'} "${title}" for review`,
+            sender_user_id: userId,
           }))
         );
 
@@ -484,25 +547,69 @@ exports.submitResearch = async (req, res) => {
 
 exports.getMyResearch = async (req, res) => {
   try {
-    const { data: papers, error } = await supabase
+    const userId = req.user.id;
+
+    const PAPER_SELECT = `
+      *,
+      research_authors!research_authors_research_id_fkey (
+        user_id, is_primary, author_order,
+        author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
+      )
+    `;
+
+    // Authored papers (primary author)
+    const { data: authoredPapers, error: authoredError } = await supabase
       .from('research_papers')
-      .select(`
-        *,
-        research_authors!research_authors_research_id_fkey (
-          user_id, is_primary, author_order,
-          author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
-        )
-      `)
-      .eq('author_id', req.user.id)
+      .select(PAPER_SELECT)
+      .eq('author_id', userId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
-    if (error) throw error;
-    const papersWithUrls = await Promise.all((papers || []).map(async (paper) => ({
-      ...paper,
-      external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
-      file_url: await resolvePaperFileUrl(paper),
-      structured_authors: normalizeResearchAuthors(paper.research_authors),
-    })));
+    if (authoredError) throw authoredError;
+
+    // Co-authored papers (accepted co-author via research_authors)
+    let coAuthoredPapers = [];
+    try {
+      const { data: coAuthorLinks } = await supabase
+        .from('research_authors')
+        .select('research_id')
+        .eq('user_id', userId)
+        .eq('is_primary', false);
+
+      const coAuthoredIds = (coAuthorLinks || [])
+        .map((r) => r.research_id)
+        .filter(Boolean);
+
+      if (coAuthoredIds.length > 0) {
+        const { data: coAuthored } = await supabase
+          .from('research_papers')
+          .select(PAPER_SELECT)
+          .in('id', coAuthoredIds)
+          .neq('author_id', userId) // avoid duplicates with authored set
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false });
+        coAuthoredPapers = coAuthored || [];
+      }
+    } catch (coAuthorErr) {
+      // research_authors table may not exist yet — silently skip
+      console.warn('[getMyResearch] co-author lookup skipped:', coAuthorErr.message);
+    }
+
+    // Merge, mark co-authored papers, and resolve URLs
+    const seen = new Set((authoredPapers || []).map((p) => p.id));
+    const mergedPapers = [
+      ...(authoredPapers || []),
+      ...coAuthoredPapers.filter((p) => !seen.has(p.id)).map((p) => ({ ...p, is_coauthored: true })),
+    ];
+
+    const papersWithUrls = await Promise.all(
+      mergedPapers.map(async (paper) => ({
+        ...paper,
+        external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
+        file_url: await resolvePaperFileUrl(paper),
+        structured_authors: normalizeResearchAuthors(paper.research_authors),
+      }))
+    );
+
     return sendSuccess(res, { data: { papers: papersWithUrls } });
   } catch (error) {
     console.error('Get my research error:', error);
@@ -620,11 +727,17 @@ exports.getPublishedResearch = async (req, res) => {
         user_id, is_primary, author_order,
         author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
       )
-    `).eq('status', 'approved').is('deleted_at', null).order('published_date', { ascending: false });
+    `).in('status', ['approved', 'published']).is('deleted_at', null).order('updated_at', { ascending: false });
 
     if (category) query = query.eq('category', category);
     if (search) query = query.or(`title.ilike.%${search}%,abstract.ilike.%${search}%`);
-    if (year) query = query.gte('published_date', `${year}-01-01`).lte('published_date', `${year}-12-31`);
+    if (year) {
+      const yStart = `${year}-01-01`;
+      const yEnd = `${year}-12-31`;
+      query = query.or(
+        `and(status.eq.published,published_date.gte.${yStart},published_date.lte.${yEnd}),and(status.eq.approved,created_at.gte.${yStart},created_at.lte.${yEnd})`
+      );
+    }
 
     const { data: papers, error } = await query;
     if (error) throw error;
@@ -795,7 +908,11 @@ exports.getResearchById = async (req, res) => {
 exports.getResearchFile = async (req, res) => {
   try {
     const { id } = req.params;
-    const { data: paper, error } = await supabase.from('research_papers').select('*').eq('id', id).single();
+    const { data: paper, error } = await supabase
+      .from('research_papers')
+      .select('*, research_authors!research_authors_research_id_fkey(user_id)')
+      .eq('id', id)
+      .single();
     if (error || !paper) return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
     if (!canAccessPaper(req.user, paper)) return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
     const fileUrl = await resolvePaperFileUrl(paper);
@@ -817,7 +934,10 @@ exports.trackView = async (req, res) => {
   try {
     const { id } = req.params;
     const { data: paper, error: paperError } = await supabase
-      .from('research_papers').select('id, status, author_id, faculty_id, dean_chair_id').eq('id', id).single();
+      .from('research_papers')
+      .select('id, status, author_id, faculty_id, dean_chair_id, research_authors!research_authors_research_id_fkey(user_id)')
+      .eq('id', id)
+      .single();
     if (paperError || !paper) return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
     if (!canAccessPaper(req.user, paper)) return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
     const { error: updateError } = await supabase.rpc('increment_view_count', { row_id: id });
@@ -832,14 +952,44 @@ exports.trackView = async (req, res) => {
 
 exports.trackDownload = async (req, res) => {
   try {
+    if (!req.user || req.user.role !== 'admin') {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Only administrators can download PDF files' });
+    }
     const { id } = req.params;
     const { data: paper, error: paperError } = await supabase
-      .from('research_papers').select('id, status, author_id, faculty_id, dean_chair_id').eq('id', id).single();
+      .from('research_papers')
+      .select('id, status, title, author_id, faculty_id, dean_chair_id, research_authors!research_authors_research_id_fkey(user_id)')
+      .eq('id', id)
+      .single();
     if (paperError || !paper) return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
     if (!canAccessPaper(req.user, paper)) return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
     const { error: updateError } = await supabase.rpc('increment_download_count', { row_id: id });
     if (updateError) throw updateError;
     await supabase.from('paper_downloads').insert({ paper_id: id, user_id: req.user.id, downloaded_at: new Date().toISOString() });
+
+    const title = paper.title || 'Your paper';
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: 'admin_download',
+      title: 'Paper downloaded by administrator',
+      message: `An administrator downloaded the PDF for "${title}".`,
+      senderUserId: req.user.id,
+    });
+    try {
+      await notifyCoAuthors({
+        researchId: id,
+        type: 'admin_download',
+        title: 'Paper downloaded by administrator',
+        message: `An administrator downloaded the PDF for "${title}" that you co-authored.`,
+        senderUserId: req.user.id,
+        excludeUserId: paper.author_id,
+        alreadyNotifiedIds: [],
+      });
+    } catch (e) {
+      console.warn('[trackDownload] co-author notify failed', e.message);
+    }
+
     return sendSuccess(res, { message: 'Download tracked successfully', data: {} });
   } catch (error) {
     console.error('Error tracking download:', error);

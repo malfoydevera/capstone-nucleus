@@ -20,8 +20,6 @@ import {
   Zap,
   Sparkles,
   MoreVertical,
-  Download,
-  ExternalLink,
   BookOpen,
   Award,
   Timer,
@@ -41,7 +39,7 @@ const ReviewSubmissions = () => {
   const [filteredPapers, setFilteredPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('needs_review');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState({
     pending: 0,
@@ -50,6 +48,7 @@ const ReviewSubmissions = () => {
     rejected: 0,
     revisionRequired: 0
   });
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
@@ -76,36 +75,19 @@ const ReviewSubmissions = () => {
     try {
       const response = await researchAPI.getAllResearch();
       const allPapers = unwrapApiData(response).papers || [];
-      
-      console.log('=== STAFF: All papers fetched ===', allPapers.length);
-      console.log('Status breakdown:', {
-        pending_faculty: allPapers.filter(p => p.status === 'pending_faculty').length,
-        pending_editor: allPapers.filter(p => p.status === 'pending_editor').length,
-        pending_admin: allPapers.filter(p => p.status === 'pending_admin').length,
-        approved: allPapers.filter(p => p.status === 'approved').length,
-      });
-      console.log('Papers with pending_editor:', allPapers.filter(p => p.status === 'pending_editor'));
-      
+
       setPapers(allPapers);
-      
-      // Calculate comprehensive stats - filter for papers at editor stage
-      const editorStagePapers = allPapers.filter(p => 
-        p.status === 'pending_editor' || 
-        p.status === 'pending_admin' ||
-        p.status === 'approved' ||
-        p.status === 'rejected' ||
-        p.status === 'revision_required'
-      );
-      
+
       const statsData = {
-        pending: 0,
-        needsReview: editorStagePapers.filter(p => p.status === 'pending_editor').length,
-        approved: editorStagePapers.filter(p => p.status === 'approved').length,
-        rejected: editorStagePapers.filter(p => p.status === 'rejected').length,
-        revisionRequired: editorStagePapers.filter(p => p.status === 'revision_required').length
+        pending: allPapers.filter(p => p.status === 'pending_faculty').length,
+        needsReview: allPapers.filter(p => p.status === 'pending_editor').length,
+        approved: allPapers.filter(p => p.status === 'approved').length,
+        rejected: allPapers.filter(p => p.status === 'rejected').length,
+        revisionRequired: allPapers.filter(p => p.status === 'revision_required').length,
       };
-      
+
       setStats(statsData);
+      setLastRefreshed(new Date());
     } catch (error) {
       console.error('Failed to fetch papers:', error);
     } finally {
@@ -114,24 +96,22 @@ const ReviewSubmissions = () => {
     }
   };
 
+  const formatRelativeTime = (date) => {
+    if (!date) return null;
+    const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    return date.toLocaleTimeString();
+  };
+
   const filterAndSearchPapers = () => {
     let filtered = [...papers];
-    
-    console.log('=== STAFF: Filtering papers ===');
-    console.log('Total papers before filter:', papers.length);
-    console.log('Current statusFilter:', statusFilter);
-    
-    // Apply status filter - Staff should only see papers that passed faculty review
+
     if (statusFilter === 'needs_review') {
       filtered = papers.filter(p => p.status === 'pending_editor');
-      console.log('Filtered for needs_review:', filtered.length);
     } else if (statusFilter !== 'all') {
       filtered = papers.filter(p => p.status === statusFilter);
-      console.log('Filtered for specific status:', statusFilter, filtered.length);
-    } else {
-      // For 'all' filter, staff should only see papers at editor stage or beyond (exclude pending_faculty)
-      filtered = papers.filter(p => p.status !== 'pending_faculty');
-      console.log('Filtered for all (excluding pending_faculty):', filtered.length);
     }
 
     // Apply search filter
@@ -232,12 +212,19 @@ const ReviewSubmissions = () => {
     return configs[status] || configs.pending;
   };
 
+  const countByStatus = (status) => papers.filter((p) => p.status === status).length;
+
   const filterOptions = [
+    { id: 'all', label: 'All Papers', count: papers.length, color: 'from-slate-600 to-slate-800' },
     { id: 'needs_review', label: 'Needs Review', count: stats.needsReview, color: 'from-orange-500 to-amber-500' },
+    { id: 'pending_faculty', label: 'Pending Faculty', count: countByStatus('pending_faculty'), color: 'from-[#1C4D8D] to-[#2563eb]' },
+    { id: 'pending_editor', label: 'Pending Editor', count: countByStatus('pending_editor'), color: 'from-blue-500 to-cyan-500' },
+    { id: 'pending_admin', label: 'Pending Admin', count: countByStatus('pending_admin'), color: 'from-indigo-500 to-violet-500' },
+    { id: 'pending_dean', label: 'Pending Dean', count: countByStatus('pending_dean'), color: 'from-purple-500 to-fuchsia-500' },
+    { id: 'pending_program_chair', label: 'Pending Program Chair', count: countByStatus('pending_program_chair'), color: 'from-teal-500 to-emerald-500' },
     { id: 'revision_required', label: 'Revision Required', count: stats.revisionRequired, color: 'from-orange-500 to-red-500' },
     { id: 'approved', label: 'Approved', count: stats.approved, color: 'from-green-500 to-emerald-500' },
     { id: 'rejected', label: 'Rejected', count: stats.rejected, color: 'from-red-500 to-pink-500' },
-    { id: 'all', label: 'All Papers', count: papers.length, color: 'from-slate-500 to-slate-700' }
   ];
 
   const visiblePapers = filteredPapers.slice(0, visibleCount);
@@ -265,19 +252,31 @@ const ReviewSubmissions = () => {
             <FileCheck size={28} className="text-white" />
           </div>
           <div className="flex-1">
-            <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-              Review <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-amber-600">Submissions</span>
-            </h1>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <h1 className="text-3xl md:text-4xl font-black text-slate-900">
+                Editorial <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-amber-600">Workspace</span>
+              </h1>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+                <Shield size={12} /> Research Editor
+              </span>
+            </div>
             <p className="text-lg text-slate-600 font-medium">
               Evaluate and provide feedback on student research papers
             </p>
+            {lastRefreshed && (
+              <p className="text-xs text-slate-500 mt-1">
+                Last refreshed {formatRelativeTime(lastRefreshed)}
+              </p>
+            )}
           </div>
-          <div className="hidden md:block">
-            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 text-emerald-700 text-sm font-semibold">
-              <Shield size={14} />
-              Research Editor
-            </div>
-          </div>
+          <button
+            onClick={() => fetchPapers()}
+            disabled={refreshing}
+            className="hidden md:flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-semibold shadow-md hover:shadow-lg transition-all duration-300 disabled:opacity-50"
+          >
+            <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
         </div>
 
         <div className="mb-6">
@@ -310,56 +309,90 @@ const ReviewSubmissions = () => {
           </p>
         </div>
 
-        {/* Stats Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-orange-600 mb-1">{stats.needsReview}</div>
-            <div className="text-sm text-slate-600 font-medium">Needs Review</div>
-          </div>
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-amber-600 mb-1">{stats.revisionRequired}</div>
-            <div className="text-sm text-slate-600 font-medium">Revisions</div>
-          </div>
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-blue-600 mb-1">{stats.needsReview}</div>
-            <div className="text-sm text-slate-600 font-medium">In Review</div>
-          </div>
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-black text-emerald-600 mb-1">{stats.approved}</div>
-            <div className="text-sm text-slate-600 font-medium">Approved</div>
-          </div>
+        {/* Stats Bar */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('pending_editor')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'pending_editor'
+                ? 'border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-orange-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Clock size={14} className="text-orange-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Needs Review</p>
+            </div>
+            <p className="text-3xl font-black text-slate-900">{stats.needsReview}</p>
+            <p className="text-xs text-slate-500 mt-1">Awaiting editor decision</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('revision_required')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'revision_required'
+                ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-amber-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle size={14} className="text-amber-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Revisions</p>
+            </div>
+            <p className="text-3xl font-black text-slate-900">{stats.revisionRequired}</p>
+            <p className="text-xs text-slate-500 mt-1">Returned to author</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('approved')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'approved'
+                ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-green-50 shadow-md'
+                : 'border-slate-200 bg-white hover:border-emerald-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <CheckCircle size={14} className="text-emerald-600" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Approved</p>
+            </div>
+            <p className="text-3xl font-black text-slate-900">{stats.approved}</p>
+            <p className="text-xs text-slate-500 mt-1">Published</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`text-left rounded-2xl border-2 p-4 transition-all duration-300 ${
+              statusFilter === 'all'
+                ? 'border-[#1C4D8D]/40 bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 shadow-md'
+                : 'border-slate-200 bg-white hover:border-[#1C4D8D]/20'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen size={14} className="text-[#1C4D8D]" />
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">All Papers</p>
+            </div>
+            <p className="text-3xl font-black text-slate-900">{papers.length}</p>
+            <p className="text-xs text-slate-500 mt-1">Across every status</p>
+          </button>
         </div>
       </div>
 
       {/* Search and Filter Bar */}
       <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 mb-8">
         <div className="p-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            {/* Search */}
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="Search papers, authors, or keywords..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
-                />
-              </div>
-            </div>
-
-            {/* Refresh Button */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => fetchPapers()}
-                disabled={refreshing}
-                className="px-4 py-3 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 font-medium hover:from-slate-200 hover:to-white transition-all duration-300 flex items-center gap-2"
-              >
-                <RefreshCw size={18} className={`${refreshing ? 'animate-spin' : ''}`} />
-                {refreshing ? 'Refreshing...' : 'Refresh'}
-              </button>
-            </div>
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+            <input
+              type="text"
+              placeholder="Search papers, authors, or keywords..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
+            />
           </div>
 
           {/* Filter Chips */}
@@ -405,16 +438,18 @@ const ReviewSubmissions = () => {
           <p className="text-lg text-slate-600 mb-8 max-w-md mx-auto">
             {searchTerm
               ? `No papers match your search for "${searchTerm}"`
-              : statusFilter === 'needs_review'
-                ? 'All caught up! No submissions need review at the moment.'
-                : `No papers with status: ${statusFilter.replace('_', ' ')}`
+              : statusFilter === 'all'
+                ? 'No submissions in the system yet.'
+                : statusFilter === 'needs_review'
+                  ? 'All caught up! No submissions need review at the moment.'
+                  : `No papers with status: ${statusFilter.replace('_', ' ')}`
             }
           </p>
-          {(searchTerm || statusFilter !== 'needs_review') && (
+          {(searchTerm || statusFilter !== 'all') && (
             <button
               onClick={() => {
                 setSearchTerm('');
-                setStatusFilter('needs_review');
+                setStatusFilter('all');
               }}
               className="px-8 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163d6e] hover:to-[#1d4ed8] transition-all duration-500 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
             >
@@ -530,16 +565,6 @@ const ReviewSubmissions = () => {
                         <FileCheck size={16} />
                         Review Paper
                         <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          window.open(paper.file_url, '_blank');
-                        }}
-                        className="px-6 py-3 bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 rounded-xl hover:border-[#1C4D8D]/30 transition-all duration-300 font-medium text-sm flex items-center justify-center gap-2"
-                      >
-                        <ExternalLink size={16} />
-                        Preview PDF
                       </button>
                     </div>
                   </div>
