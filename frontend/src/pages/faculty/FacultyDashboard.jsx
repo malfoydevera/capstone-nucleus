@@ -2,138 +2,31 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileText, 
-  Clock, 
-  CheckCircle, 
-  Eye, 
-  Search, 
+  FileText,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Eye,
+  Search,
+  BookOpen,
   ChevronRight,
   Calendar,
   RefreshCw,
-  Sun,
-  Moon,
-  Users
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
-import GuidancePanel from '../../components/ui/GuidancePanel';
-import { getRoleGuidance } from '../../utils/guidance';
-
-// Donut Chart Component
-const DonutChart = ({ data, colors, size = 80 }) => {
-  const total = data.reduce((acc, item) => acc + item.value, 0);
-  let cumulativePercent = 0;
-
-  const getCoordinatesForPercent = (percent) => {
-    const x = Math.cos(2 * Math.PI * percent);
-    const y = Math.sin(2 * Math.PI * percent);
-    return [x, y];
-  };
-
-  return (
-    <svg width={size} height={size} viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: 'rotate(-90deg)' }}>
-      {total === 0 ? (
-        <circle cx="0" cy="0" r="1" fill="none" stroke="#e2e8f0" strokeWidth="0.35" />
-      ) : (
-        data.map((slice, index) => {
-          if (slice.value === 0) return null;
-          const percent = slice.value / total;
-          const [startX, startY] = getCoordinatesForPercent(cumulativePercent);
-          cumulativePercent += percent;
-          const [endX, endY] = getCoordinatesForPercent(cumulativePercent);
-          const largeArcFlag = percent > 0.5 ? 1 : 0;
-          const pathData = [
-            `M ${startX} ${startY}`,
-            `A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY}`,
-          ].join(' ');
-          return (
-            <path
-              key={index}
-              d={pathData}
-              fill="none"
-              stroke={colors[index]}
-              strokeWidth="0.35"
-              strokeLinecap="round"
-            />
-          );
-        })
-      )}
-      <circle cx="0" cy="0" r="0.65" fill="white" />
-    </svg>
-  );
-};
-
-// Mini Bar Chart Component
-const MiniBarChart = ({ data, maxHeight = 100 }) => {
-  const maxValue = Math.max(...data.map(d => d.value), 1);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
-  return (
-    <div className="flex items-end gap-2 h-full">
-      {data.map((item, index) => {
-        const height = (item.value / maxValue) * maxHeight;
-        const isCurrentMonth = index === new Date().getMonth();
-        return (
-          <div key={index} className="flex flex-col items-center gap-1 flex-1">
-            <div 
-              className={`w-full rounded-t-sm transition-all duration-500 ${
-                isCurrentMonth 
-                  ? 'bg-gradient-to-t from-amber-600 to-amber-400' 
-                  : 'bg-gradient-to-t from-amber-200 to-amber-100 hover:from-amber-300 hover:to-amber-200'
-              }`}
-              style={{ height: `${Math.max(height, 4)}px` }}
-            />
-            <span className="text-[10px] text-slate-400 font-medium">{months[index]}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// Circular Progress Component
-const CircularProgress = ({ percentage, color, size = 48 }) => {
-  const strokeWidth = 4;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (percentage / 100) * circumference;
-
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e2e8f0" strokeWidth={strokeWidth} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className="transition-all duration-1000 ease-out"
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className={`text-xs font-bold`} style={{ color }}>{percentage}%</span>
-      </div>
-    </div>
-  );
-};
+import UserGuideLink from '../../components/ui/UserGuideLink';
 
 const FacultyDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const guide = getRoleGuidance(user?.role);
   const [stats, setStats] = useState({
-    total: 0, pending: 0, approved: 0, rejected: 0, revisionRequired: 0, thisMonth: 0
+    total: 0, pending: 0, approved: 0, rejected: 0, revisionRequired: 0, thisMonth: 0,
   });
   const [recentPapers, setRecentPapers] = useState([]);
   const [allPapers, setAllPapers] = useState([]);
   const [workload, setWorkload] = useState({ avgReviewDays: 0, overdueCount: 0, overdueThresholdDays: 7 });
   const [loading, setLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     fetchDashboardData();
@@ -162,16 +55,16 @@ const FacultyDashboard = () => {
 
       const statistics = {
         total: papers.length,
-        pending: papers.filter(p => p.status === 'pending_faculty').length,
-        approved: papers.filter(p => ['pending_editor', 'pending_admin', 'approved', 'published'].includes(p.status)).length,
-        rejected: papers.filter(p => p.status === 'rejected').length,
-        revisionRequired: papers.filter(p => p.status === 'revision_required').length,
-        thisMonth: papers.filter(p => new Date(p.created_at) >= firstDayOfMonth).length
+        pending: papers.filter((p) => p.status === 'pending_faculty').length,
+        approved: papers.filter((p) => ['pending_editor', 'pending_admin', 'approved', 'published'].includes(p.status)).length,
+        rejected: papers.filter((p) => p.status === 'rejected').length,
+        revisionRequired: papers.filter((p) => p.status === 'revision_required').length,
+        thisMonth: papers.filter((p) => new Date(p.created_at) >= firstDayOfMonth).length,
       };
       setStats(statistics);
 
-      const sortedPapers = [...papers].sort((a, b) => 
-        new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at)
+      const sortedPapers = [...papers].sort(
+        (a, b) => new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at),
       );
       setRecentPapers(sortedPapers.slice(0, 5));
     } catch (error) {
@@ -185,327 +78,324 @@ const FacultyDashboard = () => {
     }
   };
 
-  const monthlyData = useMemo(() => {
-    const months = Array(12).fill(0).map((_, i) => ({ month: i, value: 0 }));
-    allPapers.forEach(paper => {
-      const date = new Date(paper.submission_date || paper.created_at);
-      if (date.getFullYear() === selectedYear) {
-        months[date.getMonth()].value++;
-      }
-    });
-    return months;
-  }, [allPapers, selectedYear]);
-
   const reviewedPapers = stats.approved + stats.rejected + stats.revisionRequired;
   const approvalRate = reviewedPapers > 0 ? Math.round((stats.approved / reviewedPapers) * 100) : 0;
-  const pendingPercentage = stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0;
-  const overduePercentage = stats.pending > 0 ? Math.round((workload.overdueCount / stats.pending) * 100) : 0;
 
   const getStatusColor = (status) => {
     const colors = {
-      pending_faculty: 'text-amber-600 bg-amber-50',
-      pending_editor: 'text-blue-600 bg-blue-50',
-      pending_admin: 'text-indigo-600 bg-indigo-50',
-      approved: 'text-emerald-600 bg-emerald-50',
-      published: 'text-emerald-600 bg-emerald-50',
-      rejected: 'text-red-600 bg-red-50',
-      revision_required: 'text-orange-600 bg-orange-50'
+      pending_faculty: 'text-amber-600 bg-amber-50 border-amber-100',
+      pending_editor: 'text-blue-600 bg-blue-50 border-blue-100',
+      pending_admin: 'text-indigo-600 bg-indigo-50 border-indigo-100',
+      approved: 'text-emerald-600 bg-emerald-50 border-emerald-100',
+      published: 'text-emerald-600 bg-emerald-50 border-emerald-100',
+      rejected: 'text-red-600 bg-red-50 border-red-100',
+      revision_required: 'text-orange-600 bg-orange-50 border-orange-100',
     };
-    return colors[status] || 'text-slate-600 bg-slate-50';
+    return colors[status] || 'text-slate-600 bg-slate-50 border-slate-100';
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
+  const formatDate = (dateString) =>
+    new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const getStatusBadge = (status) => {
     const statusMap = {
-      pending_faculty: 'Pending Review', pending_editor: 'With Editor', pending_admin: 'With Admin',
-      approved: 'Approved', published: 'Published', rejected: 'Rejected', revision_required: 'Revision'
+      pending_faculty: 'Pending Review',
+      pending_editor: 'With Editor',
+      pending_admin: 'With Admin',
+      approved: 'Approved',
+      published: 'Published',
+      rejected: 'Rejected',
+      revision_required: 'Revision',
     };
     return statusMap[status] || status;
   };
+
+  const taskCards = useMemo(() => [
+    {
+      key: 'pending',
+      label: 'Pending Review',
+      count: stats.pending,
+      icon: Clock,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+      description: workload.overdueCount > 0
+        ? `${workload.overdueCount} overdue item${workload.overdueCount > 1 ? 's' : ''}`
+        : stats.pending > 0
+          ? 'Awaiting your review'
+          : 'All caught up',
+      onClick: () => navigate('/faculty/review'),
+    },
+    {
+      key: 'approved',
+      label: 'Completed',
+      count: stats.approved,
+      icon: CheckCircle,
+      iconBg: 'bg-emerald-50',
+      iconColor: 'text-emerald-600',
+      description: reviewedPapers > 0 ? `${approvalRate}% approval rate` : 'Approved or forwarded',
+      onClick: () => navigate('/faculty/review'),
+    },
+    {
+      key: 'revision',
+      label: 'Needs Attention',
+      count: stats.revisionRequired,
+      icon: AlertCircle,
+      iconBg: 'bg-orange-50',
+      iconColor: 'text-orange-600',
+      description: 'Revisions requested from students',
+      onClick: () => navigate('/faculty/review'),
+    },
+  ], [stats, workload.overdueCount, approvalRate, reviewedPapers, navigate]);
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
         <div className="relative">
-          <div className="w-16 h-16 border-4 border-slate-200 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-slate-200 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
         </div>
         <p className="mt-4 text-sm text-slate-500">Loading dashboard...</p>
       </div>
     );
   }
 
-  const statusChartData = [
-    { value: stats.approved, label: 'Approved' },
-    { value: stats.pending, label: 'Pending' },
-    { value: stats.rejected, label: 'Rejected' }
-  ];
-  const statusChartColors = ['#10b981', '#f59e0b', '#ef4444'];
-
-  const activityChartData = [
-    { value: stats.approved, label: 'Completed' },
-    { value: stats.revisionRequired, label: 'Revision' }
-  ];
-  const activityChartColors = ['#f59e0b', '#8b5cf6'];
-
   return (
     <div className="min-h-screen bg-slate-50/50">
-      <div className="max-w-7xl mx-auto px-6 py-8 animate-fadeIn">
-        {/* Header */}
-        <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap items-center gap-4">
-            <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 animate-fadeIn">
+        <div className="mb-6 sm:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Dashboard</h1>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-sm text-slate-600">
-              <Calendar size={14} />
+              <Calendar size={14} aria-hidden="true" />
               <span>{new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 p-1 bg-white rounded-lg border border-slate-200">
-              <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Sun size={16} /></button>
-              <button className="p-1.5 rounded bg-slate-100 text-slate-600"><div className="w-4 h-4 rounded-full bg-slate-600"></div></button>
-              <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Moon size={16} /></button>
-            </div>
-            <div className="flex items-center gap-2">
-              <img 
-                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Faculty')}&background=f59e0b&color=fff`}
-                alt="Profile"
-                className="w-9 h-9 rounded-full"
-              />
-              <span className="hidden text-sm font-medium text-slate-700 sm:inline">{user?.fullName}</span>
-            </div>
+          <div className="flex items-center gap-3">
+            <img
+              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Faculty')}&background=3674B5&color=fff`}
+              alt=""
+              className="w-9 h-9 rounded-full shrink-0"
+            />
+            <span className="text-sm font-medium text-slate-700 truncate">{user?.fullName}</span>
           </div>
         </div>
 
-        <div className="mb-6">
-          <GuidancePanel
-            title={guide.heading}
-            description={guide.summary}
-            items={guide.dashboardSteps}
-            tone="amber"
-          />
-        </div>
+        <UserGuideLink />
 
-        {/* Stats Row 1 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Pending Review</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.pending}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                <Clock size={20} className="text-amber-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              {stats.pending > 0 ? (
-                <span className="text-xs text-amber-600 font-medium">Action needed</span>
-              ) : (
-                <span className="text-xs text-slate-400">All caught up</span>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Approved</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.approved}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <CheckCircle size={20} className="text-emerald-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              <span className="text-xs text-emerald-600 font-medium">{approvalRate}%</span>
-              <span className="text-xs text-slate-400">approval rate</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Total Assigned</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
-                <p className="text-xs text-slate-400 mt-1">papers</p>
-              </div>
-              <DonutChart data={statusChartData} colors={statusChartColors} size={70} />
-            </div>
-            <div className="mt-3 flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span className="text-slate-500">{stats.approved} Done</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span className="text-slate-500">{stats.pending} Pending</span>
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Avg Review Time</p>
-                <p className="text-3xl font-bold text-slate-900">{workload.avgReviewDays}</p>
-                <p className="text-xs text-slate-400 mt-1">days per completed review</p>
-              </div>
-              <DonutChart data={activityChartData} colors={activityChartColors} size={70} />
-            </div>
-            <div className="mt-3 flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span className="text-slate-500">{stats.thisMonth} assignments this month</span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-          <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-semibold text-slate-900">Review Activity</h3>
-              <select 
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="text-sm text-slate-600 bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-6 sm:mb-8">
+          {taskCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={card.onClick}
+                className="text-left bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 hover:shadow-md hover:border-[#3674B5]/20 transition-shadow"
               >
-                <option value={2026}>2026</option>
-                <option value={2025}>2025</option>
-                <option value={2024}>2024</option>
-              </select>
-            </div>
-            <div className="h-40">
-              <MiniBarChart data={monthlyData} maxHeight={120} />
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <CheckCircle size={24} className="text-emerald-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-500">Approval Rate</p>
-                <p className="text-xl font-bold text-slate-900">{approvalRate}%</p>
-                <p className="text-xs text-slate-400">{reviewedPapers} reviewed</p>
-              </div>
-              <CircularProgress percentage={approvalRate || 0} color="#10b981" size={52} />
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
-                <Clock size={24} className="text-red-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-500">Overdue Items</p>
-                <p className="text-xl font-bold text-slate-900">{workload.overdueCount} Papers</p>
-                <p className="text-xs text-slate-400">older than {workload.overdueThresholdDays} days</p>
-              </div>
-              <CircularProgress percentage={overduePercentage || 0} color="#ef4444" size={52} />
-            </div>
-          </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-500 mb-1">{card.label}</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-slate-900">{card.count}</p>
+                    <p className="mt-2 text-xs text-slate-400 truncate">{card.description}</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-xl shrink-0 ${card.iconBg} flex items-center justify-center`}>
+                    <Icon size={20} className={card.iconColor} aria-hidden="true" />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-6 sm:mb-8">
           <button
+            type="button"
             onClick={() => navigate('/faculty/review')}
-            className="group bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+            className="group bg-gradient-to-br from-[#3674B5] to-[#578FCA] rounded-2xl p-4 sm:p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5 sm:col-span-2 lg:col-span-1"
           >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <Eye size={24} className="text-white" />
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                <Eye size={22} className="text-white sm:w-6 sm:h-6" aria-hidden="true" />
               </div>
-              <div className="text-left">
+              <div className="text-left min-w-0">
                 <p className="font-semibold text-white">Review Papers</p>
-                <p className="text-sm text-amber-100">{stats.pending} pending review</p>
+                <p className="text-sm text-blue-100 truncate">
+                  {stats.pending > 0 ? `${stats.pending} pending review` : 'No pending reviews'}
+                </p>
               </div>
-              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+              <ChevronRight size={20} className="text-white/70 ml-auto shrink-0 group-hover:translate-x-1 transition-transform" aria-hidden="true" />
             </div>
           </button>
 
           <button
-            onClick={() => navigate('/faculty/repository')}
-            className="group bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+            type="button"
+            onClick={() => navigate('/faculty/review')}
+            className="group bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 hover:shadow-md transition-all hover:-translate-y-0.5"
           >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <Search size={24} className="text-white" />
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-[#3674B5]/10 flex items-center justify-center shrink-0">
+                <BookOpen size={22} className="text-[#3674B5] sm:w-6 sm:h-6" aria-hidden="true" />
               </div>
-              <div className="text-left">
-                <p className="font-semibold text-white">Browse Repository</p>
-                <p className="text-sm text-emerald-100">Explore all papers</p>
+              <div className="text-left min-w-0">
+                <p className="font-semibold text-slate-900">Assigned Papers</p>
+                <p className="text-sm text-slate-500">{allPapers.length} total</p>
               </div>
-              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+              <ChevronRight size={20} className="text-slate-300 ml-auto shrink-0 group-hover:translate-x-1 transition-transform" aria-hidden="true" />
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/faculty/repository')}
+            className="group bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 hover:shadow-md transition-all hover:-translate-y-0.5 sm:col-span-2 lg:col-span-1"
+          >
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                <Search size={22} className="text-emerald-600 sm:w-6 sm:h-6" aria-hidden="true" />
+              </div>
+              <div className="text-left min-w-0">
+                <p className="font-semibold text-slate-900">Browse Repository</p>
+                <p className="text-sm text-slate-500">Explore all papers</p>
+              </div>
+              <ChevronRight size={20} className="text-slate-300 ml-auto shrink-0 group-hover:translate-x-1 transition-transform" aria-hidden="true" />
             </div>
           </button>
         </div>
 
-        {/* Recent Papers Table */}
+        {stats.total > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+            <div className="bg-white rounded-xl p-3 sm:p-4 border border-slate-100 shadow-sm">
+              <p className="text-xs text-slate-500 mb-1">Total Assigned</p>
+              <p className="text-lg sm:text-xl font-bold text-slate-900">{stats.total}</p>
+            </div>
+            <div className="bg-white rounded-xl p-3 sm:p-4 border border-slate-100 shadow-sm">
+              <p className="text-xs text-slate-500 mb-1">This Month</p>
+              <p className="text-lg sm:text-xl font-bold text-slate-900">{stats.thisMonth}</p>
+            </div>
+            <div className="bg-white rounded-xl p-3 sm:p-4 border border-slate-100 shadow-sm">
+              <p className="text-xs text-slate-500 mb-1">Avg Review</p>
+              <p className="text-lg sm:text-xl font-bold text-slate-900">
+                {workload.avgReviewDays}
+                <span className="text-xs font-normal text-slate-400 ml-1">days</span>
+              </p>
+            </div>
+            <div className="bg-white rounded-xl p-3 sm:p-4 border border-slate-100 shadow-sm">
+              <p className="text-xs text-slate-500 mb-1">Overdue</p>
+              <p className={`text-lg sm:text-xl font-bold ${workload.overdueCount > 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                {workload.overdueCount}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
             <h3 className="font-semibold text-slate-900">Assigned Papers</h3>
-            <button onClick={() => fetchDashboardData()} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+            <button
+              type="button"
+              onClick={fetchDashboardData}
+              className="p-2 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+              aria-label="Refresh assigned papers"
+            >
               <RefreshCw size={16} className="text-slate-400" />
             </button>
           </div>
-          
+
           {recentPapers.length === 0 ? (
-            <div className="px-5 py-12 text-center">
+            <div className="px-4 sm:px-5 py-10 sm:py-12 text-center">
               <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                <FileText size={24} className="text-slate-400" />
+                <FileText size={24} className="text-slate-400" aria-hidden="true" />
               </div>
               <p className="text-slate-600 font-medium mb-1">No papers assigned</p>
-              <p className="text-sm text-slate-400">Papers will appear here when assigned to you</p>
+              <p className="text-sm text-slate-400 mb-4">Papers will appear here when assigned to you</p>
+              <button
+                type="button"
+                onClick={() => navigate('/faculty/repository')}
+                className="px-4 py-2 bg-[#3674B5] text-white text-sm font-medium rounded-lg hover:bg-[#2d6299] transition-colors"
+              >
+                Browse Repository
+              </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 text-left">
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Title</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Author</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recentPapers.map((paper) => (
-                    <tr 
-                      key={paper.id} 
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/faculty/review/${paper.id}`)}
-                    >
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                            <FileText size={16} className="text-slate-500" />
-                          </div>
-                          <span className="font-medium text-slate-900 truncate max-w-[200px]">{paper.title}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{formatFullName(paper.users) || 'Unknown'}</td>
-                      <td className="px-5 py-4 text-sm text-slate-500">{formatDate(paper.submission_date || paper.created_at)}</td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(paper.status)}`}>
+            <>
+              <div className="md:hidden divide-y divide-slate-100">
+                {recentPapers.map((paper) => (
+                  <button
+                    key={paper.id}
+                    type="button"
+                    onClick={() => navigate(`/faculty/review/${paper.id}`)}
+                    className="w-full text-left px-4 py-4 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+                        <FileText size={16} className="text-slate-500" aria-hidden="true" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-900 line-clamp-2">{paper.title}</p>
+                        <p className="text-xs text-slate-500 mt-1 truncate">
+                          {formatFullName(paper.users) || 'Unknown'} · {formatDate(paper.submission_date || paper.created_at)}
+                        </p>
+                        <span className={`inline-flex mt-2 px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(paper.status)}`}>
                           {getStatusBadge(paper.status)}
                         </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <ChevronRight size={16} className="text-slate-300" />
-                      </td>
+                      </div>
+                      <ChevronRight size={16} className="text-slate-300 shrink-0 mt-1" aria-hidden="true" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-50 text-left">
+                      <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Title</th>
+                      <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider hidden lg:table-cell">Author</th>
+                      <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider hidden xl:table-cell">Date</th>
+                      <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                      <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {recentPapers.map((paper) => (
+                      <tr
+                        key={paper.id}
+                        className="hover:bg-slate-50 cursor-pointer transition-colors"
+                        onClick={() => navigate(`/faculty/review/${paper.id}`)}
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                              <FileText size={16} className="text-slate-500" aria-hidden="true" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="block font-medium text-slate-900 truncate max-w-[220px] lg:max-w-[280px]">{paper.title}</span>
+                              <span className="block text-xs text-slate-500 lg:hidden truncate">
+                                {formatFullName(paper.users) || 'Unknown'}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-600 hidden lg:table-cell">
+                          {formatFullName(paper.users) || 'Unknown'}
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-500 hidden xl:table-cell">
+                          {formatDate(paper.submission_date || paper.created_at)}
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(paper.status)}`}>
+                            {getStatusBadge(paper.status)}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <ChevronRight size={16} className="text-slate-300" aria-hidden="true" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </div>
