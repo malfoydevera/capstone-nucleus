@@ -37,4 +37,30 @@ describe('fileAccess utils', () => {
     expect(allowed).toBe(true);
     expect(blocked).toBe(false);
   });
+
+  test('allows dean to read program-chair queue papers (escalation / oversight)', () => {
+    const paper = {
+      status: 'pending_program_chair',
+      author_id: 'author-1',
+      faculty_id: 'faculty-1',
+      dean_chair_id: 'chair-1',
+    };
+
+    expect(canAccessPaper({ id: 'dean-9', role: 'dean' }, paper)).toBe(true);
+  });
+
+  test('matches dean_chair_id with string/UUID-style ids', () => {
+    const paper = {
+      status: 'pending_dean',
+      author_id: 'author-1',
+      dean_chair_id: 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee',
+    };
+
+    expect(
+      canAccessPaper(
+        { id: 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee', role: 'dean' },
+        paper
+      )
+    ).toBe(true);
+  });
 });

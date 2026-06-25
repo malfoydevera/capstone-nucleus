@@ -5,7 +5,12 @@
   --font-display: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 
-  --color-apple-blue: #1c4d8d;
+  --color-primary: #3674b5;
+  --color-primary-hover: #2d6299;
+  --color-secondary: #578fca;
+  --color-apple-blue: #3674b5;
+  --color-primary-light: #578fca;
+  --color-bg: #f4f7fb;
   --color-light-gray: #f4f6f8;
   --color-overlay: rgba(226, 232, 240, 0.9);
   --color-near-black: #0f172a;
@@ -109,7 +114,7 @@ textarea:disabled {
 }
 
 :focus-visible {
-  outline: 3px solid rgba(28, 77, 141, 0.22);
+  outline: 3px solid rgba(54, 116, 181, 0.22);
   outline-offset: 2px;
 }
 
@@ -134,6 +139,7 @@ textarea:disabled {
 
 .app-main-content {
   width: 100%;
+  min-height: 100svh;
   padding: 5.25rem 1rem 1.5rem;
 }
 
@@ -262,7 +268,7 @@ textarea:disabled {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: rgba(28, 77, 141, 0.12);
+  background: rgba(54, 116, 181, 0.12);
   color: var(--color-apple-blue);
   font-size: 0.75rem;
   font-weight: 700;
@@ -437,17 +443,6 @@ textarea:disabled {
   }
 }
 
-@keyframes pulseSubtle {
-  0%,
-  100% {
-    box-shadow: 0 10px 20px rgba(59, 130, 246, 0.14);
-  }
-
-  50% {
-    box-shadow: 0 16px 30px rgba(59, 130, 246, 0.18);
-  }
-}
-
 @keyframes pulseSlow {
   0%,
   100% {
@@ -456,32 +451,6 @@ textarea:disabled {
 
   50% {
     opacity: 0.75;
-  }
-}
-
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
-
-  33% {
-    transform: translateY(-18px) rotate(120deg);
-  }
-
-  66% {
-    transform: translateY(8px) rotate(240deg);
-  }
-}
-
-@keyframes gradient {
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
   }
 }
 
@@ -494,16 +463,6 @@ textarea:disabled {
   100% {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-
-  100% {
-    background-position: 200% 0;
   }
 }
 
@@ -527,31 +486,12 @@ textarea:disabled {
   animation: shake 0.45s ease-in-out;
 }
 
-.animate-pulse-subtle {
-  animation: pulseSubtle 2.2s ease-in-out infinite;
-}
-
 .animate-pulse-slow {
   animation: pulseSlow 2s ease-in-out infinite;
 }
 
-.animate-float {
-  animation: float linear infinite;
-}
-
-.animate-gradient {
-  background-size: 200% 200%;
-  animation: gradient 3.5s ease infinite;
-}
-
 .animate-count {
   animation: count 0.5s ease-out;
-}
-
-.animate-shimmer {
-  background: linear-gradient(90deg, #f0f4ff 25%, #dbeafe 50%, #f0f4ff 75%);
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite linear;
 }
 
 .gemini-gradient {
@@ -610,6 +550,181 @@ textarea:disabled {
   .app-main-content {
     padding-left: 2.5rem;
     padding-right: 2.5rem;
+  }
+}
+
+/* Review pages — remove main padding so workspace fills edge-to-edge */
+.app-main-content:has(.review-screen),
+.app-main-content:has(.profile-screen) {
+  padding: 0;
+  width: 100%;
+  max-width: none;
+}
+
+/* Full-bleed profile showcase */
+.profile-screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.profile-hero {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  min-height: 22rem;
+}
+
+@media (min-width: 640px) {
+  .profile-hero {
+    min-height: 26rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .profile-hero {
+    min-height: 30rem;
+  }
+}
+
+.profile-hero__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Frame the NU façade — visible on the right, not cropped to sky */
+  object-position: 72% 42%;
+  transform: scale(1.12);
+  transform-origin: 72% 42%;
+}
+
+@media (min-width: 768px) {
+  .profile-hero__photo {
+    object-position: 68% 38%;
+    transform: scale(1.08);
+    transform-origin: 68% 38%;
+  }
+}
+
+@media (min-width: 1280px) {
+  .profile-hero__photo {
+    object-position: 62% 36%;
+    transform: scale(1.05);
+    transform-origin: 62% 36%;
+  }
+}
+
+/* Full-bleed reviewer workspace */
+.review-screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  min-height: 100svh;
+  margin: 0;
+  padding: 5.25rem 0 0;
+  background: rgb(241 245 249 / 0.8);
+  overflow-x: clip;
+}
+
+.review-screen__inner {
+  width: 100%;
+  max-width: none;
+  padding-inline: 1rem;
+}
+
+.review-workspace-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+}
+
+.review-panel__pad {
+  width: 100%;
+  max-width: none;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 480px) {
+  .review-screen__inner {
+    padding-inline: 1.25rem;
+  }
+
+  .review-panel__pad {
+    padding-inline: 1.25rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .review-panel__pad {
+    padding-inline: 1.25rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .review-screen {
+    padding-top: 5.5rem;
+  }
+
+  .review-screen__inner {
+    padding-inline: 1.5rem;
+  }
+
+  .review-panel__pad {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .review-screen {
+    padding-top: 0;
+    min-height: 100svh;
+  }
+
+  .review-screen__inner {
+    padding-inline: 1.5rem;
+  }
+
+  .review-panel__pad {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .review-screen__inner {
+    padding-inline: 2rem;
+  }
+
+  .review-panel__pad {
+    padding-inline: 2rem;
+  }
+}
+
+@media (min-width: 1440px) {
+  .review-screen__inner {
+    padding-inline: 2.5rem;
+  }
+
+  .review-panel__pad {
+    padding-inline: 2.5rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .review-panel__pad {
+    padding-inline: 2.5rem;
   }
 }
 

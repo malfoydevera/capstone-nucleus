@@ -141,22 +141,31 @@ function attachOrganizationLabels(user, organizationLookups = {}) {
   };
 }
 
-function buildAuthSuccessData(user, session, organizationLookups = {}) {
+function formatUserResponse(user, organizationLookups = {}) {
   const normalizedUser = normalizeNameParts(user);
   const userWithOrgLabels = attachOrganizationLabels(user, organizationLookups);
   return {
+    id: user.id,
+    email: user.email,
+    firstName: normalizedUser.first_name,
+    middleName: normalizedUser.middle_name || '',
+    lastName: normalizedUser.last_name,
+    fullName: buildFullName(normalizedUser),
+    role: user.role,
+    department: userWithOrgLabels.department || null,
+    departmentId: user.department_id || null,
+    program: userWithOrgLabels.program || null,
+    programId: user.program_id || null,
+    bio: user.bio || null,
+    createdAt: user.created_at || null,
+  };
+}
+
+function buildAuthSuccessData(user, session, organizationLookups = {}) {
+  return {
     token: session?.access_token || null,
     refreshToken: session?.refresh_token || null,
-    user: {
-      id: user.id,
-      email: user.email,
-      fullName: buildFullName(normalizedUser),
-      role: user.role,
-      department: userWithOrgLabels.department || null,
-      departmentId: user.department_id || null,
-      program: userWithOrgLabels.program || null,
-      programId: user.program_id || null,
-    },
+    user: formatUserResponse(user, organizationLookups),
   };
 }
 
@@ -735,34 +744,376 @@ exports.resetPassword = async (req, res) => {
 exports.getCurrentUser = async (req, res) => {
   try {
     const organizationLookups = await getOrganizationLookups();
-    const { data: user, error } = await supabase
+    let { data: user, error } = await supabase
       .from('users')
-      .select('id, email, first_name, middle_name, last_name, role, department, department_id, program, program_id, created_at')
+      .select('id, email, first_name, middle_name, last_name, role, department, department_id, program, program_id, bio, created_at')
       .eq('id', req.user.id)
       .single();
+
+    if (error && String(error.message || '').includes('bio')) {
+      const fallback = await supabase
+        .from('users')
+        .select('id, email, first_name, middle_name, last_name, role, department, department_id, program, program_id, created_at')
+        .eq('id', req.user.id)
+        .single();
+      user = fallback.data;
+      error = fallback.error;
+    }
 
     if (error || !user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const userWithOrgLabels = attachOrganizationLabels(user, organizationLookups);
-
     res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: buildFullName(user),
-        role: user.role,
-        department: userWithOrgLabels.department || null,
-        departmentId: user.department_id || null,
-        program: userWithOrgLabels.program || null,
-        programId: user.program_id || null,
-        createdAt: user.created_at,
-      },
+      user: formatUserResponse(user, organizationLookups),
     });
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+exports.updateOwnProfile = async (req, res) => {
+  try {
+    const organizationLookups = await getOrganizationLookups();
+    const userId = req.user.id;
+    const {
+      firstName,
+      middleName,
+      lastName,
+      department,
+      departmentId,
+      program,
+      programId,
+      bio,
+    } = req.body;
+
+    let { data: existingUser, error: existingUserError } = await supabase
+      .from('users')
+      .select('id, email, role, first_name, middle_name, last_name, department, department_id, program, program_id, bio, created_at')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (existingUserError && String(existingUserError.message || '').includes('bio')) {
+      const fallback = await supabase
+        .from('users')
+        .select('id, email, role, first_name, middle_name, last_name, department, department_id, program, program_id, created_at')
+        .eq('id', userId)
+        .maybeSingle();
+      existingUser = fallback.data;
+      existingUserError = fallback.error;
+    }
+
+    if (existingUserError) throw existingUserError;
+    if (!existingUser) {
+      return sendError(res, { status: 404, code: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    const normalizedNames = normalizeNameParts({
+      first_name: firstName ?? existingUser.first_name ?? '',
+      middle_name: middleName ?? existingUser.middle_name ?? '',
+      last_name: lastName ?? existingUser.last_name ?? '',
+    });
+    const resolvedFirstName = normalizedNames.first_name;
+    const resolvedMiddleName = normalizedNames.middle_name;
+    const resolvedLastName = normalizedNames.last_name;
+
+    if (!resolvedFirstName || !resolvedLastName) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'First name and last name are required' });
+    }
+
+    if (bio !== undefined && bio !== null && String(bio).length > 200) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Bio must be 200 characters or fewer' });
+    }
+
+    const {
+      resolvedDepartmentId,
+      resolvedDepartmentName,
+      resolvedProgramId,
+      resolvedProgramName,
+      errorMessage,
+    } = await resolveUserOrganizationAssignment({
+      role: existingUser.role,
+      department: department ?? existingUser.department,
+      departmentId: departmentId ?? existingUser.department_id,
+      program: program ?? existingUser.program,
+      programId: programId ?? existingUser.program_id,
+      requireProgramForRoles: [],
+    });
+
+    if (errorMessage) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: errorMessage });
+    }
+
+    const updatePayload = {
+      first_name: resolvedFirstName,
+      middle_name: resolvedMiddleName,
+      last_name: resolvedLastName,
+      department_id: resolvedDepartmentId || null,
+      department: resolvedDepartmentName || null,
+      program_id: ['student', 'program_chair'].includes(existingUser.role) ? (resolvedProgramId || null) : null,
+      program: ['student', 'program_chair'].includes(existingUser.role) ? (resolvedProgramName || null) : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (bio !== undefined) {
+      updatePayload.bio = bio === null || String(bio).trim() === '' ? null : String(bio).trim();
+    }
+
+    let { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update(updatePayload)
+      .eq('id', userId)
+      .select('id, email, first_name, middle_name, last_name, role, program, program_id, department, department_id, bio, created_at')
+      .maybeSingle();
+
+    if (updateError && String(updateError.message || '').includes('bio')) {
+      const fallbackPayload = { ...updatePayload };
+      delete fallbackPayload.bio;
+      const fallbackResult = await supabase
+        .from('users')
+        .update(fallbackPayload)
+        .eq('id', userId)
+        .select('id, email, first_name, middle_name, last_name, role, program, program_id, department, department_id, created_at')
+        .maybeSingle();
+      updatedUser = fallbackResult.data;
+      updateError = fallbackResult.error;
+    } else if (isMissingProgramColumnError(updateError)) {
+      const fallbackPayload = { ...updatePayload };
+      delete fallbackPayload.program_id;
+      const fallbackResult = await supabase
+        .from('users')
+        .update(fallbackPayload)
+        .eq('id', userId)
+        .select('id, email, first_name, middle_name, last_name, role, program, department, department_id, bio, created_at')
+        .maybeSingle();
+      updatedUser = fallbackResult.data;
+      updateError = fallbackResult.error;
+    }
+
+    if (updateError) throw updateError;
+
+    return sendSuccess(res, {
+      message: 'Profile updated successfully',
+      data: { user: formatUserResponse(updatedUser, organizationLookups) },
+    });
+  } catch (error) {
+    console.error('Update own profile error:', error);
+    return sendError(res, { status: 500, code: 'UPDATE_PROFILE_FAILED', message: 'Failed to update profile' });
+  }
+};
+
+exports.getProfileActivity = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const role = req.user.role;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+
+    if (role === 'student') {
+      const { data: authoredPapers, error: authoredError } = await supabase
+        .from('research_papers')
+        .select('id, title, status, submission_date, created_at')
+        .eq('author_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+
+      if (authoredError) throw authoredError;
+
+      let coAuthoredPapers = [];
+      try {
+        const { data: coAuthorLinks } = await supabase
+          .from('research_authors')
+          .select('research_id')
+          .eq('user_id', userId)
+          .eq('is_primary', false);
+
+        const coAuthoredIds = (coAuthorLinks || []).map((row) => row.research_id).filter(Boolean);
+        if (coAuthoredIds.length > 0) {
+          const { data: coAuthored } = await supabase
+            .from('research_papers')
+            .select('id, title, status, submission_date, created_at')
+            .in('id', coAuthoredIds)
+            .neq('author_id', userId)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false });
+          coAuthoredPapers = (coAuthored || []).map((paper) => ({ ...paper, is_coauthored: true }));
+        }
+      } catch (coAuthorErr) {
+        console.warn('[getProfileActivity] co-author lookup skipped:', coAuthorErr.message);
+      }
+
+      let pendingInvites = 0;
+      try {
+        const { data: invites } = await supabase
+          .from('co_author_invitations')
+          .select('id, status, expires_at')
+          .eq('invitee_id', userId)
+          .eq('status', 'pending');
+        pendingInvites = (invites || []).filter((inv) => !inv.expires_at || new Date(inv.expires_at) >= new Date()).length;
+      } catch (inviteErr) {
+        console.warn('[getProfileActivity] invitation lookup skipped:', inviteErr.message);
+      }
+
+      const authored = authoredPapers || [];
+      const merged = [
+        ...authored.map((paper) => ({ ...paper, is_coauthored: false })),
+        ...coAuthoredPapers,
+      ].sort((a, b) => new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at));
+
+      const items = merged.slice(0, limit).map((paper) => ({
+        type: 'submission',
+        id: paper.id,
+        title: paper.title,
+        status: paper.status,
+        occurredAt: paper.submission_date || paper.created_at,
+        isCoauthored: !!paper.is_coauthored,
+      }));
+
+      return sendSuccess(res, {
+        data: {
+          stats: {
+            submitted: authored.length,
+            published: authored.filter((p) => ['approved', 'published'].includes(p.status)).length,
+            coAuthored: coAuthoredPapers.length,
+            pendingInvites,
+          },
+          items,
+        },
+      });
+    }
+
+    if (role === 'admin') {
+      const [{ data: auditRows, error: auditError }, { data: reviewRows, error: reviewError }] = await Promise.all([
+        supabase
+          .from('audit_logs')
+          .select('id, action, target_type, target_id, details, reason, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(limit),
+        supabase
+          .from('approval_workflow')
+          .select('id, status, reviewer_role, research_id, reviewed_at, created_at')
+          .eq('reviewer_id', userId)
+          .eq('reviewer_role', 'admin')
+          .neq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(limit),
+      ]);
+
+      if (auditError && !String(auditError.message || '').includes('audit_logs')) throw auditError;
+      if (reviewError && !String(reviewError.message || '').includes('approval_workflow')) throw reviewError;
+
+      const auditItems = (auditRows || []).map((row) => ({
+        type: 'audit',
+        id: row.id,
+        action: row.action,
+        targetType: row.target_type,
+        targetId: row.target_id,
+        occurredAt: row.created_at,
+        details: row.details || {},
+        reason: row.reason || null,
+      }));
+
+      const reviewItems = (reviewRows || []).map((row) => ({
+        type: 'review',
+        id: row.id,
+        action: row.status,
+        reviewerRole: row.reviewer_role,
+        paperId: row.research_id,
+        paperTitle: null,
+        occurredAt: row.reviewed_at || row.created_at,
+        comments: null,
+      }));
+
+      const items = [...auditItems, ...reviewItems]
+        .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
+        .slice(0, limit);
+
+      return sendSuccess(res, {
+        data: {
+          stats: {
+            totalActions: auditItems.length,
+            papersApproved: (reviewRows || []).filter((row) => row.status === 'approved').length,
+            reviewsCompleted: (reviewRows || []).length,
+          },
+          items,
+        },
+      });
+    }
+
+    const [{ data: workflowRows, error: workflowError }, assignedResult] = await Promise.all([
+      supabase
+        .from('approval_workflow')
+        .select(`
+          id, status, reviewer_role, research_id, comments, reviewed_at, created_at,
+          research:research_papers!approval_workflow_research_id_fkey (id, title)
+        `)
+        .eq('reviewer_id', userId)
+        .neq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(limit),
+      (async () => {
+        if (role === 'faculty') {
+          return supabase
+            .from('research_papers')
+            .select('id, status')
+            .eq('faculty_id', userId)
+            .is('deleted_at', null);
+        }
+        if (['dean', 'program_chair'].includes(role)) {
+          return supabase
+            .from('research_papers')
+            .select('id, status')
+            .eq('dean_chair_id', userId)
+            .is('deleted_at', null);
+        }
+        if (role === 'staff') {
+          return supabase
+            .from('research_papers')
+            .select('id, status')
+            .eq('status', 'pending_editor')
+            .is('deleted_at', null);
+        }
+        return { data: [], error: null };
+      })(),
+    ]);
+
+    if (workflowError && !String(workflowError.message || '').includes('approval_workflow')) {
+      throw workflowError;
+    }
+
+    const assignedPapers = assignedResult?.data || [];
+    const pendingAssigned = assignedPapers.filter((paper) =>
+      ['pending_faculty', 'pending_dean', 'pending_program_chair', 'pending_editor', 'pending_admin', 'under_review'].includes(paper.status)
+    ).length;
+
+    const rows = workflowRows || [];
+    const items = rows.map((row) => ({
+      type: 'review',
+      id: row.id,
+      action: row.status,
+      reviewerRole: row.reviewer_role,
+      paperId: row.research_id,
+      paperTitle: row.research?.title || null,
+      occurredAt: row.reviewed_at || row.created_at,
+      comments: row.comments || null,
+    }));
+
+    return sendSuccess(res, {
+      data: {
+        stats: {
+          totalReviews: rows.length,
+          approved: rows.filter((row) => row.status === 'approved').length,
+          revisionRequired: rows.filter((row) => row.status === 'revision_required').length,
+          rejected: rows.filter((row) => row.status === 'rejected').length,
+          pendingAssigned,
+        },
+        items,
+      },
+    });
+  } catch (error) {
+    console.error('Get profile activity error:', error);
+    return sendError(res, { status: 500, code: 'GET_PROFILE_ACTIVITY_FAILED', message: 'Failed to fetch profile activity' });
   }
 };
 

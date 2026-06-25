@@ -2,25 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Clock, AlertCircle, MessageSquare,
-  Highlighter, StickyNote, ExternalLink, Loader2,
+  Highlighter, StickyNote, ExternalLink, Loader2, Upload,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
-
-const STATUS_LABELS = {
-  pending: 'Pending review',
-  pending_faculty: 'With your adviser',
-  pending_dean: 'With the dean',
-  pending_program_chair: 'With program chair',
-  pending_editor: 'With research editor',
-  pending_admin: 'With administration',
-  under_review: 'Under review',
-  revision_required: 'Revision required',
-  rejected: 'Rejected',
-  approved: 'Approved / published',
-  published: 'Published',
-};
+import { getStudentStatusLabel, getStudentStatusTone } from '../../utils/studentStatus';
 
 const STATUS_HINTS = {
   revision_required: 'Your reviewers asked for changes. Review the notes below and submit a revised file from Submit Research.',
@@ -29,15 +16,6 @@ const STATUS_HINTS = {
   pending_editor: 'Your paper is with the research editor.',
   pending_admin: 'Final administrative review before publication.',
   approved: 'Your work has been approved and is available in the repository.',
-};
-
-const getStatusLabel = (s) => STATUS_LABELS[s] || s?.replace(/_/g, ' ') || 'Unknown';
-
-const getStatusBadgeClass = (status) => {
-  if (status === 'revision_required') return 'bg-amber-100 text-amber-900 border-amber-300';
-  if (status === 'rejected') return 'bg-rose-100 text-rose-900 border-rose-300';
-  if (status === 'approved' || status === 'published') return 'bg-emerald-100 text-emerald-900 border-emerald-300';
-  return 'bg-sky-100 text-sky-900 border-sky-300';
 };
 
 const ANNOTATION_ICONS = {
@@ -165,11 +143,24 @@ const SubmissionUpdates = () => {
                 Primary author: {formatFullName(paper.users) || '—'}
               </p>
             </div>
-            <span className={`inline-flex shrink-0 items-center rounded-full border px-4 py-1.5 text-sm font-bold ${getStatusBadgeClass(status)}`}>
-              {getStatusLabel(status)}
+            <span className={`inline-flex shrink-0 items-center rounded-full border px-4 py-1.5 text-sm font-bold ${getStudentStatusTone(status)}`}>
+              {getStudentStatusLabel(status)}
             </span>
           </div>
           <p className="mt-4 text-sm leading-relaxed text-slate-600">{hint}</p>
+
+          {status === 'revision_required' && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => navigate('/student/submit', { state: { resubmit: paper } })}
+                className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-700"
+              >
+                <Upload size={16} />
+                Upload revision
+              </button>
+            </div>
+          )}
 
           {(paper.revision_notes || paper.rejection_reason) && (
             <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4">

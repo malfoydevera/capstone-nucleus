@@ -1,20 +1,21 @@
 export const NUCLEUS_LOGO_SRC = '/nucleus-logo.png';
 
 /**
- * Official NUCLEUS mark from `public/nucleus-logo.png` (black-background artwork).
+ * Official NUCLEUS mark from `public/nucleus-logo.png`.
  */
 const NucleusLogoMark = ({
   size = 44,
   className = '',
   rounded = 'rounded-2xl',
   ringClassName = 'ring-1 ring-white/20',
+  bgClassName = 'bg-transparent',
 }) => {
   const dimension = Number(size) || 44;
   const imgSize = Math.round(dimension * 0.78);
 
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center bg-black shadow-sm ${ringClassName} ${rounded} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center ${bgClassName} ${ringClassName} ${rounded} ${className}`}
       style={{ width: dimension, height: dimension }}
     >
       <img

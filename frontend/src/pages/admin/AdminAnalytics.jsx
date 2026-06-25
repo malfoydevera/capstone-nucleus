@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BarChart3,
   TrendingUp,
@@ -17,23 +17,36 @@ import {
   ChevronRight,
   RefreshCw,
   BookOpen,
-  GraduationCap,
   Shield,
   FileDown,
   FileSpreadsheet,
   AlertTriangle,
-  ArrowUpRight,
   Percent,
-  ChevronDown
+  ChevronDown,
 } from 'lucide-react';
-import { researchAPI, authAPI } from '../../utils/api';
+import { researchAPI, authAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import UserGuideLink from '../../components/ui/UserGuideLink';
+import { reviewStatusLabel, reviewStatusTone } from '../../components/review/reviewStatus';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const ANALYTICS_SECTIONS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'trends', label: 'Trends' },
+  { id: 'pipeline', label: 'Pipeline' },
+  { id: 'users', label: 'Users' },
+  { id: 'engagement', label: 'Engagement' },
+  { id: 'papers', label: 'Papers' },
+];
+
 const AdminAnalytics = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeSection = searchParams.get('section') || 'overview';
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [error, setError] = useState(null);
   const [downloadLoading, setDownloadLoading] = useState('');
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -45,27 +58,40 @@ const AdminAnalytics = () => {
   const [allUsers, setAllUsers] = useState([]);
   const [categoryLookup, setCategoryLookup] = useState([]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true);
     try {
       setLoading(true);
       setError(null);
       const [papersRes, usersRes, categoriesRes] = await Promise.all([
-        researchAPI.getAllResearch(),
+        researchAPI.adminGetAllResearch(),
         authAPI.getAllUsers(),
         researchAPI.getCategories(),
       ]);
-      setPapers(papersRes.data?.papers || papersRes.data || []);
-      setAllUsers(usersRes.data?.users || usersRes.data || []);
-      setCategoryLookup(categoriesRes.data?.categories || []);
+      const allPapers = unwrapApiData(papersRes).papers || [];
+      setPapers(allPapers.filter((paper) => !paper.deleted_at));
+      setAllUsers(unwrapApiData(usersRes).users || []);
+      setCategoryLookup(unwrapApiData(categoriesRes).categories || []);
+      setLastRefreshed(new Date());
     } catch (err) {
       console.error('Analytics fetch error:', err);
       setError('Failed to load analytics data.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    const section = searchParams.get('section');
+    if (!section || loading) return;
+    const timer = setTimeout(() => {
+      document.getElementById(`analytics-${section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [searchParams, loading]);
 
   // Close download menu on outside click
   useEffect(() => {
@@ -88,12 +114,16 @@ const AdminAnalytics = () => {
     faculty: allUsers.filter(u => u.role === 'faculty').length,
     staff: allUsers.filter(u => u.role === 'staff').length,
     admin: allUsers.filter(u => u.role === 'admin').length,
+    dean: allUsers.filter(u => u.role === 'dean').length,
+    program_chair: allUsers.filter(u => u.role === 'program_chair').length,
   };
   const usersThisMonth = allUsers.filter(u => new Date(u.created_at) >= firstOfMonth).length;
   const usersLastMonth = allUsers.filter(u => {
     const d = new Date(u.created_at);
     return d >= firstOfLastMonth && d <= endOfLastMonth;
   }).length;
+
+  const pendingAdmin = papers.filter((p) => p.status === 'pending_admin').length;
 
   // Papers by status
   const statusGroups = {
@@ -379,10 +409,47 @@ const AdminAnalytics = () => {
 
   // ── Chart helpers ──
   const chartFields = {
-    submissions: { label: 'Submissions', color: 'from-[#1C4D8D] to-[#2563eb]', solidColor: '#1C4D8D' },
-    views: { label: 'Views', color: 'from-blue-500 to-cyan-500', solidColor: '#3b82f6' },
-    downloads: { label: 'Downloads', color: 'from-emerald-500 to-green-500', solidColor: '#10b981' },
-    users: { label: 'New Users', color: 'from-violet-500 to-purple-500', solidColor: '#8b5cf6' },
+    submissions: { label: 'Submissions', color: 'from-[#3674B5] to-[#578FCA]' },
+    views: { label: 'Views', color: 'from-[#3674B5] to-[#578FCA]' },
+    downloads: { label: 'Downloads', color: 'from-[#578FCA] to-[#3674B5]' },
+    users: { label: 'New users', color: 'from-[#3674B5]/80 to-[#578FCA]/80' },
+  };
+
+  const overviewMetrics = useMemo(() => [
+    {
+      key: 'papers',
+      label: 'Total papers',
+      value: papers.length,
+      change: papersPctChange,
+      sub: `+${papersThisMonth} this month`,
+      section: 'pipeline',
+    },
+    {
+      key: 'users',
+      label: 'Total users',
+      value: allUsers.length,
+      change: usersPctChange,
+      sub: `+${usersThisMonth} this month`,
+      section: 'users',
+    },
+    {
+      key: 'views',
+      label: 'Total views',
+      value: totalViews,
+      sub: `Across ${papers.length} papers`,
+      section: 'engagement',
+    },
+    {
+      key: 'downloads',
+      label: 'Total downloads',
+      value: totalDownloads,
+      sub: `Across ${papers.length} papers`,
+      section: 'engagement',
+    },
+  ], [papers.length, allUsers.length, totalViews, totalDownloads, papersPctChange, usersPctChange, papersThisMonth, usersThisMonth]);
+
+  const setSection = (sectionId) => {
+    setSearchParams({ section: sectionId });
   };
 
   const chartData = monthlyData.map(m => m[activeChart]);
@@ -391,82 +458,87 @@ const AdminAnalytics = () => {
   // ── Loading ──
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-slate-200 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
         </div>
+        <p className="mt-4 text-sm text-slate-500">Loading analytics…</p>
       </div>
     );
   }
 
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-8 animate-fadeIn">
-      {/* Header */}
-      <div className="mb-10">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
-              <BarChart3 size={28} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                System Analytics
-              </h1>
-              <p className="text-lg text-slate-600 font-medium">
-                Real-time repository performance &amp; usage metrics
-              </p>
-            </div>
-          </div>
+  const SectionShell = ({ id, title, description, children, action }) => (
+    <section id={`analytics-${id}`} className="scroll-mt-28 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-semibold text-slate-900">{title}</h2>
+          {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+        </div>
+        {action}
+      </div>
+      <div className="p-4 sm:p-5">{children}</div>
+    </section>
+  );
 
-          <div className="flex items-center gap-3">
+  return (
+    <div className="min-h-screen bg-slate-50/50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 animate-fadeIn">
+        <div className="mb-6 sm:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Analytics</h1>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-sm text-slate-600">
+              <Calendar size={14} aria-hidden="true" />
+              <span>{new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+            </div>
+            {lastRefreshed && (
+              <span className="text-[11px] text-slate-400">
+                Updated {lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={fetchData}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border-2 border-slate-200 text-slate-700 hover:border-[#1C4D8D]/30 transition-all font-medium text-sm"
+              type="button"
+              onClick={() => navigate('/dashboard')}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              Dashboard
+            </button>
+            <button
+              type="button"
+              onClick={() => fetchData()}
+              disabled={refreshing}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
               Refresh
             </button>
-
-            {/* Download dropdown */}
             <div className="relative" ref={downloadRef}>
               <button
+                type="button"
                 onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white font-semibold text-sm shadow-lg hover:shadow-xl transition-all"
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-gradient-to-r from-[#3674B5] to-[#578FCA] px-3 text-sm font-semibold text-white shadow-sm"
               >
-                <FileDown size={16} />
-                Download Report
-                <ChevronDown size={14} />
+                <FileDown size={15} aria-hidden="true" />
+                Export
+                <ChevronDown size={14} aria-hidden="true" />
               </button>
               {showDownloadMenu && (
-                <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl border-2 border-slate-200 shadow-2xl z-50 overflow-hidden">
-                  <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Export Format</p>
-                  </div>
+                <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl border border-slate-200 shadow-lg z-50 overflow-hidden">
                   {[
-                    { format: 'csv', icon: FileSpreadsheet, label: 'CSV Spreadsheet', desc: 'Open in Excel / Sheets' },
-                    { format: 'json', icon: FileText, label: 'JSON Data', desc: 'Raw structured data' },
-                  ].map(({ format, icon: Icon, label, desc }) => (
+                    { format: 'csv', icon: FileSpreadsheet, label: 'CSV spreadsheet' },
+                    { format: 'json', icon: FileText, label: 'JSON data' },
+                  ].map(({ format, icon: Icon, label }) => (
                     <button
                       key={format}
+                      type="button"
                       onClick={() => downloadReport(format)}
                       disabled={!!downloadLoading}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left disabled:opacity-50"
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left disabled:opacity-50"
                     >
-                      {downloadLoading === format ? (
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                          <RefreshCw size={14} className="animate-spin text-slate-500" />
-                        </div>
-                      ) : (
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-                          <Icon size={14} className="text-[#1C4D8D]" />
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{label}</p>
-                        <p className="text-xs text-slate-500">{desc}</p>
-                      </div>
+                      <Icon size={14} className="text-[#3674B5]" aria-hidden="true" />
+                      <span className="text-sm font-medium text-slate-900">{label}</span>
                     </button>
                   ))}
                 </div>
@@ -474,440 +546,307 @@ const AdminAnalytics = () => {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Error Banner */}
-      {error && (
-        <div className="mb-8 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-center gap-3">
-          <AlertTriangle size={20} className="text-red-500 flex-shrink-0" />
-          <p className="text-red-700 text-sm font-medium flex-1">{error}</p>
-          <button onClick={fetchData} className="text-red-600 hover:text-red-800 text-sm font-bold underline">Retry</button>
-        </div>
-      )}
+        <UserGuideLink />
 
-      {/* ── Key Metrics ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        {[
-          {
-            label: 'Total Papers',
-            value: papers.length,
-            change: papersPctChange,
-            sub: `+${papersThisMonth} this month`,
-            icon: FileText,
-            gradient: 'from-blue-500 to-cyan-500',
-            bgLight: 'from-blue-50 to-cyan-50',
-            border: 'border-blue-200',
-          },
-          {
-            label: 'Total Users',
-            value: allUsers.length,
-            change: usersPctChange,
-            sub: `+${usersThisMonth} this month`,
-            icon: Users,
-            gradient: 'from-[#1C4D8D] to-[#2563eb]',
-            bgLight: 'from-indigo-50 to-blue-50',
-            border: 'border-indigo-200',
-          },
-          {
-            label: 'Total Views',
-            value: totalViews,
-            sub: `Across ${papers.length} papers`,
-            icon: Eye,
-            gradient: 'from-emerald-500 to-green-500',
-            bgLight: 'from-emerald-50 to-green-50',
-            border: 'border-emerald-200',
-          },
-          {
-            label: 'Total Downloads',
-            value: totalDownloads,
-            sub: `Across ${papers.length} papers`,
-            icon: Download,
-            gradient: 'from-violet-500 to-purple-500',
-            bgLight: 'from-violet-50 to-purple-50',
-            border: 'border-violet-200',
-          },
-        ].map((metric, i) => {
-          const Icon = metric.icon;
-          return (
-            <div key={i} className={`bg-gradient-to-br ${metric.bgLight} rounded-2xl border-2 ${metric.border} p-6 shadow-lg transform transition-all duration-300 hover:scale-105`}>
-              <div className="flex items-start justify-between mb-4">
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${metric.gradient} flex items-center justify-center shadow-md`}>
-                  <Icon size={24} className="text-white" />
-                </div>
-                {metric.change !== undefined && (
-                  <span className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
-                    metric.change >= 0
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-red-100 text-red-700'
-                  }`}>
-                    {metric.change >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                    {metric.change >= 0 ? '+' : ''}{metric.change}%
-                  </span>
-                )}
-              </div>
-              <p className="text-4xl font-black text-slate-900 mb-1">{metric.value.toLocaleString()}</p>
-              <p className="text-sm font-semibold text-slate-700">{metric.label}</p>
-              <p className="text-xs text-slate-500 mt-1">{metric.sub}</p>
-            </div>
-          );
-        })}
-      </div>
+        {error && (
+          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-center gap-3">
+            <AlertTriangle size={18} className="text-red-500 shrink-0" aria-hidden="true" />
+            <p className="text-sm text-red-700 flex-1">{error}</p>
+            <button type="button" onClick={() => fetchData()} className="text-sm font-semibold text-red-700">Retry</button>
+          </div>
+        )}
 
-      {/* ── Performance Indicators ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-6 shadow-lg">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center">
-              <Percent size={20} className="text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-600">Approval Rate</p>
-              <p className="text-3xl font-black text-slate-900">{approvalRate}%</p>
-            </div>
+        <nav aria-label="Analytics sections" className="mb-5 sm:mb-6 -mx-1 overflow-x-auto">
+          <div className="flex gap-2 px-1 pb-1 min-w-max">
+            {ANALYTICS_SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => setSection(section.id)}
+                className={`rounded-lg px-3 py-2 text-xs sm:text-sm font-semibold transition-colors ${
+                  activeSection === section.id
+                    ? 'bg-[#3674B5] text-white shadow-sm'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:border-[#3674B5]/30 hover:text-[#3674B5]'
+                }`}
+              >
+                {section.label}
+              </button>
+            ))}
           </div>
-          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-700" style={{ width: `${approvalRate}%` }}></div>
-          </div>
-          <p className="text-xs text-slate-500 mt-2">{statusGroups.approved + statusGroups.published} approved out of {reviewedPapers.length} reviewed</p>
-        </div>
+        </nav>
 
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-6 shadow-lg">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center">
-              <Clock size={20} className="text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-600">Avg. Review Time</p>
-              <p className="text-3xl font-black text-slate-900">{avgReviewTime > 0 ? `${avgReviewTime}d` : '—'}</p>
-            </div>
-          </div>
-          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-700" style={{ width: `${Math.min(avgReviewTime * 5, 100)}%` }}></div>
-          </div>
-          <p className="text-xs text-slate-500 mt-2">Based on {reviewedPapers.length} reviewed papers</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-6 shadow-lg">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
-              <Activity size={20} className="text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-600">Submissions / Month</p>
-              <p className="text-3xl font-black text-slate-900">{papersThisMonth}</p>
-            </div>
-          </div>
-          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-700" style={{ width: `${Math.min(papersThisMonth * 10, 100)}%` }}></div>
-          </div>
-          <p className="text-xs text-slate-500 mt-2">
-            {papersPctChange >= 0 ? `+${papersPctChange}%` : `${papersPctChange}%`} vs last month ({papersLastMonth})
-          </p>
-        </div>
-      </div>
-
-      {/* ── Charts + Sidebar ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-        {/* Bar Chart */}
-        <div className="lg:col-span-2 bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 shadow-lg overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-                <BarChart3 size={20} className="text-[#1C4D8D]" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-slate-900">Monthly Trends</h3>
-                <p className="text-sm text-slate-500">Last 6 months</p>
-              </div>
-            </div>
-            <div className="flex gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200">
-              {Object.entries(chartFields).map(([key, { label }]) => (
+        <div className="space-y-5 sm:space-y-6">
+          <SectionShell id="overview" title="Overview" description="Key metrics aligned with your admin dashboard">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+              {overviewMetrics.map((metric) => (
                 <button
-                  key={key}
-                  onClick={() => setActiveChart(key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    activeChart === key
-                      ? 'bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white shadow-md'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  key={metric.key}
+                  type="button"
+                  onClick={() => setSection(metric.section)}
+                  className="text-left rounded-xl border border-slate-100 bg-slate-50/50 p-4 hover:border-[#3674B5]/25 hover:bg-white transition-colors"
                 >
-                  {label}
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <p className="text-xs font-medium text-slate-500">{metric.label}</p>
+                    {metric.change !== undefined && (
+                      <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded-full px-1.5 py-0.5 ${
+                        metric.change >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {metric.change >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                        {metric.change >= 0 ? '+' : ''}{metric.change}%
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-2xl font-bold text-slate-900 tabular-nums">{metric.value.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500 mt-1">{metric.sub}</p>
                 </button>
               ))}
             </div>
-          </div>
-
-          <div className="p-6">
-            {/* Y-axis labels + bars */}
-            <div className="flex gap-4">
-              {/* Y axis */}
-              <div className="flex flex-col justify-between h-56 text-xs text-slate-400 font-medium py-1 w-8 text-right">
-                <span>{maxVal}</span>
-                <span>{Math.round(maxVal * 0.75)}</span>
-                <span>{Math.round(maxVal * 0.5)}</span>
-                <span>{Math.round(maxVal * 0.25)}</span>
-                <span>0</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              <div className="rounded-xl border border-slate-100 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Percent size={16} className="text-emerald-600" aria-hidden="true" />
+                  <p className="text-sm font-semibold text-slate-900">Approval rate</p>
+                </div>
+                <p className="text-2xl font-bold text-slate-900">{approvalRate}%</p>
+                <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-[#3674B5] to-[#578FCA]" style={{ width: `${approvalRate}%` }} />
+                </div>
               </div>
+              <div className="rounded-xl border border-slate-100 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock size={16} className="text-[#3674B5]" aria-hidden="true" />
+                  <p className="text-sm font-semibold text-slate-900">Avg. review time</p>
+                </div>
+                <p className="text-2xl font-bold text-slate-900">{avgReviewTime > 0 ? `${avgReviewTime}d` : '—'}</p>
+                <p className="text-xs text-slate-500 mt-1">{reviewedPapers.length} reviewed papers</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/admin/papers')}
+                className="rounded-xl border border-slate-100 p-4 text-left hover:border-[#3674B5]/25 transition-colors"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Activity size={16} className="text-amber-600" aria-hidden="true" />
+                  <p className="text-sm font-semibold text-slate-900">Final approval queue</p>
+                </div>
+                <p className="text-2xl font-bold text-slate-900">{pendingAdmin}</p>
+                <p className="text-xs text-[#3674B5] mt-1 font-semibold">Open queue →</p>
+              </button>
+            </div>
+          </SectionShell>
 
-              {/* Bars */}
-              <div className="flex-1 flex items-end gap-3 h-56 border-l border-b border-slate-200 pl-2 pb-1 relative">
-                {/* Horizontal grid lines */}
-                {[0.25, 0.5, 0.75, 1].map((pct) => (
-                  <div
-                    key={pct}
-                    className="absolute left-0 right-0 border-t border-dashed border-slate-100"
-                    style={{ bottom: `${pct * 100}%` }}
-                  />
+          <SectionShell
+            id="trends"
+            title="Monthly trends"
+            description="Last 6 months — switch metric below"
+            action={(
+              <div className="flex flex-wrap gap-1">
+                {Object.entries(chartFields).map(([key, { label }]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveChart(key)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
+                      activeChart === key ? 'bg-[#3674B5] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
                 ))}
+              </div>
+            )}
+          >
+            <div className="flex items-end gap-2 h-44 sm:h-52">
+              {monthlyData.map((m, i) => {
+                const val = m[activeChart];
+                const heightPct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-semibold text-slate-500 tabular-nums">{val}</span>
+                    <div
+                      className={`w-full rounded-t bg-gradient-to-t ${chartFields[activeChart].color} transition-all duration-300`}
+                      style={{ height: `${Math.max(heightPct, val > 0 ? 6 : 2)}%` }}
+                      title={`${m.label}: ${val}`}
+                    />
+                    <span className="text-[10px] text-slate-400">{m.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionShell>
 
-                {monthlyData.map((m, i) => {
-                  const val = m[activeChart];
-                  const heightPct = maxVal > 0 ? (val / maxVal) * 100 : 0;
-                  const isHovered = hoveredBar === i;
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 sm:gap-6">
+            <SectionShell id="pipeline" title="Paper pipeline" description={`${papers.length} manuscripts in system`}>
+              <div className="space-y-3">
+                {[
+                  { label: 'Pending review', count: statusGroups.pending, tone: 'bg-amber-500' },
+                  { label: 'Approved', count: statusGroups.approved, tone: 'bg-emerald-500' },
+                  { label: 'Published', count: statusGroups.published, tone: 'bg-emerald-600' },
+                  { label: 'Revision required', count: statusGroups.revision, tone: 'bg-orange-500' },
+                  { label: 'Rejected', count: statusGroups.rejected, tone: 'bg-rose-500' },
+                ].map((item) => {
+                  const pct = papers.length > 0 ? Math.round((item.count / papers.length) * 100) : 0;
                   return (
-                    <div key={i} className="flex-1 flex flex-col items-center relative">
-                      {/* Tooltip */}
-                      {isHovered && (
-                        <div className="absolute -top-10 bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg z-10 whitespace-nowrap">
-                          {val.toLocaleString()} {chartFields[activeChart].label.toLowerCase()}
-                          <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                        </div>
-                      )}
-                      <div
-                        className={`w-full rounded-t-lg bg-gradient-to-t ${chartFields[activeChart].color} transition-all duration-500 cursor-pointer ${isHovered ? 'opacity-100 shadow-lg' : 'opacity-80 hover:opacity-100'}`}
-                        style={{ height: `${heightPct}%`, minHeight: val > 0 ? '4px' : '0px' }}
-                        onMouseEnter={() => setHoveredBar(i)}
-                        onMouseLeave={() => setHoveredBar(null)}
-                      />
+                    <div key={item.label}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-slate-700">{item.label}</span>
+                        <span className="font-semibold text-slate-900 tabular-nums">{item.count} ({pct}%)</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${item.tone}`} style={{ width: `${pct}%` }} />
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
-            {/* X-axis labels */}
-            <div className="flex gap-3 ml-12 mt-2">
-              {monthlyData.map((m, i) => (
-                <div key={i} className="flex-1 text-center text-xs font-semibold text-slate-500">{m.label}</div>
-              ))}
-            </div>
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => navigate('/admin/papers')}
+                className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#3674B5] hover:text-[#2d6299]"
+              >
+                Manage final approval <ChevronRight size={14} aria-hidden="true" />
+              </button>
+            </SectionShell>
 
-        {/* Status Breakdown */}
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 shadow-lg overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-                <Award size={20} className="text-[#1C4D8D]" />
+            <SectionShell id="users" title="Users by role" description={`${allUsers.length} registered accounts`}>
+              <ul className="space-y-3">
+                {[
+                  { label: 'Students', count: usersByRole.student },
+                  { label: 'Faculty', count: usersByRole.faculty },
+                  { label: 'Staff', count: usersByRole.staff },
+                  { label: 'Deans', count: usersByRole.dean },
+                  { label: 'Program chairs', count: usersByRole.program_chair },
+                  { label: 'Admins', count: usersByRole.admin },
+                ].map((row) => {
+                  const pct = allUsers.length > 0 ? Math.round((row.count / allUsers.length) * 100) : 0;
+                  return (
+                    <li key={row.label}>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/admin/users')}
+                        className="w-full text-left"
+                      >
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-slate-700">{row.label}</span>
+                          <span className="font-semibold text-slate-900">{row.count} ({pct}%)</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-[#3674B5] to-[#578FCA]" style={{ width: `${Math.max(pct, row.count ? 4 : 0)}%` }} />
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <button
+                type="button"
+                onClick={() => navigate('/admin/users')}
+                className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#3674B5] hover:text-[#2d6299]"
+              >
+                Open user management <ChevronRight size={14} aria-hidden="true" />
+              </button>
+            </SectionShell>
+          </div>
+
+          <SectionShell id="engagement" title="Engagement & categories" description="Repository usage and topic distribution">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900 mb-3">Top viewed papers</h3>
+                {topPapers.length === 0 ? (
+                  <p className="text-sm text-slate-500">No view data yet.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden">
+                    {topPapers.map((paper, i) => (
+                      <li key={paper.id}>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/research/${paper.id}`)}
+                          className="w-full text-left px-3 py-3 hover:bg-slate-50 flex items-start gap-3"
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#3674B5]/10 text-[11px] font-bold text-[#3674B5]">
+                            {i + 1}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-slate-900 line-clamp-1">{paper.title}</span>
+                            <span className="text-xs text-slate-500 flex items-center gap-3 mt-0.5">
+                              <span className="inline-flex items-center gap-1"><Eye size={11} /> {paper.view_count || 0}</span>
+                              <span className="inline-flex items-center gap-1"><Download size={11} /> {paper.download_count || 0}</span>
+                            </span>
+                          </span>
+                          <ChevronRight size={14} className="text-slate-300 shrink-0 mt-1" aria-hidden="true" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-900">Paper Status</h3>
-                <p className="text-sm text-slate-500">{papers.length} total</p>
+                <h3 className="text-sm font-semibold text-slate-900 mb-3">Categories</h3>
+                {categories.length === 0 ? (
+                  <p className="text-sm text-slate-500">No category data.</p>
+                ) : (
+                  <ul className="space-y-3">
+                    {categories.slice(0, 6).map((cat) => (
+                      <li key={cat.name}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-slate-700 truncate mr-2">{cat.name}</span>
+                          <span className="font-semibold text-slate-900 shrink-0">{cat.count}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-[#3674B5] to-[#578FCA]" style={{ width: `${cat.pct}%` }} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
-          </div>
-          <div className="p-6 space-y-3">
-            {[
-              { label: 'Pending', count: statusGroups.pending, gradient: 'from-yellow-500 to-amber-500', bg: 'bg-yellow-50' },
-              { label: 'Approved', count: statusGroups.approved, gradient: 'from-green-500 to-emerald-500', bg: 'bg-green-50' },
-              { label: 'Published', count: statusGroups.published, gradient: 'from-emerald-600 to-teal-600', bg: 'bg-emerald-50' },
-              { label: 'Revision', count: statusGroups.revision, gradient: 'from-amber-500 to-orange-500', bg: 'bg-amber-50' },
-              { label: 'Rejected', count: statusGroups.rejected, gradient: 'from-red-500 to-rose-500', bg: 'bg-red-50' },
-            ].map((item, i) => {
-              const pct = papers.length > 0 ? Math.round((item.count / papers.length) * 100) : 0;
-              return (
-                <div key={i}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm font-semibold text-slate-700">{item.label}</span>
-                    <span className="text-sm font-bold text-slate-900">{item.count} <span className="text-slate-400 font-normal">({pct}%)</span></span>
-                  </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full bg-gradient-to-r ${item.gradient} transition-all duration-700`} style={{ width: `${pct}%` }}></div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+          </SectionShell>
 
-      {/* ── Categories + Users ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-        {/* Categories */}
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-              <BookOpen size={20} className="text-[#1C4D8D]" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900">Categories</h2>
-          </div>
-
-          {categories.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">No category data</p>
-          ) : (
-            <div className="space-y-3">
-              {categories.slice(0, 6).map((cat, i) => {
-                const colors = [
-                  'from-blue-500 to-cyan-500',
-                  'from-emerald-500 to-green-500',
-                  'from-violet-500 to-purple-500',
-                  'from-[#1C4D8D] to-[#2563eb]',
-                  'from-amber-500 to-orange-500',
-                  'from-red-500 to-pink-500',
-                ];
-                return (
-                  <div key={i}>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-sm font-semibold text-slate-700 truncate mr-3">{cat.name}</span>
-                      <span className="text-sm font-bold text-slate-900 flex-shrink-0">{cat.count} <span className="text-slate-400 font-normal">({cat.pct}%)</span></span>
-                    </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full bg-gradient-to-r ${colors[i % colors.length]} transition-all duration-700`} style={{ width: `${cat.pct}%` }}></div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Users by Role */}
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-              <Users size={20} className="text-[#1C4D8D]" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900">Users by Role</h2>
-          </div>
-
-          <div className="space-y-4">
-            {[
-              { role: 'Students', count: usersByRole.student, icon: BookOpen, gradient: 'from-blue-500 to-cyan-500', bg: 'bg-blue-50' },
-              { role: 'Faculty', count: usersByRole.faculty, icon: GraduationCap, gradient: 'from-violet-500 to-purple-500', bg: 'bg-violet-50' },
-              { role: 'Staff', count: usersByRole.staff, icon: Award, gradient: 'from-cyan-500 to-teal-500', bg: 'bg-cyan-50' },
-              { role: 'Admins', count: usersByRole.admin, icon: Shield, gradient: 'from-red-500 to-rose-500', bg: 'bg-red-50' },
-            ].map((item, i) => {
-              const Icon = item.icon;
-              const pct = allUsers.length > 0 ? Math.round((item.count / allUsers.length) * 100) : 0;
-              return (
-                <div key={i} className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-xl ${item.bg} flex items-center justify-center flex-shrink-0`}>
-                    <Icon size={20} className="text-slate-700" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-sm font-semibold text-slate-700">{item.role}</span>
-                      <span className="text-sm font-bold text-slate-900">{item.count} ({pct}%)</span>
-                    </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full bg-gradient-to-r ${item.gradient} transition-all duration-700`} style={{ width: `${pct}%` }}></div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            <div className="pt-3 mt-2 border-t border-slate-200 flex items-center justify-between">
-              <span className="text-sm text-slate-500 font-medium">Total</span>
-              <span className="text-lg font-bold text-slate-900">{allUsers.length}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Top Papers + Recent Activity ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Top Viewed Papers */}
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-                <TrendingUp size={20} className="text-[#1C4D8D]" />
-              </div>
-              <h2 className="text-2xl font-bold text-slate-900">Top Papers</h2>
-            </div>
-          </div>
-
-          {topPapers.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">No view data yet</p>
-          ) : (
-            <div className="space-y-3">
-              {topPapers.map((paper, i) => (
-                <div
-                  key={paper.id || i}
-                  onClick={() => navigate(`/research/${paper.id}`)}
-                  className="p-4 rounded-xl border-2 border-slate-200 bg-white hover:bg-slate-50 hover:border-[#1C4D8D]/30 cursor-pointer transition-all duration-300 group"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                      #{i + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors line-clamp-1">{paper.title}</p>
-                      <p className="text-xs text-slate-500 mt-1">{formatFullName(paper.users) || 'Unknown'}</p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                        <span className="flex items-center gap-1"><Eye size={12} /> {(paper.view_count || 0).toLocaleString()}</span>
-                        <span className="flex items-center gap-1"><Download size={12} /> {(paper.download_count || 0).toLocaleString()}</span>
-                      </div>
-                    </div>
-                    <ChevronRight size={16} className="text-slate-300 group-hover:text-[#1C4D8D] group-hover:translate-x-1 transition-all mt-1" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Recent Activity */}
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-                <Clock size={20} className="text-[#1C4D8D]" />
-              </div>
-              <h2 className="text-2xl font-bold text-slate-900">Recent Activity</h2>
-            </div>
-            <button
-              onClick={() => navigate('/admin/papers')}
-              className="text-[#1C4D8D] hover:text-[#163a6b] font-semibold flex items-center gap-1 text-sm transition-colors"
-            >
-              View All <ChevronRight size={14} />
-            </button>
-          </div>
-
-          {recentPapers.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">No activity yet</p>
-          ) : (
-            <div className="space-y-2">
-              {recentPapers.map((paper, i) => {
-                const badge = getStatusBadge(paper.status);
-                return (
-                  <div
-                    key={paper.id || i}
-                    onClick={() => navigate(`/research/${paper.id}`)}
-                    className="flex items-start gap-3 p-3 rounded-xl hover:bg-slate-100 cursor-pointer transition-colors"
+          <SectionShell
+            id="papers"
+            title="Recent activity"
+            description="Latest manuscript updates"
+            action={(
+              <button
+                type="button"
+                onClick={() => navigate('/admin/papers')}
+                className="text-xs font-semibold text-[#3674B5] hover:text-[#2d6299]"
+              >
+                View all
+              </button>
+            )}
+          >
+            {recentPapers.length === 0 ? (
+              <p className="text-sm text-slate-500 py-6 text-center">No activity yet.</p>
+            ) : (
+              <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden">
+                {recentPapers.slice(0, 6).map((paper) => (
+                  <button
+                    key={paper.id}
+                    type="button"
+                    onClick={() => navigate(`/admin/review/${paper.id}`)}
+                    className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-start gap-3 transition-colors"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      {paper.status === 'approved' || paper.status === 'published'
-                        ? <CheckCircle size={14} className="text-green-500" />
-                        : paper.status === 'rejected'
-                        ? <XCircle size={14} className="text-red-500" />
-                        : <FileText size={14} className="text-blue-500" />
-                      }
+                    <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                      <FileText size={16} className="text-slate-500" aria-hidden="true" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 truncate">{paper.title || 'Untitled'}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 line-clamp-1">{paper.title || 'Untitled'}</p>
                       <p className="text-xs text-slate-500 mt-0.5">
                         {formatFullName(paper.users) || 'Unknown'} · {formatRelativeTime(paper.updated_at || paper.created_at)}
                       </p>
+                      <span className={`inline-flex mt-2 px-2 py-0.5 rounded-full text-[10px] font-medium border ${reviewStatusTone(paper.status)}`}>
+                        {reviewStatusLabel(paper.status)}
+                      </span>
                     </div>
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full whitespace-nowrap ${badge.cls}`}>
-                      {badge.label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                    <ChevronRight size={14} className="text-slate-300 shrink-0 mt-2" aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </SectionShell>
         </div>
       </div>
     </div>

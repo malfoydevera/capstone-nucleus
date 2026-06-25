@@ -71,7 +71,7 @@ const ForgotPassword = () => {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1C4D8D]"
+              className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3674B5]"
               placeholder="you@example.com"
             />
           </div>
@@ -79,7 +79,7 @@ const ForgotPassword = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-[#1C4D8D] text-white rounded-lg font-semibold hover:bg-[#163a6b] disabled:opacity-50"
+            className="w-full py-3 bg-[#3674B5] text-white rounded-lg font-semibold hover:bg-[#2d6299] disabled:opacity-50"
           >
             {loading ? 'Generating link...' : 'Send reset link'}
           </button>
@@ -90,7 +90,7 @@ const ForgotPassword = () => {
             <p className="text-sm text-amber-800 font-medium">Development reset link:</p>
             <a
               href={debugResetLink}
-              className="text-sm text-[#1C4D8D] underline break-all"
+              className="text-sm text-[#3674B5] underline break-all"
             >
               {debugResetLink}
             </a>

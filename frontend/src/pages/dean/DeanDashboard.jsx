@@ -1,367 +1,526 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileText, Clock, CheckCircle, Eye, ChevronRight, RefreshCw,
-  BookOpen, Award, Users, AlertTriangle, Shield, Activity,
-  BarChart3, Search, Bell
+  FileText,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Eye,
+  ChevronRight,
+  RefreshCw,
+  Calendar,
+  Search,
+  Activity,
+  Users,
+  Bell,
 } from 'lucide-react';
 import { notificationsAPI, researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
-import GuidancePanel from '../../components/ui/GuidancePanel';
-import { getRoleGuidance } from '../../utils/guidance';
+import UserGuideLink from '../../components/ui/UserGuideLink';
+import { reviewStatusLabel, reviewStatusTone } from '../../components/review/reviewStatus';
+
+const POLL_MS = 10000;
+
+const NOTIFICATION_TONE = {
+  inactivity: {
+    icon: AlertCircle,
+    iconWrap: 'bg-amber-100 text-amber-700',
+    dot: 'bg-amber-500',
+  },
+  escalation: {
+    icon: Bell,
+    iconWrap: 'bg-rose-100 text-rose-700',
+    dot: 'bg-rose-500',
+  },
+};
+
+const DashboardNotificationList = ({ items, onOpen, onViewAll }) => {
+  if (items.length === 0) return null;
+
+  return (
+    <section
+      aria-labelledby="dean-notifications-heading"
+      className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden"
+    >
+      <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 id="dean-notifications-heading" className="font-semibold text-slate-900 text-sm">
+            Notifications
+          </h2>
+          <span className="rounded-full bg-[#3674B5] px-2 py-0.5 text-[10px] font-bold text-white tabular-nums">
+            {items.length}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onViewAll}
+          className="text-xs font-semibold text-[#3674B5] hover:text-[#2d6299] shrink-0"
+        >
+          View all
+        </button>
+      </div>
+      <ul className="divide-y divide-slate-100">
+        {items.map((item) => {
+          const tone = NOTIFICATION_TONE[item.type] || NOTIFICATION_TONE.escalation;
+          const Icon = tone.icon;
+          return (
+            <li key={item.id}>
+              <button
+                type="button"
+                onClick={() => onOpen(item)}
+                className="w-full flex items-start gap-3 px-4 sm:px-5 py-3 text-left hover:bg-slate-50 transition-colors"
+              >
+                <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tone.iconWrap}`}>
+                  <Icon size={15} aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} aria-hidden="true" />
+                    <span className="text-sm font-medium text-slate-900 line-clamp-1">{item.title}</span>
+                  </span>
+                  <span className="block text-xs text-slate-500 mt-0.5 line-clamp-2">{item.message}</span>
+                </span>
+                <ChevronRight size={14} className="text-slate-300 shrink-0 mt-2" aria-hidden="true" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+};
 
 const DeanDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const guide = getRoleGuidance(user?.role);
+  const [assignedPapers, setAssignedPapers] = useState([]);
   const [monitorData, setMonitorData] = useState(null);
   const [deptComparison, setDeptComparison] = useState(null);
   const [escalationAlerts, setEscalationAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
 
-  useEffect(() => { fetchDashboard(); }, []);
-
-  const fetchDashboard = async () => {
+  const fetchDashboard = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true);
     try {
-      setLoading(true);
-      const [monitorRes, notificationRes, comparisonRes] = await Promise.all([
+      const [papersRes, monitorRes, notificationRes, comparisonRes] = await Promise.all([
+        researchAPI.getDeanChairAssignedPapers(),
         researchAPI.getDeanActivityMonitor(),
         notificationsAPI.getMine({ limit: 80 }),
         researchAPI.getDepartmentComparison(),
       ]);
 
-      setMonitorData(monitorRes.data);
-      setDeptComparison(comparisonRes.data);
-      const escalation = (unwrapApiData(notificationRes).notifications || [])
-        .filter((item) => item.type === 'escalation_alert')
-        .slice(0, 5);
-      setEscalationAlerts(escalation);
+      setAssignedPapers(unwrapApiData(papersRes).papers || []);
+      setMonitorData(unwrapApiData(monitorRes));
+      setDeptComparison(unwrapApiData(comparisonRes));
+      setEscalationAlerts(
+        (unwrapApiData(notificationRes).notifications || [])
+          .filter((item) => item.type === 'escalation_alert')
+          .slice(0, 5),
+      );
+      setLastRefreshed(new Date());
     } catch (error) {
       console.error('Failed to fetch Dean dashboard:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
-  const formatDate = (d) => {
-    if (!d) return 'N/A';
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
+  useEffect(() => {
+    fetchDashboard();
+    const interval = setInterval(() => fetchDashboard(true), POLL_MS);
+    return () => clearInterval(interval);
+  }, [fetchDashboard]);
 
-  const getActionBadge = (action) => {
-    const map = {
-      approve: { bg: 'bg-emerald-100 text-emerald-700', label: 'Approved' },
-      reject: { bg: 'bg-red-100 text-red-700', label: 'Rejected' },
-      revision: { bg: 'bg-amber-100 text-amber-700', label: 'Revision' },
-      bypass: { bg: 'bg-violet-100 text-violet-700', label: 'Bypass' },
-      login: { bg: 'bg-blue-100 text-blue-700', label: 'Login' },
-    };
-    return map[action] || { bg: 'bg-slate-100 text-slate-700', label: action };
-  };
-
-  const s = monitorData?.summary || {};
+  const summary = monitorData?.summary || {};
   const inactivityAlerts = monitorData?.inactivityAlerts || [];
-  const recentLogs = (monitorData?.auditLogs || []).slice(0, 10);
-  const papers = monitorData?.papers || [];
+  const recentLogs = (monitorData?.auditLogs || []).slice(0, 5);
+  const departmentRows = (deptComparison?.departments || []).slice(0, 4);
 
-  const trendSeries = useMemo(() => {
-    const months = [];
+  const stats = useMemo(() => {
     const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return {
+      needsDeanReview: assignedPapers.filter((p) => p.status === 'pending_dean').length,
+      needsChairReview: summary.pendingProgramChair || 0,
+      forwarded: assignedPapers.filter((p) =>
+        ['pending_editor', 'pending_admin', 'approved', 'published'].includes(p.status),
+      ).length,
+      revisionRequired: assignedPapers.filter((p) => p.status === 'revision_required').length,
+      totalAssigned: assignedPapers.length,
+      pendingEditor: summary.pendingEditor || 0,
+      approved: summary.approved || 0,
+      thisMonth: assignedPapers.filter((p) => {
+        const d = new Date(p.created_at || p.submission_date);
+        return !Number.isNaN(d.getTime()) && d >= firstDayOfMonth;
+      }).length,
+    };
+  }, [assignedPapers, summary]);
 
-    for (let i = 5; i >= 0; i -= 1) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({
-        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-        label: d.toLocaleDateString('en-US', { month: 'short' }),
-        submissions: 0,
-        approved: 0,
+  const recentPapers = useMemo(() => {
+    const priority = (status) => {
+      if (status === 'pending_dean') return 0;
+      if (status === 'pending_program_chair') return 1;
+      if (status === 'revision_required') return 2;
+      return 3;
+    };
+    return [...assignedPapers]
+      .sort((a, b) => {
+        const p = priority(a.status) - priority(b.status);
+        if (p !== 0) return p;
+        return new Date(b.updated_at || b.submission_date || b.created_at)
+          - new Date(a.updated_at || a.submission_date || a.created_at);
+      })
+      .slice(0, 5);
+  }, [assignedPapers]);
+
+  const dashboardNotifications = useMemo(() => {
+    const items = [];
+    const seenPapers = new Set();
+
+    inactivityAlerts.forEach((paper) => {
+      if (!paper?.id || seenPapers.has(paper.id)) return;
+      seenPapers.add(paper.id);
+      items.push({
+        id: `inactivity-${paper.id}`,
+        type: 'inactivity',
+        researchId: paper.id,
+        title: paper.title || 'Untitled manuscript',
+        message: `Program chair review overdue · ${paper.daysStale} day${paper.daysStale !== 1 ? 's' : ''}${
+          paper.users ? ` · ${formatFullName(paper.users)}` : ''
+        }`,
       });
-    }
-
-    const monthMap = new Map(months.map((m) => [m.key, m]));
-
-    papers.forEach((paper) => {
-      const created = new Date(paper.created_at || paper.submission_date || paper.updated_at);
-      if (!Number.isNaN(created.getTime())) {
-        const key = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`;
-        const row = monthMap.get(key);
-        if (row) row.submissions += 1;
-      }
-
-      if (paper.status === 'approved' || paper.status === 'published') {
-        const approvedDate = new Date(paper.published_date || paper.updated_at || paper.created_at);
-        if (!Number.isNaN(approvedDate.getTime())) {
-          const key = `${approvedDate.getFullYear()}-${String(approvedDate.getMonth() + 1).padStart(2, '0')}`;
-          const row = monthMap.get(key);
-          if (row) row.approved += 1;
-        }
-      }
     });
 
-    return months;
-  }, [papers]);
+    escalationAlerts.forEach((alert) => {
+      const researchId = alert.research_id;
+      if (researchId && seenPapers.has(researchId)) return;
+      if (researchId) seenPapers.add(researchId);
+      items.push({
+        id: `escalation-${alert.id}`,
+        type: 'escalation',
+        researchId,
+        title: alert.title?.replace(/^Escalation:\s*/i, '') || 'Chair review delay',
+        message: alert.message || 'A manuscript needs your attention.',
+      });
+    });
 
-  const trendMax = Math.max(1, ...trendSeries.map((m) => Math.max(m.submissions, m.approved)));
-  const departmentRows = deptComparison?.departments || [];
-  const departmentMax = Math.max(1, ...departmentRows.map((row) => row.total || 0));
+    return items.slice(0, 4);
+  }, [inactivityAlerts, escalationAlerts]);
+
+  const taskCards = useMemo(() => [
+    {
+      key: 'dean-review',
+      label: 'Needs your review',
+      count: stats.needsDeanReview,
+      icon: Clock,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+      description: stats.needsDeanReview > 0 ? 'Awaiting dean decision' : 'All caught up',
+      onClick: () => navigate('/dean/review'),
+    },
+    {
+      key: 'chair-queue',
+      label: 'Program chair queue',
+      count: stats.needsChairReview,
+      icon: Users,
+      iconBg: 'bg-sky-50',
+      iconColor: 'text-sky-600',
+      description: dashboardNotifications.length > 0
+        ? `${dashboardNotifications.length} alert${dashboardNotifications.length !== 1 ? 's' : ''}`
+        : 'Oversight on chair queue',
+      onClick: () => navigate('/dean/review'),
+    },
+    {
+      key: 'forwarded',
+      label: 'Forwarded',
+      count: stats.forwarded,
+      icon: CheckCircle,
+      iconBg: 'bg-emerald-50',
+      iconColor: 'text-emerald-600',
+      description: `${stats.pendingEditor} with editor`,
+      onClick: () => navigate('/dean/review'),
+    },
+  ], [stats, dashboardNotifications.length, navigate]);
+
+  const handleOpenNotification = (item) => {
+    if (item.researchId) {
+      navigate(`/dean/review/${item.researchId}`);
+      return;
+    }
+    navigate('/notifications');
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '—';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  const formatDateTime = (dateString) => {
+    if (!dateString) return '—';
+    return new Date(dateString).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const getActionLabel = (action) => {
+    const map = {
+      approve: 'Approved',
+      reject: 'Rejected',
+      revision: 'Revision',
+      bypass: 'Bypass',
+      login: 'Login',
+    };
+    return map[action] || action || 'Activity';
+  };
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
         <div className="relative">
-          <div className="w-16 h-16 border-4 border-slate-200 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-slate-200 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
         </div>
-        <p className="mt-4 text-sm text-slate-500">Loading Dean dashboard...</p>
+        <p className="mt-4 text-sm text-slate-500">Loading dashboard…</p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-50/50">
-      <div className="max-w-7xl mx-auto px-6 py-8 animate-fadeIn">
-        <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap items-center gap-4">
-            <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 animate-fadeIn">
+        <div className="mb-6 sm:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Dashboard</h1>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-sm text-slate-600">
-              <Clock size={14} />
+              <Calendar size={14} aria-hidden="true" />
               <span>{new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
+            {lastRefreshed && (
+              <span className="text-[11px] text-slate-400">
+                Updated {lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </span>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3">
             <button
-              onClick={fetchDashboard}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:border-slate-300 transition-all text-sm font-semibold"
+              type="button"
+              onClick={() => fetchDashboard()}
+              disabled={refreshing}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
             >
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
               Refresh
             </button>
-            <div className="flex items-center gap-2">
-              <img
-                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Dean')}&background=7c3aed&color=fff`}
-                alt="Profile"
-                className="w-9 h-9 rounded-full"
-              />
-              <span className="hidden text-sm font-medium text-slate-700 sm:inline">{user?.fullName}</span>
-            </div>
+            <img
+              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Dean')}&background=3674B5&color=fff`}
+              alt=""
+              className="w-9 h-9 rounded-full shrink-0"
+            />
+            <span className="text-sm font-medium text-slate-700 truncate">{user?.fullName}</span>
           </div>
         </div>
 
-        <div className="mb-6">
-          <GuidancePanel
-            title={guide.heading}
-            description={guide.summary}
-            items={guide.dashboardSteps}
-            tone="violet"
-          />
-        </div>
+        <UserGuideLink />
 
-        {/* Inactivity Alerts */}
-        {inactivityAlerts.length > 0 && (
-          <div className="mb-8 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <AlertTriangle size={22} className="text-amber-600" />
-              <h2 className="text-lg font-bold text-amber-800">Program Chair Inactivity Alerts</h2>
-              <span className="px-2 py-0.5 bg-amber-200 text-amber-800 text-xs font-bold rounded-full">{inactivityAlerts.length}</span>
-            </div>
-            <div className="space-y-3">
-              {inactivityAlerts.map(paper => (
-                <div key={paper.id} onClick={() => navigate(`/dean/review/${paper.id}`)} className="bg-white rounded-xl p-4 border border-amber-200 flex items-center justify-between cursor-pointer hover:shadow-md transition-all">
-                  <div>
-                    <p className="font-bold text-slate-900 line-clamp-1">{paper.title}</p>
-                    <p className="text-sm text-slate-500">{formatFullName(paper.users) || 'Unknown'} &middot; Pending for <span className="font-bold text-amber-700">{paper.daysStale} days</span></p>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-400" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Escalation Notification Alerts */}
-        {escalationAlerts.length > 0 && (
-          <div className="mb-8 bg-gradient-to-r from-rose-50 to-red-50 border-2 border-rose-200 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Bell size={22} className="text-rose-600" />
-              <h2 className="text-lg font-bold text-rose-800">Escalation Notifications</h2>
-              <span className="px-2 py-0.5 bg-rose-200 text-rose-800 text-xs font-bold rounded-full">{escalationAlerts.length}</span>
-            </div>
-            <div className="space-y-3">
-              {escalationAlerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  onClick={() => alert.research_id && navigate(`/dean/review/${alert.research_id}`)}
-                  className="bg-white rounded-xl p-4 border border-rose-200 flex items-center justify-between cursor-pointer hover:shadow-md transition-all"
-                >
-                  <div>
-                    <p className="font-bold text-slate-900 line-clamp-1">{alert.title || 'Escalation Alert'}</p>
-                    <p className="text-sm text-slate-600 line-clamp-1">{alert.message}</p>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-400" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5 mb-5">
-          {[
-            { label: 'With Program Chair', value: s.pendingProgramChair, hint: 'awaiting chair decision', iconBg: 'bg-teal-50', iconText: 'text-teal-600', icon: Users },
-            { label: 'With Dean', value: s.pendingDean, hint: 'needs dean review', iconBg: 'bg-violet-50', iconText: 'text-violet-600', icon: Award },
-            { label: 'With Editor', value: s.pendingEditor, hint: 'in editorial review', iconBg: 'bg-sky-50', iconText: 'text-sky-600', icon: FileText },
-            { label: 'Approved', value: s.approved, hint: 'published or cleared', iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', icon: Shield },
-            { label: 'Total Papers', value: s.total, hint: `${s.revisionRequired || 0} revision required`, iconBg: 'bg-slate-100', iconText: 'text-slate-600', icon: BookOpen },
-          ].map((card) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-5 sm:mb-6">
+          {taskCards.map((card) => {
             const Icon = card.icon;
             return (
-              <div key={card.label} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between">
-                  <div>
+              <button
+                key={card.key}
+                type="button"
+                onClick={card.onClick}
+                className="text-left bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 hover:shadow-md hover:border-[#3674B5]/20 transition-shadow"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <p className="text-sm text-slate-500 mb-1">{card.label}</p>
-                    <p className="text-3xl font-bold text-slate-900">{card.value || 0}</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-slate-900">{card.count}</p>
+                    <p className="mt-2 text-xs text-slate-400 truncate">{card.description}</p>
                   </div>
-                  <div className={`w-10 h-10 rounded-xl ${card.iconBg} flex items-center justify-center`}>
-                    <Icon size={20} className={card.iconText} />
+                  <div className={`w-10 h-10 rounded-xl shrink-0 ${card.iconBg} flex items-center justify-center`}>
+                    <Icon size={20} className={card.iconColor} aria-hidden="true" />
                   </div>
                 </div>
-                <div className="mt-3 flex items-center gap-1">
-                  <span className="text-xs text-slate-400">{card.hint}</span>
-                </div>
-              </div>
+              </button>
             );
           })}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-          <button onClick={() => navigate('/dean/review')} className="bg-gradient-to-r from-violet-600 to-purple-600 text-white px-6 py-4 rounded-2xl font-bold flex items-center gap-3 hover:from-violet-700 hover:to-purple-700 transition-all shadow-lg">
-            <FileText size={24} /> Review Papers <ChevronRight className="ml-auto" size={20} />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <button
+            type="button"
+            onClick={() => navigate('/dean/review')}
+            className="group bg-gradient-to-br from-[#3674B5] to-[#578FCA] rounded-xl p-3.5 sm:p-4 shadow-sm hover:shadow-md transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                <Eye size={20} className="text-white" aria-hidden="true" />
+              </div>
+              <div className="text-left min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white">Review queue</p>
+                <p className="text-xs text-blue-100 truncate">
+                  {stats.needsDeanReview > 0 ? `${stats.needsDeanReview} pending` : 'Open workspace'}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-white/70 shrink-0" aria-hidden="true" />
+            </div>
           </button>
-          <button onClick={() => navigate('/dean/activity-monitor')} className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-4 rounded-2xl font-bold flex items-center gap-3 hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg">
-            <Activity size={24} /> Activity Monitor <ChevronRight className="ml-auto" size={20} />
+
+          <button
+            type="button"
+            onClick={() => navigate('/dean/activity-monitor')}
+            className="group bg-white rounded-xl p-3.5 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[#3674B5]/10 flex items-center justify-center shrink-0">
+                <Activity size={20} className="text-[#3674B5]" aria-hidden="true" />
+              </div>
+              <div className="text-left min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">Activity monitor</p>
+                <p className="text-xs text-slate-500">Workflow overview</p>
+              </div>
+              <ChevronRight size={16} className="text-slate-300 shrink-0" aria-hidden="true" />
+            </div>
           </button>
-          <button onClick={() => navigate('/dean/audit-logs')} className="bg-gradient-to-r from-slate-700 to-slate-800 text-white px-6 py-4 rounded-2xl font-bold flex items-center gap-3 hover:from-slate-800 hover:to-slate-900 transition-all shadow-lg">
-            <Shield size={24} /> Audit Logs <ChevronRight className="ml-auto" size={20} />
+
+          <button
+            type="button"
+            onClick={() => navigate('/dean/repository')}
+            className="group bg-white rounded-xl p-3.5 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                <Search size={20} className="text-emerald-600" aria-hidden="true" />
+              </div>
+              <div className="text-left min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">Repository</p>
+                <p className="text-xs text-slate-500">Browse manuscripts</p>
+              </div>
+              <ChevronRight size={16} className="text-slate-300 shrink-0" aria-hidden="true" />
+            </div>
           </button>
         </div>
 
-        {/* Cross-Department Comparison */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-10">
-          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Users size={20} className="text-violet-600" />
-              <h2 className="text-lg font-bold text-slate-900">Cross-Department Comparison</h2>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 sm:gap-6">
+          <div className="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+              <h2 className="font-semibold text-slate-900">Recent manuscripts</h2>
+              <button
+                type="button"
+                onClick={() => navigate('/dean/review')}
+                className="text-xs font-semibold text-[#3674B5] hover:text-[#2d6299]"
+              >
+                View all
+              </button>
             </div>
-            <div className="text-xs text-slate-500 font-semibold">
-              {deptComparison?.totalDepartments || 0} departments · {deptComparison?.totalPapers || 0} papers
-            </div>
-          </div>
 
-          {departmentRows.length === 0 ? (
-            <div className="p-12 text-center text-slate-400">
-              <Users size={34} className="mx-auto mb-3" />
-              <p className="font-medium">No department comparison data available</p>
-            </div>
-          ) : (
-            <div className="p-6 space-y-4">
-              {departmentRows.slice(0, 8).map((row) => (
-                <div key={row.department} className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <p className="font-bold text-slate-900 line-clamp-1">{row.department}</p>
-                    <div className="text-xs text-slate-600 flex items-center gap-3">
-                      <span>Total: <strong>{row.total}</strong></span>
-                      <span>Approval: <strong>{row.approvalRate}%</strong></span>
-                      <span>Avg turnaround: <strong>{row.avgTurnaroundDays}d</strong></span>
+            {recentPapers.length === 0 ? (
+              <div className="px-4 sm:px-5 py-10 text-center">
+                <FileText size={28} className="mx-auto text-slate-300 mb-3" aria-hidden="true" />
+                <p className="text-sm text-slate-500">No manuscripts in your review scope yet</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {recentPapers.map((paper) => (
+                  <button
+                    key={paper.id}
+                    type="button"
+                    onClick={() => navigate(`/dean/review/${paper.id}`)}
+                    className="w-full text-left px-4 sm:px-5 py-4 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+                        <FileText size={16} className="text-slate-500" aria-hidden="true" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-900 line-clamp-2">{paper.title || 'Untitled'}</p>
+                        <p className="text-xs text-slate-500 mt-1 truncate">
+                          {formatFullName(paper.users) || 'Unknown author'} · {formatDate(paper.submission_date || paper.created_at)}
+                        </p>
+                        <span className={`inline-flex mt-2 px-2.5 py-0.5 rounded-full text-xs font-medium border ${reviewStatusTone(paper.status)}`}>
+                          {reviewStatusLabel(paper.status)}
+                        </span>
+                      </div>
+                      <ChevronRight size={16} className="text-slate-300 shrink-0 mt-1" aria-hidden="true" />
                     </div>
-                  </div>
-                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-3">
-                    <div
-                      className="h-full bg-gradient-to-r from-violet-500 to-purple-600 rounded-full"
-                      style={{ width: `${Math.max(6, (row.total / departmentMax) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
-                    <span className="px-2 py-1 rounded bg-sky-50 text-sky-700 font-semibold">Pending: {row.pending}</span>
-                    <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold">Approved: {row.approved}</span>
-                    <span className="px-2 py-1 rounded bg-red-50 text-red-700 font-semibold">Rejected: {row.rejected}</span>
-                    <span className="px-2 py-1 rounded bg-amber-50 text-amber-700 font-semibold">Revision: {row.revisionRequired}</span>
-                    <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-700 font-semibold">To Editor: {row.forwardedToEditor}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-        {/* Submission Trend */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-10">
-          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
-            <BarChart3 size={20} className="text-violet-600" />
-            <h2 className="text-lg font-bold text-slate-900">Submission Trend (Last 6 Months)</h2>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-6 gap-3 items-end h-56">
-              {trendSeries.map((point) => (
-                <div key={point.key} className="flex flex-col items-center gap-2">
-                  <div className="w-full flex items-end justify-center gap-1 h-44">
-                    <div
-                      className="w-4 rounded-t-md bg-blue-500"
-                      style={{ height: `${Math.max(6, (point.submissions / trendMax) * 160)}px` }}
-                      title={`Submissions: ${point.submissions}`}
-                    />
-                    <div
-                      className="w-4 rounded-t-md bg-emerald-500"
-                      style={{ height: `${Math.max(6, (point.approved / trendMax) * 160)}px` }}
-                      title={`Approved: ${point.approved}`}
-                    />
-                  </div>
-                  <p className="text-xs font-semibold text-slate-600">{point.label}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex items-center gap-6 text-xs text-slate-600">
-              <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-blue-500" /> Submissions</span>
-              <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-emerald-500" /> Approved</span>
-            </div>
-          </div>
-        </div>
+          <div className="space-y-5 sm:space-y-6">
+            <DashboardNotificationList
+              items={dashboardNotifications}
+              onOpen={handleOpenNotification}
+              onViewAll={() => navigate('/notifications')}
+            />
 
-        {/* Recent Audit Trail */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Shield size={20} className="text-violet-600" />
-              <h2 className="text-lg font-bold text-slate-900">Recent Activity</h2>
-            </div>
-            <button onClick={() => navigate('/dean/audit-logs')} className="text-sm font-semibold text-violet-600 hover:text-violet-800 flex items-center gap-1">
-              View all <ChevronRight size={16} />
-            </button>
-          </div>
-          {recentLogs.length === 0 ? (
-            <div className="p-12 text-center text-slate-400">
-              <Activity size={36} className="mx-auto mb-3" />
-              <p className="font-medium">No recent activity recorded</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {recentLogs.map((log, i) => {
-                const badge = getActionBadge(log.action);
-                return (
-                  <div key={log.id || i} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
-                    <span className={`px-3 py-1 rounded-lg text-xs font-bold ${badge.bg}`}>{badge.label}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900">
-                        {log.user_name || log.user_role} &middot; <span className="font-normal text-slate-500">{log.details?.paperTitle || log.action}</span>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
+                <h2 className="font-semibold text-slate-900">By department</h2>
+                <span className="text-[11px] text-slate-400">{deptComparison?.totalDepartments || 0} total</span>
+              </div>
+              {departmentRows.length === 0 ? (
+                <p className="px-4 py-8 text-sm text-slate-500 text-center">No department data yet</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {departmentRows.map((row) => (
+                    <div key={row.department} className="px-4 sm:px-5 py-3.5">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="text-sm font-medium text-slate-900 truncate">{row.department}</p>
+                        <span className="text-xs font-semibold text-slate-600 shrink-0">{row.total} papers</span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {row.pending} pending · {row.approved} approved · {row.approvalRate}% approval rate
                       </p>
-                      {log.reason && <p className="text-xs text-slate-500 mt-0.5">Reason: {log.reason}</p>}
                     </div>
-                    <span className="text-xs text-slate-400 whitespace-nowrap">{formatDate(log.created_at)}</span>
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-2">
+                <h2 className="font-semibold text-slate-900 text-sm">Recent activity</h2>
+                <button
+                  type="button"
+                  onClick={() => navigate('/dean/audit-logs')}
+                  className="text-xs font-semibold text-[#3674B5] hover:text-[#2d6299] inline-flex items-center gap-0.5"
+                >
+                  Audit logs <ChevronRight size={12} aria-hidden="true" />
+                </button>
+              </div>
+              {recentLogs.length === 0 ? (
+                <p className="px-4 py-6 text-sm text-slate-500 text-center">No recent activity</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {recentLogs.slice(0, 3).map((log, index) => (
+                    <div key={log.id || index} className="px-4 sm:px-5 py-3">
+                      <p className="text-sm font-medium text-slate-900">{getActionLabel(log.action)}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
+                        {log.user_name || log.user_role || 'User'}
+                        {log.details?.paperTitle ? ` · ${log.details.paperTitle}` : ''}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">{formatDateTime(log.created_at)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

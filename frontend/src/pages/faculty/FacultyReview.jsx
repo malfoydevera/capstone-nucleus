@@ -2,27 +2,18 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  FileText,
-  Clock,
-  Eye,
   AlertCircle,
-  Search,
   ChevronRight,
-  RefreshCw,
-  BookOpen,
-  Activity,
-  TrendingUp,
-  SlidersHorizontal,
   XCircle,
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 import UserGuideLink from '../../components/ui/UserGuideLink';
-import LoadMoreFooter from '../../components/ui/LoadMoreFooter';
-import useAutoLoadMore from '../../hooks/useAutoLoadMore';
+import ReviewWorkspaceLayout from '../../components/review/ReviewWorkspaceLayout';
+import { PriorityBanner } from '../../components/review/ReviewListShell';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PAGE_SIZE = 8;
+const PAGE_SIZE = 10;
 
 const getDepartmentScopeKey = (paper) => paper?.department_id || paper?.department || 'unassigned';
 
@@ -30,97 +21,6 @@ const getDepartmentScopeLabel = (paper) => {
   if (paper?.department) return paper.department;
   if (paper?.department_id) return `Department ${String(paper.department_id).slice(0, 8)}`;
   return 'Unassigned';
-};
-
-const getFacultyStatusLabel = (status) => {
-  const labels = {
-    pending_faculty: 'Awaiting Review',
-    pending_editor: 'With Editor',
-    pending_admin: 'With Admin',
-    approved: 'Approved',
-    published: 'Published',
-    rejected: 'Rejected',
-    revision_required: 'Revision Required',
-  };
-  return labels[status] || status;
-};
-
-const getFacultyStatusTone = (status) => {
-  const tones = {
-    pending_faculty: 'text-amber-700 bg-amber-50 border-amber-100',
-    pending_editor: 'text-blue-700 bg-blue-50 border-blue-100',
-    pending_admin: 'text-[#3674B5] bg-[#3674B5]/10 border-[#3674B5]/20',
-    approved: 'text-emerald-700 bg-emerald-50 border-emerald-100',
-    published: 'text-emerald-700 bg-emerald-50 border-emerald-100',
-    rejected: 'text-red-700 bg-red-50 border-red-100',
-    revision_required: 'text-orange-700 bg-orange-50 border-orange-100',
-  };
-  return tones[status] || 'text-slate-600 bg-slate-50 border-slate-100';
-};
-
-const SubmissionCard = ({ paper, categoryName, formattedDate, onReview, onConflict }) => {
-  const isActionable = ['pending_faculty', 'revision_required'].includes(paper.status);
-  const wasReturned = paper.status === 'pending_faculty' && paper.revision_notes && paper.last_reviewer_role;
-  const authorName = formatFullName(paper.users) || 'Unknown author';
-
-  return (
-    <article className="group flex items-center gap-3 px-4 py-4 sm:gap-5 sm:px-5 hover:bg-slate-50/80 transition-colors">
-      <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
-        <div className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#3674B5]/10 text-[#3674B5]">
-          <FileText size={18} aria-hidden="true" />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${getFacultyStatusTone(paper.status)}`}
-            >
-              {getFacultyStatusLabel(paper.status)}
-            </span>
-            {wasReturned && (
-              <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-700">
-                Returned
-              </span>
-            )}
-          </div>
-
-          <h3 className="truncate text-sm font-semibold text-slate-900 group-hover:text-[#3674B5] transition-colors">
-            {paper.title}
-          </h3>
-
-          <p className="mt-1 truncate text-xs text-slate-500">
-            <span className="font-medium text-slate-700">{authorName}</span>
-            <span className="mx-2 text-slate-300" aria-hidden="true">·</span>
-            {formattedDate}
-            <span className="mx-2 text-slate-300" aria-hidden="true">·</span>
-            {categoryName}
-          </p>
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        {isActionable && (
-          <button
-            type="button"
-            onClick={onConflict}
-            className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 transition-colors md:inline-flex"
-            aria-label="Declare conflict of interest"
-          >
-            <XCircle size={15} />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onReview}
-          className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-[#3674B5] px-3 text-xs font-semibold text-white hover:bg-[#2d6299] transition-colors sm:px-4"
-        >
-          <Eye size={14} className="sm:hidden" aria-hidden="true" />
-          <span className="hidden sm:inline">Review</span>
-          <ChevronRight size={15} aria-hidden="true" />
-        </button>
-      </div>
-    </article>
-  );
 };
 
 const FacultyReview = () => {
@@ -134,22 +34,16 @@ const FacultyReview = () => {
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [conflictModalPaper, setConflictModalPaper] = useState(null);
   const [conflictReason, setConflictReason] = useState('');
   const [conflictLoading, setConflictLoading] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     fetchPapers();
     const interval = setInterval(() => fetchPapers(true), 10000);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [statusFilter, searchTerm, departmentFilter, dateFilter, sortBy]);
 
   const fetchPapers = async (silent = false) => {
     if (!silent) setRefreshing(true);
@@ -255,34 +149,6 @@ const FacultyReview = () => {
     return left.label.localeCompare(right.label);
   }), [papers]);
 
-  const visiblePapers = filteredPapers.slice(0, visibleCount);
-  const canLoadMore = visibleCount < filteredPapers.length;
-  const loadMoreRef = useAutoLoadMore({ canLoadMore, setVisibleCount, step: PAGE_SIZE });
-
-  const FILTERS = [
-    {
-      key: 'pending_faculty',
-      label: 'Needs Review',
-      count: stats.pendingFaculty + stats.revisionRequired,
-    },
-    { key: 'revision_required', label: 'Revisions', count: stats.revisionRequired },
-    {
-      key: 'pending_editor',
-      label: 'Approved by You',
-      count: papers.filter((p) => ['pending_editor', 'pending_admin', 'approved', 'published'].includes(p.status)).length,
-    },
-    { key: 'all', label: 'All Assigned', count: stats.total },
-  ];
-
-  const formatRelativeTime = (date) => {
-    if (!date) return null;
-    const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    return date.toLocaleTimeString();
-  };
-
   const formatDate = (dateString) => {
     if (!dateString) return '—';
     const date = new Date(dateString);
@@ -313,10 +179,10 @@ const FacultyReview = () => {
     const loadingToast = toast.loading('Declaring conflict...');
     try {
       await researchAPI.declareConflictOfInterest(conflictModalPaper.id, conflictReason.trim());
-      toast.success('Conflict declared. Paper removed from your queue.', { id: loadingToast });
+      toast.success('Conflict declared. This paper has been removed from your queue.', { id: loadingToast });
       setConflictModalPaper(null);
       setConflictReason('');
-      await fetchPapers(true);
+      fetchPapers(true);
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to declare conflict', { id: loadingToast });
     } finally {
@@ -324,9 +190,77 @@ const FacultyReview = () => {
     }
   };
 
+  const queueItems = [
+    {
+      key: 'pending_faculty',
+      label: 'Needs your review',
+      shortLabel: 'Needs review',
+      description: 'New submissions and resubmissions',
+      count: stats.pendingFaculty + stats.revisionRequired,
+    },
+    {
+      key: 'revision_required',
+      label: 'Revision requested',
+      shortLabel: 'Revisions',
+      description: 'Sent back to the author',
+      count: stats.revisionRequired,
+    },
+    {
+      key: 'pending_editor',
+      label: 'Approved by you',
+      shortLabel: 'Approved',
+      description: 'With the research editor',
+      count: stats.facultyApproved,
+    },
+    {
+      key: 'all',
+      label: 'All assigned',
+      shortLabel: 'All',
+      description: 'Every paper in your scope',
+      count: stats.total,
+    },
+  ];
+
+  const advancedFilters = [
+    {
+      id: 'department-filter',
+      label: 'Department',
+      value: departmentFilter,
+      onChange: setDepartmentFilter,
+      options: departmentOptions.map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+    },
+    {
+      id: 'date-filter',
+      label: 'Submitted',
+      value: dateFilter,
+      onChange: setDateFilter,
+      options: [
+        { value: 'all', label: 'Any time' },
+        { value: '7d', label: 'Last 7 days' },
+        { value: '30d', label: 'Last 30 days' },
+        { value: '90d', label: 'Last 90 days' },
+      ],
+    },
+    {
+      id: 'sort-filter',
+      label: 'Sort order',
+      value: sortBy,
+      onChange: setSortBy,
+      options: [
+        { value: 'newest', label: 'Newest first' },
+        { value: 'oldest', label: 'Oldest first' },
+        { value: 'title', label: 'Title (A–Z)' },
+        { value: 'author', label: 'Author (A–Z)' },
+      ],
+    },
+  ];
+
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
+      <div className="review-screen flex flex-1 min-h-0 flex-col items-center justify-center h-full">
         <div className="relative">
           <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
           <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
@@ -336,252 +270,73 @@ const FacultyReview = () => {
     );
   }
 
+  const submissions = filteredPapers.map((paper) => ({
+    id: paper.id,
+    title: paper.title,
+    authorName: formatFullName(paper.users),
+    categoryName: getCategoryName(paper.category),
+    formattedDate: formatDate(paper.submission_date || paper.created_at),
+    status: paper.status,
+    onOpen: () => navigate(`/faculty/review/${paper.id}`),
+    paper,
+  }));
+
   return (
-    <div className="min-h-screen bg-slate-50/50">
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 animate-fadeIn space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Review Submissions</h1>
-            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              Review research papers assigned to you as faculty adviser
-            </p>
-            {lastRefreshed && (
-              <p className="text-[11px] text-slate-400 mt-1">
-                Last refreshed {formatRelativeTime(lastRefreshed)}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => fetchPapers()}
-            disabled={refreshing}
-            className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 inline-flex items-center gap-1.5 text-xs font-medium transition-colors shrink-0"
-          >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-            {refreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
-        </div>
-
-        <UserGuideLink />
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="rounded-xl border border-amber-100 bg-white px-3 py-2.5 flex items-center gap-2.5 shadow-sm">
-            <span className="h-9 w-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
-              <Clock size={16} className="text-amber-600" />
-            </span>
-            <div>
-              <p className="text-lg font-bold leading-none text-slate-900">{stats.pendingFaculty}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Pending Review</p>
-            </div>
-          </div>
-          <div className="rounded-xl border border-orange-100 bg-white px-3 py-2.5 flex items-center gap-2.5 shadow-sm">
-            <span className="h-9 w-9 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
-              <AlertCircle size={16} className="text-orange-600" />
-            </span>
-            <div>
-              <p className="text-lg font-bold leading-none text-slate-900">{stats.revisionRequired}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Revisions</p>
-            </div>
-          </div>
-          <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2.5 flex items-center gap-2.5 shadow-sm">
-            <span className="h-9 w-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-              <TrendingUp size={16} className="text-emerald-600" />
-            </span>
-            <div>
-              <p className="text-lg font-bold leading-none text-slate-900">{stats.facultyApproved}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Approved by You</p>
-            </div>
-          </div>
-          <div className="rounded-xl border border-[#3674B5]/20 bg-white px-3 py-2.5 flex items-center gap-2.5 shadow-sm">
-            <span className="h-9 w-9 rounded-lg bg-[#3674B5]/10 flex items-center justify-center shrink-0">
-              <BookOpen size={16} className="text-[#3674B5]" />
-            </span>
-            <div>
-              <p className="text-lg font-bold leading-none text-slate-900">{stats.total}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Total Assigned</p>
-            </div>
-          </div>
-        </div>
-
-        {priorityPaper && statusFilter === 'pending_faculty' && (
-          <div className="rounded-xl border border-l-4 border-amber-200 border-l-amber-500 bg-amber-50/60 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-700">
-                  <Activity size={13} />
-                  Action Required
-                </div>
-                <p className="mt-1 text-sm font-semibold text-slate-900 line-clamp-1">{priorityPaper.title}</p>
-              </div>
+    <>
+      <ReviewWorkspaceLayout
+        breadcrumbs={[
+          { label: 'Dashboard', path: '/dashboard' },
+          { label: 'Adviser review queue' },
+        ]}
+        roleLabel="Faculty Adviser"
+        title="Adviser Review Queue"
+        subtitle="Review manuscripts from your advisees, leave feedback, and forward approved work to the dean or program chair."
+        headerExtra={<UserGuideLink />}
+        lastRefreshed={lastRefreshed}
+        refreshing={refreshing}
+        onRefresh={() => fetchPapers()}
+        queueItems={queueItems}
+        activeQueue={statusFilter}
+        onQueueChange={setStatusFilter}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        advancedFilters={advancedFilters}
+        priorityBanner={priorityPaper && statusFilter === 'pending_faculty' ? (
+          <PriorityBanner
+            label="Review this next"
+            title={priorityPaper.title}
+            action={(
               <button
                 type="button"
                 onClick={() => navigate(`/faculty/review/${priorityPaper.id}`)}
-                className="shrink-0 h-8 px-3 rounded-lg bg-[#3674B5] text-white text-xs font-semibold hover:bg-[#2d6299] inline-flex items-center gap-1.5 transition-colors"
+                className="w-full sm:w-auto shrink-0 h-9 px-3 rounded-lg bg-[#3674B5] text-white text-xs font-semibold hover:bg-[#2d6299] inline-flex items-center justify-center gap-1.5 transition-colors"
               >
-                Review Now
-                <ChevronRight size={13} />
+                Open manuscript
+                <ChevronRight size={13} aria-hidden="true" />
               </button>
-            </div>
-          </div>
-        )}
-
-        <div className="overflow-x-auto -mx-1 px-1">
-          <div className="flex items-center gap-1 border-b border-slate-200 min-w-max">
-            {FILTERS.map((filter) => (
-              <button
-                key={filter.key}
-                type="button"
-                onClick={() => setStatusFilter(filter.key)}
-                className={`pb-2.5 px-1 mr-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
-                  statusFilter === filter.key
-                    ? 'border-[#3674B5] text-[#3674B5]'
-                    : 'border-transparent text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {filter.label}
-                {filter.count > 0 && (
-                  <span
-                    className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                      statusFilter === filter.key
-                        ? 'bg-[#3674B5]/10 text-[#3674B5]'
-                        : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    {filter.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1 min-w-0">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-              <input
-                type="search"
-                placeholder="Search by title, author, or keywords…"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full h-10 pl-9 pr-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3674B5]/30 focus:border-[#3674B5]"
-              />
-            </div>
+            )}
+          />
+        ) : null}
+        isEmpty={filteredPapers.length === 0}
+        emptyTitle="No manuscripts in this queue"
+        emptyDescription="Switch to another queue above, or clear your department and date filters."
+        submissions={submissions}
+        pageSize={PAGE_SIZE}
+        renderRowActions={(submission) => (
+          (submission.paper?.status === 'pending_faculty' || submission.paper?.status === 'revision_required') ? (
             <button
               type="button"
-              onClick={() => setShowAdvancedFilters((prev) => !prev)}
-              className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 inline-flex items-center justify-center gap-1.5 text-xs font-medium transition-colors sm:hidden"
+              onClick={(event) => {
+                event.stopPropagation();
+                setConflictModalPaper(submission.paper);
+              }}
+              className="inline-flex min-h-[2.75rem] items-center justify-center px-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm font-medium hover:bg-rose-100 transition-colors"
             >
-              <SlidersHorizontal size={14} />
-              {showAdvancedFilters ? 'Hide Filters' : 'More Filters'}
+              Declare conflict
             </button>
-          </div>
-
-          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 ${showAdvancedFilters ? 'block' : 'hidden sm:grid'}`}>
-            <div>
-              <label htmlFor="department-filter" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-                Department
-              </label>
-              <select
-                id="department-filter"
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3674B5]/30 focus:border-[#3674B5]"
-              >
-                {departmentOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="date-filter" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-                Date Range
-              </label>
-              <select
-                id="date-filter"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3674B5]/30 focus:border-[#3674B5]"
-              >
-                <option value="all">All Dates</option>
-                <option value="7d">Last 7 Days</option>
-                <option value="30d">Last 30 Days</option>
-                <option value="90d">Last 90 Days</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="sort-filter" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-                Sort By
-              </label>
-              <select
-                id="sort-filter"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3674B5]/30 focus:border-[#3674B5]"
-              >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="title">Title A–Z</option>
-                <option value="author">Author A–Z</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {filteredPapers.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center">
-            <FileText size={28} className="mx-auto text-slate-300" aria-hidden="true" />
-            <h3 className="mt-3 text-sm font-semibold text-slate-700">No papers found</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-              {searchTerm || departmentFilter !== 'all' || dateFilter !== 'all'
-                ? 'Try adjusting your search or filters.'
-                : 'No research papers have been assigned to you yet.'}
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:px-5">
-                <p className="text-xs font-medium text-slate-600">
-                  {filteredPapers.length} paper{filteredPapers.length !== 1 ? 's' : ''}
-                </p>
-                <p className="text-xs text-slate-400">
-                  Showing {visiblePapers.length} of {filteredPapers.length}
-                </p>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {visiblePapers.map((paper) => (
-                  <SubmissionCard
-                    key={paper.id}
-                    paper={paper}
-                    categoryName={getCategoryName(paper.category)}
-                    formattedDate={formatDate(paper.submission_date || paper.created_at)}
-                    onReview={() => navigate(`/faculty/review/${paper.id}`)}
-                    onConflict={() => setConflictModalPaper(paper)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {filteredPapers.length > PAGE_SIZE && (
-              <>
-                <LoadMoreFooter
-                  visibleCount={visiblePapers.length}
-                  totalCount={filteredPapers.length}
-                  canLoadMore={canLoadMore}
-                  onLoadMore={() => setVisibleCount((count) => count + PAGE_SIZE)}
-                  label="papers"
-                  step={PAGE_SIZE}
-                />
-                <div ref={loadMoreRef} className="h-1" aria-hidden="true" />
-              </>
-            )}
-          </>
+          ) : null
         )}
-      </div>
+      />
 
       {conflictModalPaper && (
         <div
@@ -613,27 +368,20 @@ const FacultyReview = () => {
                   value={conflictReason}
                   onChange={(e) => setConflictReason(e.target.value)}
                   rows={4}
-                  placeholder="Explain the conflict (e.g., collaborator relationship, advisory overlap)…"
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400"
+                  placeholder="Explain why you cannot review this paper impartially…"
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-rose-400 resize-none"
                 />
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                <p className="text-xs text-amber-800">
-                  This removes the paper from your queue and sends it for reassignment.
-                </p>
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
+              <div className="flex flex-col-reverse sm:flex-row gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => {
-                    if (conflictLoading) return;
                     setConflictModalPaper(null);
                     setConflictReason('');
                   }}
-                  className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                   disabled={conflictLoading}
+                  className="flex-1 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -641,7 +389,7 @@ const FacultyReview = () => {
                   type="button"
                   onClick={handleDeclareConflict}
                   disabled={conflictLoading || !conflictReason.trim()}
-                  className="flex-1 py-2.5 bg-rose-600 text-white rounded-lg text-sm font-semibold hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                  className="flex-1 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50"
                 >
                   {conflictLoading ? 'Submitting…' : 'Declare Conflict'}
                 </button>
@@ -650,7 +398,7 @@ const FacultyReview = () => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 

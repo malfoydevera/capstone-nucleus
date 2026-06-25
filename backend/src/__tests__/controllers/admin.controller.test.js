@@ -98,51 +98,56 @@ describe('admin controller', () => {
   test('getAllResearch returns structured_authors for staff/admin repository consumers', async () => {
     supabase.from.mockImplementation((table) => {
       if (table === 'research_papers') {
+        const papers = [
+          {
+            id: 'paper-1',
+            title: 'Canonical Authors',
+            status: 'approved',
+            external_author_notes: 'External Collaborator',
+            author: {
+              id: 'author-1',
+              first_name: 'Alice',
+              middle_name: null,
+              last_name: 'Author',
+              email: 'alice@example.com',
+            },
+            research_authors: [
+              {
+                user_id: 'author-2',
+                is_primary: false,
+                author_order: 1,
+                author: {
+                  id: 'author-2',
+                  first_name: 'Bob',
+                  middle_name: null,
+                  last_name: 'Contributor',
+                  email: 'bob@example.com',
+                },
+              },
+              {
+                user_id: 'author-1',
+                is_primary: true,
+                author_order: 0,
+                author: {
+                  id: 'author-1',
+                  first_name: 'Alice',
+                  middle_name: null,
+                  last_name: 'Author',
+                  email: 'alice@example.com',
+                },
+              },
+            ],
+          },
+        ];
+
         return {
           select: () => ({
-            order: async () => ({
-              data: [
-                {
-                  id: 'paper-1',
-                  title: 'Canonical Authors',
-                  status: 'approved',
-                  external_author_notes: 'External Collaborator',
-                  author: {
-                    id: 'author-1',
-                    first_name: 'Alice',
-                    middle_name: null,
-                    last_name: 'Author',
-                    email: 'alice@example.com',
-                  },
-                  research_authors: [
-                    {
-                      user_id: 'author-2',
-                      is_primary: false,
-                      author_order: 1,
-                      author: {
-                        id: 'author-2',
-                        first_name: 'Bob',
-                        middle_name: null,
-                        last_name: 'Contributor',
-                        email: 'bob@example.com',
-                      },
-                    },
-                    {
-                      user_id: 'author-1',
-                      is_primary: true,
-                      author_order: 0,
-                      author: {
-                        id: 'author-1',
-                        first_name: 'Alice',
-                        middle_name: null,
-                        last_name: 'Author',
-                        email: 'alice@example.com',
-                      },
-                    },
-                  ],
-                },
-              ],
-              error: null,
+            order: () => ({
+              range: async () => ({
+                data: papers,
+                error: null,
+                count: papers.length,
+              }),
             }),
           }),
         };

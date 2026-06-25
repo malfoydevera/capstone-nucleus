@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const authController = require('../controllers/auth.controller');
+const adminController = require('../controllers/admin.controller');
 const notificationController = require('../controllers/notification.controller');
 const coauthorInvitationController = require('../controllers/coauthorInvitation.controller');
 const { authRateLimiter } = require('../middleware/rateLimiter');
@@ -21,11 +22,14 @@ router.post('/reset-password', authRateLimiter, authController.resetPassword);
 
 // Protected routes
 router.get('/me', authenticate, authController.getCurrentUser);
+router.patch('/profile', authenticate, authController.updateOwnProfile);
+router.get('/profile/activity', authenticate, authController.getProfileActivity);
 router.get('/notifications', authenticate, notificationController.getMyNotifications);
 router.get('/notifications/unread-count', authenticate, notificationController.getUnreadCount);
 router.get('/notifications/debug', authenticate, authorize('admin'), notificationController.getNotificationsDebug);
 router.patch('/notifications/:id/read', authenticate, notificationController.markNotificationRead);
 router.patch('/notifications/read-all', authenticate, notificationController.markAllNotificationsRead);
+router.delete('/notifications', authenticate, notificationController.deleteAllNotifications);
 router.delete('/notifications/:id', authenticate, notificationController.deleteNotification);
 router.get('/submission-policy', authenticate, authController.getSubmissionPolicy);
 router.get('/co-author-invitations', authenticate, authorize('student'), coauthorInvitationController.getMyCoAuthorInvitations);
@@ -36,6 +40,7 @@ router.post('/co-author-invitations/:token/decline', authenticate, authorize('st
 router.get('/students/search', authenticate, authController.searchStudents);
 
 // NEW: Admin Management Routes
+router.get('/admin/export/students', authenticate, authorize('admin'), adminController.exportStudentsCsv);
 router.get('/users', authenticate, authorize('admin'), authController.getAllUsers);
 router.patch('/users/:id', authenticate, authorize('admin'), authController.updateUser);
 router.delete('/users/:id', authenticate, authorize('admin'), authController.deleteUser);

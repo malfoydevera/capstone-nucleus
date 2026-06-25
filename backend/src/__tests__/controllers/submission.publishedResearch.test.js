@@ -1,5 +1,6 @@
 jest.mock('../../config/supabase', () => ({
   from: jest.fn(),
+  rpc: jest.fn(async () => ({ data: [], error: null })),
 }));
 
 jest.mock('uuid', () => ({
@@ -30,16 +31,22 @@ describe('submission getPublishedResearch', () => {
 
   test('returns canonical structured_authors and exposes external author notes separately from structured authorship', async () => {
     supabase.from.mockImplementation((table) => {
+      if (table === 'research_categories') {
+        return {
+          select: () => ({
+            order: async () => ({
+              data: [{ id: 'category-1', name: 'General' }],
+              error: null,
+            }),
+          }),
+        };
+      }
+
       if (table !== 'research_papers') {
         return {};
       }
 
-      return {
-        select: () => ({
-          in: () => ({
-            is: () => ({
-              order: async () => ({
-                data: [
+      const paperRows = [
                   {
                     id: 'paper-1',
                     title: 'Published Paper',
@@ -82,16 +89,32 @@ describe('submission getPublishedResearch', () => {
                       },
                     ],
                   },
-                ],
+      ];
+
+      const publishedQuery = {
+        in: () => ({
+          is: () => ({
+            order: () => ({
+              range: async () => ({
+                data: paperRows,
                 error: null,
+                count: 1,
               }),
             }),
+            eq: () => publishedQuery,
           }),
+          eq: () => publishedQuery,
         }),
+        is: () => publishedQuery,
+        eq: () => publishedQuery,
+      };
+
+      return {
+        select: () => publishedQuery,
       };
     });
 
-    const req = { query: {}, user: { id: 'viewer-1', role: 'student' } };
+    const req = { query: {}, user: { id: 'viewer-1', role: 'admin' } };
     const res = createRes();
 
     await submissionController.getPublishedResearch(req, res);
@@ -99,6 +122,9 @@ describe('submission getPublishedResearch', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
     expect(payload.data.papers).toHaveLength(1);
+    expect(payload.data.total).toBe(1);
+    expect(payload.data.page).toBe(1);
+    expect(payload.data.facets).toBeDefined();
     expect(payload.data.papers[0].file_url).toBe('https://example.com/published-paper.pdf');
     expect(payload.data.papers[0].structured_authors).toHaveLength(2);
     expect(payload.data.papers[0].structured_authors[0].author.full_name).toBe('Alice Author');

@@ -1,15 +1,58 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Plus, RefreshCw, LayoutList } from 'lucide-react';
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Plus,
+  RefreshCw,
+  MessageSquare,
+  ExternalLink,
+  Upload,
+  BookOpen,
+  TrendingUp,
+  Activity,
+  AlertTriangle,
+} from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
-import useAutoLoadMore from '../../hooks/useAutoLoadMore';
+import LoadMoreFooter from '../../components/ui/LoadMoreFooter';
+import { formatFullName } from '../../utils/names';
+import { getStudentStatusLabel, getStudentStatusTone, isNeedsAction } from '../../utils/studentStatus';
 
-const getStructuredCoAuthorCount = (paper) =>
-  Array.isArray(paper?.structured_authors)
-    ? paper.structured_authors.filter((entry) => !entry?.is_primary).length
-    : 0;
+const getStructuredAuthors = (paper) =>
+  Array.isArray(paper?.structured_authors) ? paper.structured_authors : [];
 
-const PAGE_SIZE = 5;
+const getAuthorName = (paper) => {
+  const primary = getStructuredAuthors(paper).find((entry) => entry?.is_primary);
+  if (primary?.author) {
+    return formatFullName(primary.author) || primary.author.full_name || '—';
+  }
+  return formatFullName(paper?.users) || '—';
+};
+
+const getCoAuthorNames = (paper) =>
+  getStructuredAuthors(paper)
+    .filter((entry) => !entry?.is_primary)
+    .map((entry) => formatFullName(entry?.author) || entry?.author?.full_name)
+    .filter(Boolean);
+
+const PAGE_SIZE = 8;
+
+const STAGE_LABELS = ['Adviser', 'Chair', 'Editor', 'Admin', 'Published'];
+
+const TABLE_HEAD_CELL =
+  'text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide border-r border-slate-200 last:border-r-0';
+
+const TABLE_BODY_CELL = 'px-5 py-4 align-top border-r border-slate-200/70 last:border-r-0';
+
+const getPipelineStage = (status) => {
+  if (status === 'approved') return 5;
+  if (status === 'pending_admin') return 4;
+  if (status === 'pending_editor' || status === 'under_review') return 3;
+  if (status === 'pending_faculty') return 2;
+  return 1;
+};
 
 const MyResearch = () => {
   const navigate = useNavigate();
@@ -23,11 +66,9 @@ const MyResearch = () => {
 
   useEffect(() => {
     fetchMyResearch();
-    
     const interval = setInterval(() => {
-      fetchMyResearch(true); // Silent refresh every 3 seconds for realtime updates
-    }, 3000);
-
+      fetchMyResearch(true);
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -36,7 +77,6 @@ const MyResearch = () => {
     try {
       const response = await researchAPI.getMyResearch();
       const fetchedPapers = unwrapApiData(response).papers || [];
-
       setPapers(fetchedPapers);
       setError('');
     } catch (err) {
@@ -50,47 +90,22 @@ const MyResearch = () => {
     }
   };
 
-  const isActionStatus = (status) => status === 'revision_required' || status === 'rejected';
-
-  const getStatusLabel = (status) => {
-    const labels = {
-      pending: 'Pending Review',
-      pending_faculty: 'With Adviser',
-      pending_editor: 'With Editor',
-      pending_admin: 'With Admin',
-      under_review: 'With Editor',
-      approved: 'Published',
-      rejected: 'Rejected',
-      revision_required: 'Revision Required',
-    };
-
-    return labels[status] || 'Pending Review';
+  const formatDate = (dateString) => {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   const formatTimeAgo = (dateString) => {
-    if (!dateString) return 'just now';
+    if (!dateString) return '—';
     const date = new Date(dateString);
     const now = new Date();
     const diffTime = Math.abs(now - date);
     const days = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
-    if (days === 0) return 'today';
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
     if (days < 30) return `${days}d ago`;
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
-
-  const getPipelineStage = (status) => {
-    if (status === 'approved') return 5;
-    if (status === 'pending_admin') return 4;
-    if (status === 'pending_editor' || status === 'under_review') return 3;
-    if (status === 'pending_faculty') return 2;
-    return 1;
-  };
-
-  const getProgressColor = (status) => {
-    if (status === 'revision_required') return 'bg-amber-500';
-    if (status === 'rejected') return 'bg-rose-500';
-    if (status === 'approved') return 'bg-emerald-700';
-    return 'bg-slate-400';
+    return formatDate(dateString);
   };
 
   const statusCounts = useMemo(() => {
@@ -101,410 +116,485 @@ const MyResearch = () => {
   }, [papers]);
 
   const summary = useMemo(() => {
-    const pending = (statusCounts.pending_faculty || 0) + (statusCounts.pending_editor || 0) + (statusCounts.pending_admin || 0);
+    const pending =
+      (statusCounts.pending_faculty || 0) +
+      (statusCounts.pending_editor || 0) +
+      (statusCounts.pending_admin || 0);
     const published = statusCounts.approved || 0;
     const needsAction = (statusCounts.rejected || 0) + (statusCounts.revision_required || 0);
     const inReview = statusCounts.pending_editor || 0;
-
-    return {
-      total: papers.length,
-      pending,
-      published,
-      needsAction,
-      inReview,
-    };
+    return { total: papers.length, pending, published, needsAction, inReview };
   }, [papers.length, statusCounts]);
 
   const topActionPaper = useMemo(() => {
-    return papers.find((paper) => paper.status === 'revision_required') || papers.find((paper) => paper.status === 'rejected') || null;
+    return (
+      papers.find((p) => p.status === 'revision_required') ||
+      papers.find((p) => p.status === 'rejected') ||
+      null
+    );
   }, [papers]);
 
   const filteredPapers = useMemo(() => {
     return papers.filter((paper) => {
       if (activeFilter === 'all') return true;
-      if (activeFilter === 'needs_action') return isActionStatus(paper.status);
-      if (activeFilter === 'updates') return !isActionStatus(paper.status) && paper.status !== 'approved';
+      if (activeFilter === 'needs_action') return isNeedsAction(paper.status);
+      if (activeFilter === 'updates') return !isNeedsAction(paper.status) && paper.status !== 'approved';
       if (activeFilter === 'archive') return paper.status === 'approved';
       return true;
     });
   }, [activeFilter, papers]);
 
   const listRows = useMemo(() => {
-    return filteredPapers.filter((paper) => paper.id !== topActionPaper?.id);
+    return filteredPapers.filter((p) => p.id !== topActionPaper?.id);
   }, [filteredPapers, topActionPaper?.id]);
 
   const visibleRows = useMemo(() => listRows.slice(0, visibleCount), [listRows, visibleCount]);
   const canLoadMore = visibleCount < listRows.length;
-  const loadMoreRef = useAutoLoadMore({ canLoadMore, setVisibleCount, step: PAGE_SIZE });
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
   }, [activeFilter, filteredPapers.length, topActionPaper?.id]);
 
-  const sparkline = (color) => (
-    <svg viewBox="0 0 80 24" className="h-6 w-16" fill="none" aria-hidden="true">
-      <path d="M2 18 L16 14 L28 16 L40 7 L54 10 L68 5 L78 7" className={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-
-  const handleRefresh = () => {
-    fetchMyResearch();
-  };
+  const FILTERS = [
+    { key: 'all', label: 'All', count: papers.length },
+    { key: 'needs_action', label: 'Needs Action', count: summary.needsAction },
+    { key: 'updates', label: 'In Progress', count: summary.pending + summary.inReview },
+    { key: 'archive', label: 'Published', count: summary.published },
+  ];
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
         </div>
-        <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading your research portfolio...</p>
+        <p className="mt-5 text-sm font-medium text-slate-500">Loading submissions…</p>
       </div>
     );
   }
 
+  const renderRowActions = (paper, isPublished) => (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => navigate(`/student/my-research/${paper.id}`)}
+        className="h-8 px-3 rounded-md bg-[#3674B5] text-white text-xs font-semibold hover:bg-[#2d6299] inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+        title="Status & Reviewer Feedback"
+      >
+        <MessageSquare size={13} />
+        <span className="hidden sm:inline">Status &amp; Feedback</span>
+        <span className="sm:hidden">Feedback</span>
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          navigate(`/research/${paper.id}`, {
+            state: { from: '/student/my-research' },
+          })
+        }
+        className="h-8 w-8 rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 inline-flex items-center justify-center transition-colors"
+        title={isPublished ? 'Open Published Paper' : 'View Document'}
+      >
+        <ExternalLink size={13} />
+      </button>
+    </div>
+  );
+
+  const getRowTone = (isRevision, isRejected, isPublished) => {
+    if (isRevision) return 'bg-amber-50/40 hover:bg-amber-50/70 border-amber-100';
+    if (isRejected) return 'bg-rose-50/30 hover:bg-rose-50/60 border-rose-100';
+    if (isPublished) return 'bg-emerald-50/30 hover:bg-emerald-50/60 border-emerald-100';
+    return 'bg-white hover:bg-slate-50/80 border-slate-100';
+  };
+
+  const renderCoAuthors = (paper) => {
+    const coAuthors = getCoAuthorNames(paper);
+    const externalNotes = String(paper?.external_author_notes || '').trim();
+
+    if (coAuthors.length > 0) {
+      return (
+        <div className="space-y-0.5">
+          {coAuthors.map((name, index) => (
+            <p key={`${name}-${index}`} className="text-xs text-slate-600 break-words">
+              {name}
+            </p>
+          ))}
+        </div>
+      );
+    }
+
+    if (externalNotes) {
+      return <p className="text-xs text-slate-500 italic break-words">{externalNotes}</p>;
+    }
+
+    return <span className="text-xs text-slate-400">—</span>;
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 animate-fadeIn">
+    <div className="w-full min-h-full px-4 sm:px-6 lg:px-8 py-6">
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 text-sm">
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle size={15} className="shrink-0" />
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.95fr_0.85fr] gap-4">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 md:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="w-full space-y-5">
+
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">My Research Portfolio</h1>
-              <p className="text-sm text-slate-500">Track and manage your academic submissions</p>
+              <h1 className="text-xl font-bold text-slate-900">My Submissions</h1>
+              <p className="text-xs text-slate-500 mt-0.5">Track and manage your academic submissions</p>
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={handleRefresh}
+                onClick={() => fetchMyResearch()}
                 disabled={refreshing}
-                className="h-9 px-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 inline-flex items-center gap-2 text-sm"
+                className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 inline-flex items-center gap-1.5 text-xs font-medium transition-colors"
               >
-                <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-                {refreshing ? 'Refreshing...' : 'Refresh'}
+                <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+                {refreshing ? 'Refreshing…' : 'Refresh'}
               </button>
               <button
                 onClick={() => navigate('/student/submit')}
-                className="h-9 px-3 rounded-lg bg-[#1C4D8D] text-white text-sm font-semibold hover:bg-[#163d70] inline-flex items-center gap-2"
+                className="h-8 px-3 rounded-lg bg-[#3674B5] text-white text-xs font-semibold hover:bg-[#2d6299] inline-flex items-center gap-1.5 transition-colors"
               >
-                <Plus size={14} />
-                Submit New Research
+                <Plus size={13} />
+                New Submission
               </button>
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 lg:grid-cols-5 gap-2">
-            <div className="rounded-lg border border-slate-200 px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-lg font-bold text-slate-900">{summary.total}</p>
-                  <p className="text-xs text-slate-500">Total</p>
-                </div>
-                {sparkline('stroke-slate-500')}
+          {/* Summary stat pills */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 flex items-center gap-2.5">
+              <span className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                <BookOpen size={15} className="text-slate-600" />
+              </span>
+              <div>
+                <p className="text-lg font-bold leading-none text-slate-900">{summary.total}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Total</p>
               </div>
             </div>
-            <div className="rounded-lg border border-slate-200 px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-lg font-bold text-slate-900">{summary.pending}</p>
-                  <p className="text-xs text-slate-500">Pending</p>
-                </div>
-                {sparkline('stroke-amber-500')}
+            <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 flex items-center gap-2.5">
+              <span className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                <Activity size={15} className="text-amber-600" />
+              </span>
+              <div>
+                <p className="text-lg font-bold leading-none text-amber-800">{summary.pending}</p>
+                <p className="text-[11px] text-amber-700 mt-0.5">Pending</p>
               </div>
             </div>
-            <div className="rounded-lg border border-slate-200 px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-lg font-bold text-emerald-700">{summary.published}</p>
-                  <p className="text-xs text-slate-500">Published</p>
-                </div>
-                {sparkline('stroke-emerald-700')}
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 flex items-center gap-2.5">
+              <span className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                <TrendingUp size={15} className="text-emerald-600" />
+              </span>
+              <div>
+                <p className="text-lg font-bold leading-none text-emerald-800">{summary.published}</p>
+                <p className="text-[11px] text-emerald-700 mt-0.5">Published</p>
               </div>
             </div>
-            <div className="rounded-lg border border-slate-200 px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-lg font-bold text-amber-700">{summary.needsAction}</p>
-                  <p className="text-xs text-slate-500">Needs Action</p>
-                </div>
-                {sparkline('stroke-amber-600')}
-              </div>
-            </div>
-            <div className="rounded-lg border border-slate-200 px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-lg font-bold text-slate-900">{summary.inReview}</p>
-                  <p className="text-xs text-slate-500">In Review</p>
-                </div>
-                {sparkline('stroke-sky-500')}
+            <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2.5 flex items-center gap-2.5">
+              <span className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                <AlertTriangle size={15} className="text-orange-600" />
+              </span>
+              <div>
+                <p className="text-lg font-bold leading-none text-orange-800">{summary.needsAction}</p>
+                <p className="text-[11px] text-orange-700 mt-0.5">Needs Action</p>
               </div>
             </div>
           </div>
 
-          <div className="mt-3 border-b border-slate-200 flex items-center gap-5">
-            <button
-              onClick={() => setActiveFilter('all')}
-              className={`pb-2 text-sm font-semibold border-b-2 ${activeFilter === 'all' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setActiveFilter('needs_action')}
-              className={`pb-2 text-sm font-semibold border-b-2 ${activeFilter === 'needs_action' ? 'border-amber-600 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            >
-              Needs Action
-            </button>
-            <button
-              onClick={() => setActiveFilter('updates')}
-              className={`pb-2 text-sm font-semibold border-b-2 ${activeFilter === 'updates' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            >
-              Updates
-            </button>
-            <button
-              onClick={() => setActiveFilter('archive')}
-              className={`pb-2 text-sm font-semibold border-b-2 ${activeFilter === 'archive' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            >
-              Archive
-            </button>
-          </div>
-
-          <div className="mt-3 space-y-2">
-            {topActionPaper && activeFilter !== 'archive' ? (
-              <article className="rounded-lg border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50/50 p-3">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
-                      <AlertCircle size={13} /> Urgent: Revision Request
-                    </div>
-                    <h2 className="mt-1 text-[1.35rem] leading-tight font-bold text-slate-900">
-                      {topActionPaper.title || 'Revision Request'}
-                    </h2>
+          {/* Urgent revision banner */}
+          {topActionPaper && activeFilter !== 'archive' && (
+            <div className="rounded-lg border border-l-4 border-amber-200 border-l-amber-500 bg-amber-50/60 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-700">
+                    <AlertCircle size={13} />
+                    {topActionPaper.status === 'rejected' ? 'Submission Rejected' : 'Revision Requested'}
                   </div>
-
+                  <p className="mt-1 text-sm font-semibold text-slate-900 break-words">{topActionPaper.title}</p>
+                </div>
+                {topActionPaper.status === 'revision_required' && (
                   <button
                     onClick={() => navigate('/student/submit', { state: { resubmit: topActionPaper } })}
-                    className="h-9 px-3 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+                    className="shrink-0 h-8 px-3 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 inline-flex items-center gap-1.5 transition-colors"
                   >
-                    Resolve Revision
+                    <Upload size={13} />
+                    Upload Revision
                   </button>
-                </div>
-
-                <button
-                  onClick={() => setExpandedActionNotes((prev) => !prev)}
-                  className="mt-2 text-sm font-medium text-slate-700 inline-flex items-center gap-1"
-                >
-                  {expandedActionNotes ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Adviser&apos;s Notes
-                </button>
-
-                {expandedActionNotes ? (
-                  <div className="mt-1 rounded-lg bg-slate-100 border border-slate-200 px-3 py-2 text-sm font-mono text-slate-700 whitespace-pre-wrap">
-                    {topActionPaper.revision_notes || topActionPaper.rejection_reason || 'No detailed revision notes were provided. Open the paper and contact the assigned reviewer if you need clarification.'}
-                  </div>
-                ) : null}
-
-                <div className="mt-3 overflow-x-auto">
-                  <div className="min-w-[420px] flex items-center gap-2 text-xs text-slate-600">
-                    <span className="inline-flex items-center gap-1"><Check size={12} className="text-emerald-600" /> Adviser Review</span>
-                    <span className="h-px flex-1 bg-slate-300" />
-                    <span className="inline-flex items-center gap-1"><Clock3 size={12} className="text-amber-600" /> Staff Review</span>
-                    <span className="h-px flex-1 bg-slate-300" />
-                    <span>Final Review</span>
-                    <span className="h-px flex-1 bg-slate-300" />
-                    <span>Publish</span>
-                  </div>
-                </div>
-              </article>
-            ) : null}
-
-            {listRows.length === 0 ? (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                No research items found for this filter.
+                )}
               </div>
-            ) : (
-              <>
+              <button
+                onClick={() => setExpandedActionNotes((prev) => !prev)}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-800"
+              >
+                {expandedActionNotes ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                Adviser&apos;s Notes
+              </button>
+              {expandedActionNotes && (
+                <div className="mt-2 rounded-md border border-amber-100 bg-white/70 px-3 py-2.5 text-xs font-mono text-slate-700 whitespace-pre-wrap leading-relaxed">
+                  {topActionPaper.revision_notes ||
+                    topActionPaper.rejection_reason ||
+                    'No detailed notes were provided. Contact your assigned reviewer for clarification.'}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Filter tabs */}
+          <div className="flex items-center gap-1 border-b border-slate-200">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setActiveFilter(f.key)}
+                className={`pb-2.5 px-1 mr-3 text-xs font-semibold border-b-2 transition-colors ${
+                  activeFilter === f.key
+                    ? 'border-[#3674B5] text-[#3674B5]'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {f.label}
+                {f.count > 0 && (
+                  <span
+                    className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      activeFilter === f.key
+                        ? 'bg-[#3674B5]/10 text-[#3674B5]'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {f.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Table */}
+          {papers.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+              <FileText size={28} className="mx-auto text-slate-300" />
+              <h3 className="mt-3 text-sm font-semibold text-slate-700">No submissions yet</h3>
+              <p className="text-xs text-slate-500 mt-1">Start by submitting your first research paper.</p>
+              <button
+                onClick={() => navigate('/student/submit')}
+                className="mt-4 h-8 px-4 rounded-lg bg-[#3674B5] text-white text-xs font-semibold hover:bg-[#2d6299] transition-colors"
+              >
+                Submit Research
+              </button>
+            </div>
+          ) : listRows.length === 0 && !topActionPaper ? (
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
+              <p className="text-sm text-slate-500">No submissions match this filter.</p>
+            </div>
+          ) : (
+            <>
+              {/* Mobile card list */}
+              <div className="space-y-3 md:hidden">
                 {visibleRows.map((paper) => {
                   const stage = getPipelineStage(paper.status);
-                  const statusColor = getProgressColor(paper.status);
                   const isPublished = paper.status === 'approved';
                   const isRejected = paper.status === 'rejected';
                   const isRevision = paper.status === 'revision_required';
-                  const coAuthorCount = getStructuredCoAuthorCount(paper);
-                  const stageNames = ['Adviser', 'Program Chair', 'Editor', 'Admin', 'Publish'];
-                  const currentStageName = isPublished ? 'Published' : stageNames[Math.max(0, Math.min(stage - 1, 4))];
-                  const progressPercent = Math.max(0, Math.min(100, ((stage - 1) / 4) * 100));
+                  const authorName = getAuthorName(paper);
+                  const currentStageName = isPublished
+                    ? 'Published'
+                    : STAGE_LABELS[Math.max(0, Math.min(stage - 1, 4))];
 
                   return (
                     <article
                       key={paper.id}
-                      className={`rounded-lg border p-3 ${
-                        isPublished
-                          ? 'border-emerald-400 bg-emerald-100/60'
-                          : isRejected
-                          ? 'border-rose-200 bg-rose-50/20'
-                          : isRevision
-                          ? 'border-amber-200 bg-amber-50/20'
-                          : 'border-slate-200 bg-white'
-                      }`}
+                      className={`rounded-lg border p-4 transition-colors ${getRowTone(isRevision, isRejected, isPublished)}`}
                     >
-                      <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1.15fr_auto] items-center gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <p className="font-bold text-slate-900 truncate">{paper.title}</p>
-                            {isPublished ? (
-                              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-200 text-emerald-900 border border-emerald-400">
-                                <CheckCircle2 size={11} /> Published
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="text-sm text-slate-500">
-                            {getStatusLabel(paper.status)} • Submitted {formatTimeAgo(paper.submission_date || paper.created_at)}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-slate-900 leading-snug break-words">
+                            {paper.title || 'Untitled'}
                           </p>
-                          {coAuthorCount > 0 ? (
-                            <p className="text-xs text-slate-500 mt-1">
-                              {coAuthorCount} canonical co-author{coAuthorCount > 1 ? 's' : ''}
-                            </p>
-                          ) : null}
                         </div>
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${getStudentStatusTone(paper.status)}`}
+                        >
+                          {getStudentStatusLabel(paper.status)}
+                        </span>
+                      </div>
 
+                      <div className="mt-3 border-t border-slate-200 pt-3 grid grid-cols-1 gap-2 text-xs">
                         <div>
-                          <div className="mb-2 flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-700">
-                              Current Stage: <span className={`${isPublished ? 'text-emerald-900' : isRevision ? 'text-amber-700' : isRejected ? 'text-rose-700' : 'text-sky-700'}`}>{currentStageName}</span>
-                            </span>
-                            <span className="text-slate-500">Step {stage}/5</span>
-                          </div>
-
-                          <div className="relative">
-                            <div className="absolute left-[10%] right-[10%] top-4 h-0.5 bg-slate-200" />
-                            <div className="absolute left-[10%] top-4 h-0.5 bg-emerald-700" style={{ width: `${progressPercent * 0.8}%` }} />
-
-                            <div className="relative grid grid-cols-5 gap-1.5 text-xs text-slate-600">
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
-                                  {stage > 1 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 1 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
-                                </span>
-                                <span className="text-center leading-tight">Adviser</span>
-                              </div>
-
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
-                                  {stage > 2 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 2 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
-                                </span>
-                                <span className="text-center leading-tight">Chair</span>
-                              </div>
-
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
-                                  {stage > 3 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 3 ? <Clock3 size={14} className="text-sky-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
-                                </span>
-                                <span className="text-center leading-tight">Editor</span>
-                              </div>
-
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="h-8 w-8 rounded-full border border-slate-200 bg-white inline-flex items-center justify-center shadow-sm">
-                                  {stage > 4 ? <CheckCircle2 size={15} className="text-emerald-700" /> : stage === 4 ? <Clock3 size={14} className="text-sky-600" /> : <span className={`h-2.5 w-2.5 rounded-full ${statusColor}`} />}
-                                </span>
-                                <span className="text-center leading-tight">Admin</span>
-                              </div>
-
-                              <div className="flex flex-col items-center gap-1">
-                                <span className={`h-8 w-8 rounded-full border inline-flex items-center justify-center shadow-sm ${isPublished ? 'border-emerald-500 bg-emerald-200' : 'border-slate-200 bg-white'}`}>
-                                  {stage >= 5 ? <CheckCircle2 size={15} className="text-emerald-800" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />}
-                                </span>
-                                <span className={`text-center leading-tight ${isPublished ? 'font-semibold text-emerald-900' : ''}`}>Publish</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
-                            <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} className="text-emerald-700" /> Completed</span>
-                            <span className="inline-flex items-center gap-1"><Clock3 size={12} className="text-sky-600" /> Current</span>
-                            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-300" /> Upcoming</span>
-                          </div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Author</p>
+                          <p className="mt-0.5 font-medium text-slate-700 break-words">{authorName}</p>
                         </div>
-
-                        <div className="flex flex-col items-stretch gap-2 sm:items-end">
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/student/my-research/${paper.id}`)}
-                            className="h-9 px-3 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 inline-flex items-center justify-center gap-1.5"
-                          >
-                            <LayoutList size={15} />
-                            Status &amp; reviewer feedback
-                          </button>
-                          <a
-                            href={paper.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="h-9 px-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 inline-flex items-center justify-center"
-                          >
-                            {isPublished ? 'Open Published' : 'View Document'}
-                          </a>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Co-Authors</p>
+                          <div className="mt-0.5">{renderCoAuthors(paper)}</div>
                         </div>
+                      </div>
+
+                      <div className="mt-3 border-t border-slate-200 pt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        <span>
+                          Stage: <span className="font-semibold text-slate-700">{currentStageName}</span>
+                        </span>
+                        <span>
+                          Submitted {formatTimeAgo(paper.submission_date || paper.created_at)}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            isRevision
+                              ? 'bg-amber-400'
+                              : isRejected
+                              ? 'bg-rose-400'
+                              : isPublished
+                              ? 'bg-emerald-500'
+                              : 'bg-[#3674B5]'
+                          }`}
+                          style={{ width: `${Math.max(10, ((stage - 1) / 4) * 100)}%` }}
+                        />
+                      </div>
+
+                      <div className="mt-4 border-t border-slate-200 pt-4 flex items-center justify-between gap-2">
+                        {renderRowActions(paper, isPublished)}
                       </div>
                     </article>
                   );
                 })}
+              </div>
 
-                {listRows.length > PAGE_SIZE ? (
-                  <div ref={loadMoreRef} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-center">
-                    <p className="text-sm text-slate-600">
-                      Showing {visibleRows.length} of {listRows.length} portfolio items
-                    </p>
-                      {canLoadMore ? (
-                        <button
-                          onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
-                          className="mt-3 h-9 px-4 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                        >
-                          Load more submissions
-                      </button>
-                    ) : (
-                      <p className="mt-2 text-xs text-slate-500">All matching submissions are visible.</p>
-                    )}
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-        </section>
+              {/* Desktop table */}
+              <div className="hidden md:block rounded-lg border border-slate-200 bg-white overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1024px] text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className={`${TABLE_HEAD_CELL} min-w-[220px]`}>Title</th>
+                        <th className={`${TABLE_HEAD_CELL} min-w-[140px]`}>Author</th>
+                        <th className={`${TABLE_HEAD_CELL} min-w-[160px]`}>Co-Authors</th>
+                        <th className={TABLE_HEAD_CELL}>Status</th>
+                        <th className={TABLE_HEAD_CELL}>Stage</th>
+                        <th className={TABLE_HEAD_CELL}>Submitted</th>
+                        <th className={`${TABLE_HEAD_CELL} text-right`}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleRows.map((paper) => {
+                        const stage = getPipelineStage(paper.status);
+                        const isPublished = paper.status === 'approved';
+                        const isRejected = paper.status === 'rejected';
+                        const isRevision = paper.status === 'revision_required';
+                        const authorName = getAuthorName(paper);
+                        const currentStageName = isPublished
+                          ? 'Published'
+                          : STAGE_LABELS[Math.max(0, Math.min(stage - 1, 4))];
 
-        <aside className="h-fit xl:sticky xl:top-6 rounded-lg border border-slate-200 bg-white p-4">
-          <h3 className="text-xl font-semibold text-slate-900">Snapshot</h3>
-          <p className="text-sm text-slate-600 mt-1">My Paper Status</p>
+                        return (
+                          <tr
+                            key={paper.id}
+                            className={`group border-b border-slate-200 transition-colors ${getRowTone(isRevision, isRejected, isPublished)}`}
+                          >
+                            <td className={TABLE_BODY_CELL}>
+                              <div className="flex items-start gap-2 min-w-0">
+                                {isRevision && (
+                                  <span className="mt-1.5 shrink-0 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                )}
+                                {isRejected && (
+                                  <span className="mt-1.5 shrink-0 h-1.5 w-1.5 rounded-full bg-rose-500" />
+                                )}
+                                <div className="min-w-0">
+                                  <p className="font-medium text-slate-900 leading-snug break-words">
+                                    {paper.title || 'Untitled'}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
 
-          <div className="mt-4 h-3 rounded-full bg-slate-200 overflow-hidden flex">
-            <div className="bg-amber-500" style={{ width: `${summary.total ? Math.round((summary.pending / summary.total) * 100) : 0}%` }} />
-            <div className="bg-emerald-700" style={{ width: `${summary.total ? Math.round((summary.published / summary.total) * 100) : 0}%` }} />
-            <div className="bg-slate-400" style={{ width: `${summary.total ? Math.round((summary.inReview / summary.total) * 100) : 0}%` }} />
-            <div className="bg-rose-400" style={{ width: `${summary.total ? Math.round((summary.needsAction / summary.total) * 100) : 0}%` }} />
-          </div>
+                            <td className={TABLE_BODY_CELL}>
+                              <p className="text-xs font-medium text-slate-700 break-words">{authorName}</p>
+                            </td>
 
-          <div className="mt-3 space-y-2 text-sm">
-            <div className="flex items-center justify-between text-slate-700"><span>Pending Revision</span><span className="font-semibold">{statusCounts.revision_required || 0}</span></div>
-            <div className="flex items-center justify-between text-slate-700"><span>Active Reviews</span><span className="font-semibold">{summary.pending + summary.inReview}</span></div>
-            <div className="flex items-center justify-between text-slate-700"><span>Published</span><span className="font-semibold">{summary.published}</span></div>
-            <div className="flex items-center justify-between text-slate-700"><span>Needs Action</span><span className="font-semibold">{summary.needsAction}</span></div>
-          </div>
-        </aside>
+                            <td className={TABLE_BODY_CELL}>
+                              {renderCoAuthors(paper)}
+                            </td>
+
+                            <td className={TABLE_BODY_CELL}>
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${getStudentStatusTone(paper.status)}`}
+                              >
+                                {getStudentStatusLabel(paper.status)}
+                              </span>
+                            </td>
+
+                            <td className={TABLE_BODY_CELL}>
+                              <div className="min-w-[140px] space-y-1.5">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span
+                                    className={`text-xs font-semibold ${
+                                      isPublished
+                                        ? 'text-emerald-700'
+                                        : isRevision
+                                        ? 'text-amber-700'
+                                        : isRejected
+                                        ? 'text-rose-600'
+                                        : 'text-slate-700'
+                                    }`}
+                                  >
+                                    {currentStageName}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">{stage}/5</span>
+                                </div>
+                                <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      isRevision
+                                        ? 'bg-amber-400'
+                                        : isRejected
+                                        ? 'bg-rose-400'
+                                        : isPublished
+                                        ? 'bg-emerald-500'
+                                        : 'bg-[#3674B5]'
+                                    }`}
+                                    style={{ width: `${Math.max(10, ((stage - 1) / 4) * 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className={TABLE_BODY_CELL}>
+                              <span className="text-xs text-slate-500 whitespace-nowrap">
+                                {formatTimeAgo(paper.submission_date || paper.created_at)}
+                              </span>
+                            </td>
+
+                            <td className={TABLE_BODY_CELL}>
+                              <div className="flex items-center justify-end">
+                                {renderRowActions(paper, isPublished)}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {listRows.length > PAGE_SIZE && (
+                <LoadMoreFooter
+                  visibleCount={visibleRows.length}
+                  totalCount={listRows.length}
+                  canLoadMore={canLoadMore}
+                  onLoadMore={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                  label="submissions"
+                  step={PAGE_SIZE}
+                />
+              )}
+            </>
+          )}
       </div>
-
-      {papers.length === 0 && (
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
-          <FileText size={24} className="mx-auto text-slate-400" />
-          <h3 className="mt-2 text-lg font-semibold text-slate-900">No research papers yet</h3>
-          <p className="text-sm text-slate-500 mt-1">Start by submitting your first paper.</p>
-          <button
-            onClick={() => navigate('/student/submit')}
-            className="mt-3 h-9 px-3 rounded-lg bg-[#1C4D8D] text-white text-sm font-semibold hover:bg-[#163d70]"
-          >
-            Submit New Research
-          </button>
-        </div>
-      )}
     </div>
   );
 };

@@ -10,7 +10,6 @@ import {
   LogOut,
   ChevronLeft,
   Users,
-  FileText,
   Bell,
   User,
   Shield,
@@ -33,7 +32,7 @@ const MobileNavItem = ({ to, onClick, icon: Icon, label, badge, badgeWarning, ac
     collapsed ? 'justify-center px-3 py-3' : 'gap-3 px-4 py-3'
   } ${
     active
-      ? 'border-[#1C4D8D]/15 bg-[#1C4D8D]/8 text-[#1C4D8D] shadow-sm'
+      ? 'border-[#3674B5]/15 bg-[#3674B5]/8 text-[#3674B5] shadow-sm'
       : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/80 hover:text-slate-900'
   }`;
 
@@ -44,7 +43,7 @@ const MobileNavItem = ({ to, onClick, icon: Icon, label, badge, badgeWarning, ac
       {!collapsed && badge ? (
         <span
           className={`inline-flex min-w-6 items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${
-            badgeWarning ? 'bg-rose-500' : 'bg-[#1C4D8D]'
+            badgeWarning ? 'bg-rose-500' : 'bg-[#3674B5]'
           }`}
           title={badgeWarning ? 'Notification fetch failed' : undefined}
         >
@@ -166,35 +165,34 @@ const Sidebar = () => {
       admin: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { name: 'User Management', icon: UserCog, path: '/admin/users' },
-        { name: 'Research Papers', icon: FileEdit, path: '/admin/papers', badge: stats.adminPending || null },
+        { name: 'Final Approval Queue', icon: FileEdit, path: '/admin/papers', badge: stats.adminPending || null },
         { name: 'Analytics', icon: PieChart, path: '/admin/analytics' },
       ],
       staff: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-        { name: 'Editorial Workspace', icon: FileCheck, path: '/staff/review', badge: stats.staffPending || null },
+        { name: 'Editorial Review Queue', icon: FileCheck, path: '/staff/review', badge: stats.staffPending || null },
         { name: 'Repository', icon: BookOpen, path: '/staff/repository' },
       ],
       faculty: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-        { name: 'Review Submissions', icon: FileCheck, path: '/faculty/review', badge: stats.facultyPending || null },
+        { name: 'Adviser Review Queue', icon: FileCheck, path: '/faculty/review', badge: stats.facultyPending || null },
         { name: 'Repository', icon: Search, path: '/faculty/repository' },
       ],
       dean: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-        { name: 'Review Submissions', icon: FileCheck, path: '/dean/review', badge: stats.deanChairPending || null },
+        { name: 'Dean Review Queue', icon: FileCheck, path: '/dean/review', badge: stats.deanChairPending || null },
         { name: 'Activity Monitor', icon: Eye, path: '/dean/activity-monitor' },
         { name: 'Audit Logs', icon: Shield, path: '/dean/audit-logs' },
         { name: 'Repository', icon: Search, path: '/dean/repository' },
       ],
       program_chair: [
         { name: 'Program Analytics', icon: LayoutDashboard, path: '/program-chair/analytics' },
-        { name: 'Review Submissions', icon: FileCheck, path: '/program-chair/review', badge: stats.deanChairPending || null },
+        { name: 'Chair Review Queue', icon: FileCheck, path: '/program-chair/review', badge: stats.deanChairPending || null },
         { name: 'Repository', icon: Search, path: '/program-chair/repository' },
       ],
       student: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-        { name: 'My Research', icon: ListChecks, path: '/student/my-research' },
-        { name: 'Portfolio', icon: FileText, path: '/student/portfolio' },
+        { name: 'My Submissions', icon: ListChecks, path: '/student/my-research' },
         { name: 'Submit Research', icon: PlusCircle, path: '/student/submit' },
         { name: 'Co-author Invites', icon: UserPlus, path: '/student/co-author-invitations' },
         { name: 'Repository', icon: Search, path: '/student/browse' },
@@ -259,7 +257,7 @@ const Sidebar = () => {
             <div className="flex items-center gap-3">
               <NucleusLogoMark size={44} className="shadow-md" ringClassName="ring-1 ring-slate-200/70" />
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#1C4D8D]">NUCLEUS</p>
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#3674B5]">NUCLEUS</p>
                 <p className="text-xs text-slate-500">Research portal</p>
               </div>
             </div>
@@ -291,7 +289,7 @@ const Sidebar = () => {
           <div className="border-b border-slate-200 px-5 py-4">
             <p className="truncate text-sm font-semibold text-slate-900">{user?.fullName || 'User'}</p>
             <p className="truncate text-xs text-slate-500">{user?.email || ''}</p>
-            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#1C4D8D]/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#1C4D8D]">
+            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#3674B5]/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#3674B5]">
               <Shield size={12} />
               {roleLabel}
             </div>

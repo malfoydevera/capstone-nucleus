@@ -9,18 +9,53 @@ function isPublicPaperStatus(status) {
   return PUBLIC_STATUSES.has(status);
 }
 
+function sameId(a, b) {
+  return String(a || '') === String(b || '');
+}
+
+/** Dean / chair oversight when paper and user are org-scoped (skip when user has no org set). */
+function departmentOrProgramAlignedForOversight(user, paper) {
+  if (!user?.department_id && !user?.department && !user?.program_id) return true;
+  if (user.program_id && paper.program_id) return sameId(user.program_id, paper.program_id);
+  if (user.department_id && paper.department_id) return sameId(user.department_id, paper.department_id);
+  if (user.department && paper.department) {
+    return String(user.department).trim() === String(paper.department).trim();
+  }
+  if (user.program_id && !paper.program_id && user.department_id && paper.department_id) {
+    return sameId(user.department_id, paper.department_id);
+  }
+  return false;
+}
+
+function canDownloadPaper(user) {
+  return user?.role === 'admin';
+}
+
 function canAccessPaper(user, paper) {
   if (!user || !paper) return false;
 
   if (isPublicPaperStatus(paper.status)) return true;
-  if (paper.author_id === user.id) return true;
-  if (paper.faculty_id === user.id) return true;
-  if (paper.dean_chair_id === user.id) return true;
+  if (sameId(paper.author_id, user.id)) return true;
+  if (sameId(paper.faculty_id, user.id)) return true;
+  if (sameId(paper.dean_chair_id, user.id)) return true;
   if (['admin', 'staff'].includes(user.role)) return true;
+
+  // Deans receive escalation alerts on program-chair queue papers where dean_chair_id is the chair, not the dean.
+  if (user.role === 'dean' && paper.status === 'pending_program_chair') return true;
+
+  if (user.role === 'dean') {
+    const deanOversight = new Set(['pending_dean', 'pending_faculty', 'pending_editor', 'pending_admin', 'revision_required']);
+    if (deanOversight.has(paper.status) && departmentOrProgramAlignedForOversight(user, paper)) return true;
+  }
+
+  if (user.role === 'program_chair') {
+    const chairOversight = new Set(['pending_program_chair', 'pending_dean', 'pending_faculty', 'pending_editor', 'pending_admin', 'revision_required']);
+    if (chairOversight.has(paper.status) && departmentOrProgramAlignedForOversight(user, paper)) return true;
+  }
 
   // If the paper was fetched with its research_authors relation, check co-authorship
   if (Array.isArray(paper.research_authors)) {
-    if (paper.research_authors.some((a) => a.user_id === user.id)) return true;
+    if (paper.research_authors.some((a) => sameId(a.user_id, user.id))) return true;
   }
 
   return false;
@@ -129,6 +164,7 @@ async function resolvePaperFileUrl(paper) {
 
 module.exports = {
   canAccessPaper,
+  canDownloadPaper,
   createSignedUrl,
   extractStoragePathFromUrl,
   isPublicPaperStatus,

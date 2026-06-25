@@ -40,18 +40,28 @@ exports.getNotificationsDebug = async (req, res) => {
 
 exports.getMyNotifications = async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from('notifications')
-      .select('id, user_id, research_id, type, title, message, is_read, created_at')
+      .select('id, user_id, research_id, type, title, message, is_read, created_at', { count: 'exact' })
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .range(offset, offset + limit - 1);
 
     if (error) throw error;
 
-    res.json({ notifications: data || [] });
+    const rows = data || [];
+    const total = count ?? rows.length;
+
+    res.json({
+      notifications: rows,
+      total,
+      limit,
+      offset,
+      hasMore: offset + rows.length < total,
+    });
   } catch (error) {
     console.error('Get notifications error:', error);
     res.status(500).json({ error: 'Failed to fetch notifications' });
@@ -129,5 +139,21 @@ exports.deleteNotification = async (req, res) => {
   } catch (error) {
     console.error('Delete notification error:', error);
     res.status(500).json({ error: 'Failed to delete notification' });
+  }
+};
+
+exports.deleteAllNotifications = async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', req.user.id);
+
+    if (error) throw error;
+
+    res.json({ message: 'All notifications cleared' });
+  } catch (error) {
+    console.error('Delete all notifications error:', error);
+    res.status(500).json({ error: 'Failed to clear notifications' });
   }
 };

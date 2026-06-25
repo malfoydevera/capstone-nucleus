@@ -14,6 +14,7 @@ jest.mock('../../utils/cache', () => ({
 }));
 jest.mock('../../utils/fileAccess', () => ({
   canAccessPaper: jest.fn(() => true),
+  canDownloadPaper: jest.fn(() => false),
   extractStoragePathFromUrl: jest.fn(),
   isPublicPaperStatus: jest.fn(() => false),
   resolvePaperFileUrl: jest.fn(async () => 'https://example.com/paper.pdf'),
@@ -114,7 +115,7 @@ describe('submission getResearchById', () => {
 
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
-    expect(payload.data.paper.file_url).toBe('https://example.com/paper.pdf');
+    expect(payload.data.paper.file_url).toBeNull();
     expect(payload.data.paper.structured_authors).toHaveLength(2);
     expect(payload.data.paper.structured_authors[0].author.full_name).toBe('Alice Author');
     expect(payload.data.paper.structured_authors[1].author.full_name).toBe('Bob Contributor');

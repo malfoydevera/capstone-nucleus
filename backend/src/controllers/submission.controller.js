@@ -6,16 +6,18 @@ const supabase = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 const {
   canAccessPaper,
+  canDownloadPaper,
   extractStoragePathFromUrl,
   isPublicPaperStatus,
   resolvePaperFileUrl,
 } = require('../utils/fileAccess');
 const { sendSuccess, sendError } = require('../utils/response');
-const { getOrSet, TTL } = require('../utils/cache'); // P-001
+const { getOrSet, TTL, invalidatePrefix } = require('../utils/cache'); // P-001
 const { attachFullName, buildFullName } = require('../utils/name');
 const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/workflowEmail');
 const { getSystemPolicy, isFileAllowedByPolicy } = require('../utils/systemPolicy');
 const { notifyUser, notifyUsers, notifyCoAuthors } = require('../utils/notify');
+const { parseListPagination } = require('../utils/pagination');
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -412,26 +414,26 @@ exports.submitResearch = async (req, res) => {
     const authorName = buildFullName(author) || author?.email;
 
     // Notify the submitting author about the successful upload / resubmission
-    try {
-      if (!id) {
-        await notifyUser({
-          userId,
-          researchId: research.id,
-          type: 'paper_uploaded',
-          title: 'Paper Uploaded Successfully',
-          message: `Your paper "${title}" has been uploaded and is now pending review.`,
-        });
-      } else {
-        await notifyUser({
-          userId,
-          researchId: research.id,
-          type: 'paper_resubmitted',
-          title: 'Revision Submitted Successfully',
-          message: `Your revision for "${title}" has been submitted and routed to the next reviewer.`,
-        });
-      }
-    } catch (notifyErr) {
-      console.error('[submitResearch] author self-notification failed:', notifyErr.message);
+    if (!id) {
+      void notifyUser({
+        userId,
+        researchId: research.id,
+        type: 'paper_uploaded',
+        title: 'Paper Uploaded Successfully',
+        message: `Your paper "${title}" has been uploaded and is now pending review.`,
+      }).catch((notifyErr) => {
+        console.error('[submitResearch] author self-notification failed:', notifyErr.message);
+      });
+    } else {
+      void notifyUser({
+        userId,
+        researchId: research.id,
+        type: 'paper_resubmitted',
+        title: 'Revision Submitted Successfully',
+        message: `Your revision for "${title}" has been submitted and routed to the next reviewer.`,
+      }).catch((notifyErr) => {
+        console.error('[submitResearch] author self-notification failed:', notifyErr.message);
+      });
     }
 
     // Notify newly-added co-authors (only on first submission or when co-author list changes)
@@ -445,7 +447,9 @@ exports.submitResearch = async (req, res) => {
           message: `You have been added as a co-author of the paper "${title}".`,
           sender_user_id: userId,
         }));
-        await notifyUsers(coAuthorNotifications);
+        void notifyUsers(coAuthorNotifications).catch((notifyErr) => {
+          console.error('[submitResearch] co-author notification failed:', notifyErr.message);
+        });
       } catch (notifyErr) {
         console.error('[submitResearch] co-author notification failed:', notifyErr.message);
       }
@@ -454,13 +458,15 @@ exports.submitResearch = async (req, res) => {
     // On revision resubmit, notify existing accepted co-authors about the resubmission
     if (id && normalizedCoAuthorIds.length === 0) {
       try {
-        await notifyCoAuthors({
+        void notifyCoAuthors({
           researchId: research.id,
           type: 'paper_resubmitted',
           title: 'Co-authored Paper Revision Submitted',
           message: `A revision has been submitted for the paper "${title}" that you co-authored.`,
           senderUserId: userId,
           excludeUserId: userId,
+        }).catch((notifyErr) => {
+          console.error('[submitResearch] co-author resubmit notification failed:', notifyErr.message);
         });
       } catch (notifyErr) {
         console.error('[submitResearch] co-author resubmit notification failed:', notifyErr.message);
@@ -468,13 +474,15 @@ exports.submitResearch = async (req, res) => {
     }
 
     if (!id && facultyId) {
-      await notifyUser({
+      void notifyUser({
         userId: facultyId,
         researchId: research.id,
         type: 'submission',
         title: 'New Research Submission',
         message: `${authorName} submitted "${title}" for your review`,
         senderUserId: userId,
+      }).catch((notifyErr) => {
+        console.error('[submitResearch] faculty notification failed:', notifyErr.message);
       });
 
       try {
@@ -483,7 +491,9 @@ exports.submitResearch = async (req, res) => {
           .select('id, first_name, middle_name, last_name, email')
           .eq('id', facultyId)
           .single();
-        await sendReviewAssignmentEmail({ user: facultyUser, paperTitle: title });
+        void sendReviewAssignmentEmail({ user: facultyUser, paperTitle: title }).catch((emailErr) => {
+          console.error('Faculty assignment email error:', emailErr.message);
+        });
       } catch (emailErr) {
         console.error('Faculty assignment email error:', emailErr.message);
       }
@@ -492,7 +502,7 @@ exports.submitResearch = async (req, res) => {
     if (id || !facultyId) {
       const { data: staffUsers } = await supabase.from('users').select('id').eq('role', 'staff');
       if (staffUsers?.length > 0) {
-        await notifyUsers(
+        void notifyUsers(
           staffUsers.map((staff) => ({
             user_id: staff.id,
             research_id: research.id,
@@ -501,7 +511,9 @@ exports.submitResearch = async (req, res) => {
             message: `${authorName} ${id ? 'resubmitted' : 'submitted'} "${title}" for review`,
             sender_user_id: userId,
           }))
-        );
+        ).catch((notifyErr) => {
+          console.error('[submitResearch] staff notification failed:', notifyErr.message);
+        });
 
         try {
           const { data: staffRecipients } = await supabase
@@ -509,9 +521,15 @@ exports.submitResearch = async (req, res) => {
             .select('id, first_name, middle_name, last_name, email')
             .eq('role', 'staff');
           if (staffRecipients?.length) {
-            await Promise.all(
+            void Promise.allSettled(
               staffRecipients.map((staff) => sendReviewAssignmentEmail({ user: staff, paperTitle: title }))
-            );
+            ).then((results) => {
+              results.forEach((result) => {
+                if (result.status === 'rejected') {
+                  console.error('Staff assignment email error:', result.reason?.message || result.reason);
+                }
+              });
+            });
           }
         } catch (emailErr) {
           console.error('Staff assignment email error:', emailErr.message);
@@ -519,13 +537,15 @@ exports.submitResearch = async (req, res) => {
       }
     }
 
-    await sendPaperStatusEmail({
+    void sendPaperStatusEmail({
       user: author,
       paperTitle: title,
       statusLabel: statusAfterSubmit,
       message: id
         ? 'Your revision has been submitted successfully and routed to the next reviewer.'
         : 'Your submission has been received and entered the review workflow.',
+    }).catch((emailErr) => {
+      console.error('[submitResearch] status email failed:', emailErr.message);
     });
 
     return sendSuccess(res, {
@@ -548,6 +568,7 @@ exports.submitResearch = async (req, res) => {
 exports.getMyResearch = async (req, res) => {
   try {
     const userId = req.user.id;
+    const { page, limit, from, to } = parseListPagination(req.query);
 
     const PAPER_SELECT = `
       *,
@@ -601,16 +622,19 @@ exports.getMyResearch = async (req, res) => {
       ...coAuthoredPapers.filter((p) => !seen.has(p.id)).map((p) => ({ ...p, is_coauthored: true })),
     ];
 
+    const total = mergedPapers.length;
+    const pageSlice = mergedPapers.slice(from, to + 1);
+
     const papersWithUrls = await Promise.all(
-      mergedPapers.map(async (paper) => ({
+      pageSlice.map(async (paper) => ({
         ...paper,
         external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
-        file_url: await resolvePaperFileUrl(paper),
+        file_url: canDownloadPaper(req.user) ? await resolvePaperFileUrl(paper) : null,
         structured_authors: normalizeResearchAuthors(paper.research_authors),
       }))
     );
 
-    return sendSuccess(res, { data: { papers: papersWithUrls } });
+    return sendSuccess(res, { data: { papers: papersWithUrls, total, page, limit } });
   } catch (error) {
     console.error('Get my research error:', error);
     return sendError(res, { status: 500, code: 'GET_MY_RESEARCH_FAILED', message: 'Server error' });
@@ -718,52 +742,202 @@ exports.getProfileResearchData = async (req, res) => {
   }
 };
 
+const PUBLISHED_PAPER_SELECT = `
+  *, author:users!author_id (id, first_name, middle_name, last_name, email),
+  research_authors!research_authors_research_id_fkey (
+    user_id, is_primary, author_order,
+    author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
+  )
+`;
+
+const parsePublishedPagination = (query = {}) => {
+  const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
+  const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit, 10) || 20));
+  return { page, limit, from: (page - 1) * limit, to: (page - 1) * limit + limit - 1 };
+};
+
+const sanitizeSearchTerm = (value) => String(value || '').replace(/[,%()]/g, ' ').trim();
+
+const applyPublishedSort = (query, sortBy) => {
+  switch (sortBy) {
+    case 'oldest':
+      return query.order('created_at', { ascending: true });
+    case 'title':
+      return query.order('title', { ascending: true });
+    case 'newest':
+    default:
+      return query.order('updated_at', { ascending: false });
+  }
+};
+
+const transformPublishedPaper = async (paper, user) => {
+  const structuredAuthors = normalizeResearchAuthors(paper.research_authors);
+  const includeFileUrl = user?.role === 'admin';
+  return {
+    ...paper,
+    users: attachFullName(paper.author),
+    structured_authors: structuredAuthors,
+    external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
+    file_url: includeFileUrl ? await resolvePaperFileUrl(paper) : null,
+  };
+};
+
+const buildPublishedFacets = async (baseFilters = {}) => {
+  let facetQuery = supabase
+    .from('research_papers')
+    .select('category')
+    .in('status', ['approved', 'published'])
+    .is('deleted_at', null);
+
+  if (baseFilters.category) facetQuery = facetQuery.eq('category', baseFilters.category);
+  if (baseFilters.themeCategories?.length) facetQuery = facetQuery.in('category', baseFilters.themeCategories);
+
+  const { data: rows, error } = await facetQuery;
+  if (error) throw error;
+
+  const counts = new Map();
+  (rows || []).forEach((row) => {
+    if (!row.category) return;
+    counts.set(row.category, (counts.get(row.category) || 0) + 1);
+  });
+
+  const categoryLookup = await getCategoryLookup();
+  return {
+    categories: Array.from(counts.entries()).map(([id, count]) => ({
+      id,
+      name: categoryLookup.get(id) || id,
+      count,
+    })),
+  };
+};
+
+const resolveAuthorPaperIds = async (authorTerm) => {
+  const term = sanitizeSearchTerm(authorTerm);
+  if (!term) return null;
+
+  const { data, error } = await supabase.rpc('published_paper_ids_by_author', { author_term: term });
+  if (error) {
+    if (String(error.message || '').includes('published_paper_ids_by_author')) {
+      return null;
+    }
+    throw error;
+  }
+  return (data || []).map((row) => (typeof row === 'string' ? row : row?.id)).filter(Boolean);
+};
+
 exports.getPublishedResearch = async (req, res) => {
   try {
-    const { category, search, year, author } = req.query;
-    let query = supabase.from('research_papers').select(`
-      *, author:users!author_id (id, first_name, middle_name, last_name, email),
-      research_authors!research_authors_research_id_fkey (
-        user_id, is_primary, author_order,
-        author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
-      )
-    `).in('status', ['approved', 'published']).is('deleted_at', null).order('updated_at', { ascending: false });
+    const {
+      category,
+      search,
+      q,
+      year,
+      author,
+      themes,
+      sort = 'newest',
+    } = req.query;
+    const { page, limit, from, to } = parsePublishedPagination(req.query);
+    const textQuery = sanitizeSearchTerm(q || search);
+    const themeCategories = String(themes || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
 
-    if (category) query = query.eq('category', category);
-    if (search) query = query.or(`title.ilike.%${search}%,abstract.ilike.%${search}%`);
-    if (year) {
-      const yStart = `${year}-01-01`;
-      const yEnd = `${year}-12-31`;
-      query = query.or(
-        `and(status.eq.published,published_date.gte.${yStart},published_date.lte.${yEnd}),and(status.eq.approved,created_at.gte.${yStart},created_at.lte.${yEnd})`
+    const cacheKey = `published:${JSON.stringify({ category, textQuery, year, author, themes, sort, page, limit })}`;
+    const cachedPayload = await getOrSet(cacheKey, TTL.PUBLISHED, async () => {
+      let query = supabase
+        .from('research_papers')
+        .select(PUBLISHED_PAPER_SELECT, { count: 'exact' })
+        .in('status', ['approved', 'published'])
+        .is('deleted_at', null);
+
+      if (category) query = query.eq('category', category);
+      if (themeCategories.length > 0) query = query.in('category', themeCategories);
+
+      if (year) {
+        const yStart = `${year}-01-01`;
+        const yEnd = `${year}-12-31`;
+        query = query.or(
+          `and(status.eq.published,published_date.gte.${yStart},published_date.lte.${yEnd}),and(status.eq.approved,created_at.gte.${yStart},created_at.lte.${yEnd})`
+        );
+      }
+
+      const applyTextFilter = (builder, useFts) => {
+        if (!textQuery) return builder;
+        if (useFts) {
+          return builder.textSearch('search_vector', textQuery, {
+            type: 'websearch',
+            config: 'english',
+          });
+        }
+        const safe = textQuery.replace(/'/g, "''");
+        return builder.or(`title.ilike.%${safe}%,abstract.ilike.%${safe}%`);
+      };
+
+      const authorPaperIds = author ? await resolveAuthorPaperIds(author) : null;
+      if (author && Array.isArray(authorPaperIds)) {
+        if (authorPaperIds.length === 0) {
+          return { papers: [], total: 0, page, limit, facets: await buildPublishedFacets({ category, themeCategories }) };
+        }
+        query = query.in('id', authorPaperIds);
+      }
+
+      query = applyPublishedSort(applyTextFilter(query, true), sort).range(from, to);
+
+      let { data: papers, error, count } = await query;
+      if (error && textQuery && String(error.message || '').includes('search_vector')) {
+        let fallbackQuery = supabase
+          .from('research_papers')
+          .select(PUBLISHED_PAPER_SELECT, { count: 'exact' })
+          .in('status', ['approved', 'published'])
+          .is('deleted_at', null);
+        if (category) fallbackQuery = fallbackQuery.eq('category', category);
+        if (themeCategories.length > 0) fallbackQuery = fallbackQuery.in('category', themeCategories);
+        if (year) {
+          const yStart = `${year}-01-01`;
+          const yEnd = `${year}-12-31`;
+          fallbackQuery = fallbackQuery.or(
+            `and(status.eq.published,published_date.gte.${yStart},published_date.lte.${yEnd}),and(status.eq.approved,created_at.gte.${yStart},created_at.lte.${yEnd})`
+          );
+        }
+        if (author && Array.isArray(authorPaperIds) && authorPaperIds.length > 0) {
+          fallbackQuery = fallbackQuery.in('id', authorPaperIds);
+        }
+        fallbackQuery = applyPublishedSort(applyTextFilter(fallbackQuery, false), sort).range(from, to);
+        ({ data: papers, error, count } = await fallbackQuery);
+      }
+      if (error) throw error;
+
+      const transformed = await Promise.all(
+        (papers || []).map((paper) => transformPublishedPaper(paper, req.user))
       );
-    }
 
-    const { data: papers, error } = await query;
-    if (error) throw error;
-
-    let transformed = await Promise.all((papers || []).map(async p => {
-      const structuredAuthors = normalizeResearchAuthors(p.research_authors);
+      if (author && authorPaperIds === null) {
+        const norm = author.toLowerCase();
+        const filtered = transformed.filter((paper) =>
+          paper.structured_authors?.some((entry) =>
+            buildFullName(entry?.author).toLowerCase().includes(norm)
+          )
+        );
+        return {
+          papers: filtered,
+          total: filtered.length,
+          page,
+          limit,
+          facets: await buildPublishedFacets({ category, themeCategories }),
+        };
+      }
 
       return {
-        ...p,
-        users: attachFullName(p.author),
-        structured_authors: structuredAuthors,
-        external_author_notes: resolveExternalAuthorNotes(p.external_author_notes),
-        file_url: await resolvePaperFileUrl(p),
+        papers: transformed,
+        total: count ?? transformed.length,
+        page,
+        limit,
+        facets: await buildPublishedFacets({ category, themeCategories }),
       };
-    }));
+    });
 
-    if (author) {
-      const norm = author.toLowerCase();
-      transformed = transformed.filter(p =>
-        p.structured_authors?.some((entry) => {
-          const normalizedAuthorName = buildFullName(entry?.author).toLowerCase();
-          return normalizedAuthorName.includes(norm);
-        })
-      );
-    }
-    return sendSuccess(res, { data: { papers: transformed } });
+    return sendSuccess(res, { data: cachedPayload });
   } catch (error) {
     console.error('Get published research error:', error);
     return sendError(res, { status: 500, code: 'GET_PUBLISHED_RESEARCH_FAILED', message: 'Server error' });
@@ -894,7 +1068,7 @@ exports.getResearchById = async (req, res) => {
           users: attachFullName(paper.author),
           structured_authors: normalizeResearchAuthors(paper.research_authors),
           external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
-          file_url: await resolvePaperFileUrl(paper),
+          file_url: canDownloadPaper(req.user) ? await resolvePaperFileUrl(paper) : null,
         },
         workflowHistory,
       },
@@ -919,7 +1093,9 @@ exports.getResearchFile = async (req, res) => {
     if (!fileUrl) return sendError(res, { status: 400, code: 'FILE_UNAVAILABLE', message: 'Paper file is not available' });
     return sendSuccess(res, {
       data: {
-        fileUrl, isSigned: !isPublicPaperStatus(paper.status),
+        fileUrl,
+        isSigned: !isPublicPaperStatus(paper.status),
+        canDownload: canDownloadPaper(req.user),
         source: paper.file_storage_path ? 'storage_path' : 'file_url',
         storagePath: paper.file_storage_path || extractStoragePathFromUrl(paper.file_url),
       },

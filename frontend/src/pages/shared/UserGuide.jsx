@@ -11,7 +11,7 @@ const UserGuide = () => {
     <div className="page-shell page-stack animate-fadeIn">
       <section className="page-hero">
         <div className="page-hero__copy">
-          <p className="inline-flex w-fit items-center gap-2 rounded-full bg-[#1C4D8D]/10 px-3 py-1 text-sm font-semibold text-[#1C4D8D]">
+          <p className="inline-flex w-fit items-center gap-2 rounded-full bg-[#3674B5]/10 px-3 py-1 text-sm font-semibold text-[#3674B5]">
             <BookOpen size={15} />
             User Guide
           </p>
@@ -24,7 +24,7 @@ const UserGuide = () => {
 
       <section className="surface-card p-5 md:p-6">
         <div className="flex items-start gap-3">
-          <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1C4D8D]/10 text-[#1C4D8D]">
+          <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-[#3674B5]/10 text-[#3674B5]">
             <Compass size={20} />
           </div>
           <div>
@@ -39,7 +39,7 @@ const UserGuide = () => {
             <ol className="mt-3 space-y-3">
               {activeGuidance.dashboardSteps.map((item, index) => (
                 <li key={item} className="flex gap-3 text-sm text-slate-700">
-                  <span className="mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#1C4D8D]/10 text-xs font-bold text-[#1C4D8D]">
+                  <span className="mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#3674B5]/10 text-xs font-bold text-[#3674B5]">
                     {index + 1}
                   </span>
                   <span>{item}</span>
@@ -53,7 +53,7 @@ const UserGuide = () => {
             <ul className="mt-3 space-y-3">
               {[...activeGuidance.support, ...COMMON_GUIDANCE.bullets.slice(0, 1)].map((item) => (
                 <li key={item} className="flex gap-3 text-sm text-slate-700">
-                  <CircleHelp size={16} className="mt-0.5 flex-shrink-0 text-[#1C4D8D]" />
+                  <CircleHelp size={16} className="mt-0.5 flex-shrink-0 text-[#3674B5]" />
                   <span>{item}</span>
                 </li>
               ))}

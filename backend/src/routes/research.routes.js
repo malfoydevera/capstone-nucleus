@@ -8,6 +8,7 @@ const adminController      = require('../controllers/admin.controller');
 const annotationController = require('../controllers/annotation.controller');
 const coauthorInvitationController = require('../controllers/coauthorInvitation.controller');
 const { authenticate, authorize, isFaculty, isStaffOrAdmin, isDean } = require('../middleware/auth.middleware');
+const { publishedRateLimiter } = require('../middleware/rateLimiter');
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
@@ -41,7 +42,7 @@ const uploadDrawing = multer({
 });
 
 // ========== PUBLIC ROUTES ==========
-router.get('/published', submissionController.getPublishedResearch);
+router.get('/published', publishedRateLimiter, submissionController.getPublishedResearch);
 router.get('/categories', submissionController.getCategories);
 
 // Get Dean/Program Chair members (for adviser to pick target when approving)
@@ -127,6 +128,7 @@ router.get('/admin/workflow-stages/validate', authenticate, authorize('admin'), 
 router.post('/admin/workflow-stages', authenticate, authorize('admin'), adminController.createWorkflowStage);
 router.patch('/admin/workflow-stages/:stageId', authenticate, authorize('admin'), adminController.updateWorkflowStage);
 router.delete('/admin/workflow-stages/:stageId', authenticate, authorize('admin'), adminController.deleteWorkflowStage);
+router.get('/admin/export/papers', authenticate, authorize('admin'), adminController.exportPapersCsv);
 router.get('/admin/all',           authenticate, authorize('admin'), adminController.adminGetAllResearch);
 router.put('/admin/:id',           authenticate, authorize('admin'), adminController.adminUpdateResearch);
 router.delete('/admin/:id',        authenticate, authorize('admin'), adminController.adminDeleteResearch);

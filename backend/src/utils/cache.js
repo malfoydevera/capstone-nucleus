@@ -67,6 +67,7 @@ const TTL = {
   FACULTY:      300,  //  5 min
   DEAN_CHAIR:   300,  //  5 min
   DEPARTMENTS:  600,  // 10 min
+  PUBLISHED:     90,  // 90 sec — browse/search listings
 };
 
 /**

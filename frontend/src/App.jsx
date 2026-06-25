@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/auth/Login';
@@ -14,37 +15,38 @@ import FacultyDashboard from './pages/faculty/FacultyDashboard';
 import SubmitResearch from './pages/student/SubmitResearch';
 import MyResearch from './pages/student/MyResearch';
 import SubmissionUpdates from './pages/student/SubmissionUpdates';
-import StudentPortfolio from './pages/student/StudentPortfolio';
 import BrowseRepository from './pages/student/BrowseRepository';
 import ReviewSubmissions from './pages/staff/ReviewSubmissions';
 import FacultyReview from './pages/faculty/FacultyReview';
-import ReviewDetail from './pages/staff/ReviewDetail';
 import AdminReviewSubmissions from './pages/admin/AdminReviewSubmissions';
-import DeanChairDashboard from './pages/dean/DeanChairDashboard';
 import DeanChairReview from './pages/dean/DeanChairReview';
 import DeanDashboard from './pages/dean/DeanDashboard';
 import ProgramChairDashboard from './pages/dean/ProgramChairDashboard';
 import DeanActivityMonitor from './pages/dean/DeanActivityMonitor';
 import DeanAuditLogs from './pages/dean/DeanAuditLogs';
-
-// NEW IMPORTS
-import Landing from './pages/Landing';
 import UserManagement from './pages/admin/UserManagement';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
 import ProfileDashboard from './pages/shared/ProfileDashboard';
 import Notifications from './pages/shared/Notifications';
 import UserGuide from './pages/shared/UserGuide';
 
-// NEW IMPORT for Research Detail View
-import ResearchDetail from './pages/student/ResearchDetail';
-// FacultyBrowseRepository removed — faculty now uses shared BrowseRepository
+const Landing = lazy(() => import('./pages/Landing'));
+const ResearchDetail = lazy(() => import('./pages/student/ResearchDetail'));
+const ReviewDetail = lazy(() => import('./pages/staff/ReviewDetail'));
+
+const RouteFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#3674B5]" />
+    <span className="sr-only">Loading page...</span>
+  </div>
+);
 
 const DashboardLayout = () => {
   return (
-    <div className="flex min-h-screen bg-transparent">
+    <div className="flex min-h-svh bg-transparent">
       <a href="#main-content" className="app-skip-link">Skip to main content</a>
       <Sidebar />
-      <main id="main-content" className="app-main-content flex-1 overflow-x-hidden">
+      <main id="main-content" className="app-main-content flex flex-col flex-1 min-h-0 overflow-x-hidden">
         <Outlet />
       </main>
     </div>
@@ -57,13 +59,12 @@ const DashboardLayout = () => {
  * deciding whether to show a dashboard or redirect to login.
  */
 const DashboardRouter = () => {
-  const { user, loading } = useAuth(); // Destructure loading to handle page refreshes
+  const { user, loading } = useAuth();
 
-  // Fix for reload issue: show loading spinner while checkAuth is running
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#3674B5]"></div>
         <span className="sr-only">Verifying session...</span>
       </div>
     );
@@ -97,7 +98,7 @@ const Unauthorized = () => (
       <p className="mt-2 text-gray-600">You don't have permission to access this page.</p>
       <button
         onClick={() => window.history.back()}
-        className="mt-6 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+        className="mt-6 px-4 py-2 bg-[#3674B5] text-white rounded-lg hover:bg-[#2d6299]"
       >
         Go Back
       </button>
@@ -110,21 +111,24 @@ function App() {
     <Router>
       <AuthProvider>
         <Routes>
-          {/* Landing Page as the default route - Users see this first */}
-          <Route path="/" element={<Landing />} />
+          <Route
+            path="/"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <Landing />
+              </Suspense>
+            )}
+          />
 
-          {/* Public Authentication Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
-          {/* Protected Routes: Only accessible after login */}
           <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<DashboardRouter />} />
 
-            {/* Student Specific Routes */}
             <Route path="/student/my-research/:id" element={
               <ProtectedRoute allowedRoles={['student']}>
                 <SubmissionUpdates />
@@ -140,11 +144,7 @@ function App() {
                 <MyResearch />
               </ProtectedRoute>
             } />
-            <Route path="/student/portfolio" element={
-              <ProtectedRoute allowedRoles={['student']}>
-                <StudentPortfolio />
-              </ProtectedRoute>
-            } />
+            <Route path="/student/portfolio" element={<Navigate to="/student/my-research" replace />} />
             <Route path="/student/submit" element={
               <ProtectedRoute allowedRoles={['student', 'staff', 'admin']}>
                 <SubmitResearch />
@@ -178,14 +178,14 @@ function App() {
             <Route path="/student/profile" element={<Navigate to="/profile" replace />} />
             <Route path="/faculty/profile" element={<Navigate to="/profile" replace />} />
 
-            {/* Research Detail View - Accessible to all authenticated users */}
             <Route path="/research/:id" element={
               <ProtectedRoute allowedRoles={['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin']}>
-                <ResearchDetail />
+                <Suspense fallback={<RouteFallback />}>
+                  <ResearchDetail />
+                </Suspense>
               </ProtectedRoute>
             } />
 
-            {/* Faculty (Adviser) Specific Routes */}
             <Route path="/faculty/review" element={
               <ProtectedRoute allowedRoles={['faculty']}>
                 <FacultyReview />
@@ -193,7 +193,9 @@ function App() {
             } />
             <Route path="/faculty/review/:id" element={
               <ProtectedRoute allowedRoles={['faculty', 'admin']}>
-                <ReviewDetail />
+                <Suspense fallback={<RouteFallback />}>
+                  <ReviewDetail />
+                </Suspense>
               </ProtectedRoute>
             } />
             <Route path="/faculty/repository" element={
@@ -202,7 +204,6 @@ function App() {
               </ProtectedRoute>
             } />
 
-            {/* Dean & Program Chair Specific Routes */}
             <Route path="/dean/review" element={
               <ProtectedRoute allowedRoles={['dean', 'program_chair']}>
                 <DeanChairReview />
@@ -215,12 +216,16 @@ function App() {
             } />
             <Route path="/dean/review/:id" element={
               <ProtectedRoute allowedRoles={['dean', 'program_chair', 'admin']}>
-                <ReviewDetail />
+                <Suspense fallback={<RouteFallback />}>
+                  <ReviewDetail />
+                </Suspense>
               </ProtectedRoute>
             } />
             <Route path="/program-chair/review/:id" element={
               <ProtectedRoute allowedRoles={['program_chair', 'admin']}>
-                <ReviewDetail />
+                <Suspense fallback={<RouteFallback />}>
+                  <ReviewDetail />
+                </Suspense>
               </ProtectedRoute>
             } />
             <Route path="/dean/repository" element={
@@ -239,7 +244,6 @@ function App() {
               </ProtectedRoute>
             } />
 
-            {/* Dean Only Routes */}
             <Route path="/dean/activity-monitor" element={
               <ProtectedRoute allowedRoles={['dean']}>
                 <DeanActivityMonitor />
@@ -251,7 +255,6 @@ function App() {
               </ProtectedRoute>
             } />
 
-            {/* Staff Specific Routes */}
             <Route path="/staff/review" element={
               <ProtectedRoute allowedRoles={['staff', 'admin']}>
                 <ReviewSubmissions />
@@ -259,7 +262,9 @@ function App() {
             } />
             <Route path="/staff/review/:id" element={
               <ProtectedRoute allowedRoles={['staff', 'admin']}>
-                <ReviewDetail />
+                <Suspense fallback={<RouteFallback />}>
+                  <ReviewDetail />
+                </Suspense>
               </ProtectedRoute>
             } />
             <Route path="/staff/repository" element={
@@ -267,7 +272,6 @@ function App() {
                 <BrowseRepository />
               </ProtectedRoute>
             } />
-            {/* Admin Specific Routes */}
             <Route path="/admin/papers" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminReviewSubmissions />
@@ -275,7 +279,9 @@ function App() {
             } />
             <Route path="/admin/review/:id" element={
               <ProtectedRoute allowedRoles={['admin']}>
-                <ReviewDetail />
+                <Suspense fallback={<RouteFallback />}>
+                  <ReviewDetail />
+                </Suspense>
               </ProtectedRoute>
             } />
             <Route path="/admin/users" element={
@@ -290,7 +296,6 @@ function App() {
             } />
           </Route>
 
-          {/* Fallback redirect */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>

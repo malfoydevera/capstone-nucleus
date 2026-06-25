@@ -22,9 +22,9 @@ import {
   Plus,
   UserPlus
 } from 'lucide-react';
-import { researchAPI, authAPI, aiAPI, departmentsAPI, unwrapApiData } from '../../utils/api';
+import { researchAPI, authAPI, departmentsAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
-import GuidancePanel from '../../components/ui/GuidancePanel';
+import UserGuideLink from '../../components/ui/UserGuideLink';
 
 const TYPE_TO_MIME = {
   pdf: 'application/pdf',
@@ -49,7 +49,6 @@ const SubmitResearch = () => {
   const resubmitData = location.state?.resubmit; 
 
   const [loading, setLoading] = useState(false);
-  const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [categories, setCategories] = useState([]);
@@ -64,7 +63,8 @@ const SubmitResearch = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const [showChecklistModal, setShowChecklistModal] = useState(false);
+  const [step, setStep] = useState(1);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [draftSyncMessage, setDraftSyncMessage] = useState('');
   const [submissionPolicy, setSubmissionPolicy] = useState({
     maxFileSizeMb: 10,
@@ -274,15 +274,6 @@ const SubmitResearch = () => {
       setError('');
       // Simulate upload progress for better UX
       simulateUploadProgress();
-      
-      // Extract title/abstract only for PDF uploads.
-      if (uploadedFile.type === 'application/pdf') {
-        await extractPdfMetadata(uploadedFile);
-      } else {
-        toast('Metadata extraction is available for PDF uploads only.', {
-          duration: 2500,
-        });
-      }
     }
   };
 
@@ -315,44 +306,6 @@ const SubmitResearch = () => {
     }
     return acc;
   }, {});
-
-  const extractPdfMetadata = async (pdfFile) => {
-    setExtracting(true);
-    toast.loading('Extracting title and abstract from PDF...', { id: 'extract' });
-
-    try {
-      const result = await aiAPI.extractPdfMetadata(pdfFile);
-
-      const extractedTitle = result?.data?.title || '';
-      const extractedAbstract = result?.data?.abstract || '';
-
-      setFormData(prev => ({
-        ...prev,
-        title: extractedTitle || prev.title,
-        abstract: extractedAbstract || prev.abstract,
-      }));
-
-      if (extractedTitle || extractedAbstract) {
-        toast.success('Title and abstract extracted successfully!', {
-          id: 'extract',
-          duration: 3000,
-        });
-      } else {
-        toast('No clear metadata found. Please review fields manually.', {
-          id: 'extract',
-          duration: 3000,
-        });
-      }
-    } catch (err) {
-      console.error('PDF extraction error:', err);
-      toast.error('Could not extract metadata. Please fill in manually.', { 
-        id: 'extract',
-        duration: 3000 
-      });
-    } finally {
-      setExtracting(false);
-    }
-  };
 
   const simulateUploadProgress = () => {
     setUploadProgress(0);
@@ -527,32 +480,49 @@ const SubmitResearch = () => {
     }
   };
 
-  const checklistItems = [
-    { key: 'pdf', label: 'PDF file attached', done: Boolean(file || resubmitData?.file_name) },
-    { key: 'title', label: 'Research title provided', done: Boolean(formData.title?.trim()) },
-    { key: 'abstract', label: 'Abstract provided', done: Boolean(formData.abstract?.trim()) },
-    { key: 'faculty', label: 'Adviser selected', done: Boolean(formData.facultyId || resubmitData?.faculty_id) },
-  ];
-
-  const checklistComplete = checklistItems.every((item) => item.done);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setShowChecklistModal(true);
-  };
-
   const hasLegacyCategorySelection = Boolean(
     formData.category && !categories.some((category) => category.id === formData.category)
   );
 
-  const confirmChecklistAndSubmit = async () => {
-    if (!checklistComplete) {
-      toast.error('Please complete all checklist items before submitting.');
+  const validateStep = (stepNumber) => {
+    const errors = {};
+    if (stepNumber === 1 && !file && !resubmitData?.file_name) {
+      errors.file = 'Upload a PDF before continuing.';
+    }
+    if (stepNumber === 2) {
+      if (!formData.title?.trim()) errors.title = 'Title is required.';
+      if (!formData.abstract?.trim()) errors.abstract = 'Abstract is required.';
+      if (!formData.category) errors.category = 'Select a research category.';
+    }
+    if (stepNumber === 3 && !formData.facultyId && !resubmitData?.faculty_id) {
+      errors.facultyId = 'Faculty adviser is required.';
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const goNext = () => {
+    if (validateStep(step)) setStep((current) => Math.min(3, current + 1));
+  };
+
+  const goBack = () => {
+    setFieldErrors({});
+    setStep((current) => Math.max(1, current - 1));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateStep(1) || !validateStep(2) || !validateStep(3)) {
+      if (!validateStep(step)) return;
+      if (!validateStep(1)) setStep(1);
+      else if (!validateStep(2)) setStep(2);
+      else setStep(3);
       return;
     }
-    setShowChecklistModal(false);
     await submitResearch();
   };
+
+  const stepLabels = ['Upload', 'Details', 'People'];
 
   const removeFile = () => {
     setFile(null);
@@ -574,7 +544,7 @@ const SubmitResearch = () => {
         </div>
         
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#3674B5] to-[#578FCA] flex items-center justify-center shadow-lg">
             <PenTool size={28} className="text-white" />
           </div>
           <div className="flex-1">
@@ -610,18 +580,28 @@ const SubmitResearch = () => {
           </div>
         </div>
 
-        <div className="mt-6">
-          <GuidancePanel
-            title="Submission Guidance"
-            description="Complete the fields in order so your paper routes to the correct reviewer and can be recovered easily if revision is required."
-            items={[
-              'Upload the final document first so title and abstract extraction can populate the form accurately.',
-              'Confirm your adviser, department, and co-authors before submitting because those values affect routing and notifications.',
-              'Use the draft status message as a checkpoint, then review the policy notes at the bottom before submitting.',
-            ]}
-            tone="blue"
-          />
-        </div>
+        <UserGuideLink />
+        <ol className="mt-6 flex flex-wrap gap-2" aria-label="Submission steps">
+          {stepLabels.map((label, index) => {
+            const stepNumber = index + 1;
+            const active = step === stepNumber;
+            const done = step > stepNumber;
+            return (
+              <li
+                key={label}
+                className={`px-4 py-2 rounded-full text-sm font-semibold border ${
+                  active
+                    ? 'bg-[#3674B5] text-white border-[#3674B5]'
+                    : done
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-white text-slate-600 border-slate-200'
+                }`}
+              >
+                {stepNumber}. {label}
+              </li>
+            );
+          })}
+        </ol>
       </div>
 
       {/* Success Message */}
@@ -661,8 +641,8 @@ const SubmitResearch = () => {
         {/* Form Header */}
         <div className="px-8 py-6 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-              <BookOpen size={20} className="text-[#1C4D8D]" />
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#3674B5]/10 to-[#578FCA]/10 flex items-center justify-center">
+              <BookOpen size={20} className="text-[#3674B5]" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900">Research Details</h2>
@@ -675,10 +655,10 @@ const SubmitResearch = () => {
         </div>
 
         <div className="p-8 space-y-8">
-          {/* File Upload Section */}
+          {step === 1 && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
-              <FileText size={20} className="text-[#1C4D8D]" />
+              <FileText size={20} className="text-[#3674B5]" />
               <label className="block text-lg font-bold text-slate-900">
                 Research Paper (PDF) {resubmitData ? '(Optional if keeping current)' : <span className="text-red-500">*</span>}
               </label>
@@ -689,16 +669,16 @@ const SubmitResearch = () => {
                 {...getRootProps()}
                 className={`border-3 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-500 transform hover:scale-[1.01] ${
                   isDragActive
-                    ? 'border-[#1C4D8D] bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border-solid'
-                    : 'border-slate-300 hover:border-[#1C4D8D] hover:bg-gradient-to-r from-slate-50 to-white'
+                    ? 'border-[#3674B5] bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 border-solid'
+                    : 'border-slate-300 hover:border-[#3674B5] hover:bg-gradient-to-r from-slate-50 to-white'
                 }`}
               >
                 <input {...getInputProps()} />
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center mx-auto mb-6">
-                  <Upload size={32} className="text-[#1C4D8D]" />
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#3674B5]/10 to-[#578FCA]/10 flex items-center justify-center mx-auto mb-6">
+                  <Upload size={32} className="text-[#3674B5]" />
                 </div>
                 {isDragActive ? (
-                  <p className="text-xl font-bold text-[#1C4D8D] mb-2">Drop PDF Here</p>
+                  <p className="text-xl font-bold text-[#3674B5] mb-2">Drop PDF Here</p>
                 ) : (
                   <>
                     <p className="text-lg font-bold text-slate-900 mb-2">
@@ -745,35 +725,13 @@ const SubmitResearch = () => {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="font-medium text-slate-700">Uploading...</span>
-                      <span className="font-bold text-[#1C4D8D]">{uploadProgress}%</span>
+                      <span className="font-bold text-[#3674B5]">{uploadProgress}%</span>
                     </div>
                     <div className="h-2 w-full bg-gradient-to-r from-slate-200 to-slate-100 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] transition-all duration-300 ease-out"
+                        className="h-full bg-gradient-to-r from-[#3674B5] to-[#578FCA] transition-all duration-300 ease-out"
                         style={{ width: `${uploadProgress}%` }}
                       ></div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Extraction Status */}
-                {extracting && (
-                  <div className="mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border border-[#1C4D8D]/20">
-                    <Loader2 size={18} className="text-[#1C4D8D] animate-spin" />
-                    <div>
-                      <p className="text-sm font-bold text-[#1C4D8D]">Extracting title and abstract...</p>
-                      <p className="text-xs text-[#2563eb]">AI is analyzing your PDF to auto-fill the form</p>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Extraction Success Indicator */}
-                {!extracting && uploadProgress === 100 && formData.title && (
-                  <div className="mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200">
-                    <Sparkles size={18} className="text-green-600" />
-                    <div>
-                      <p className="text-sm font-bold text-green-700">Title and abstract extracted!</p>
-                      <p className="text-xs text-green-600">Review and edit the extracted content below</p>
                     </div>
                   </div>
                 )}
@@ -787,18 +745,15 @@ const SubmitResearch = () => {
                 </p>
               </div>
             )}
+            {fieldErrors.file && <p className="text-sm text-red-600">{fieldErrors.file}</p>}
           </div>
+          )}
 
-          {/* Title */}
+          {step === 2 && (
+          <>
           <div className="space-y-3">
             <label htmlFor="title" className="block text-lg font-bold text-slate-900">
               Research Title <span className="text-red-500">*</span>
-              {extracting && (
-                <span className="ml-2 inline-flex items-center gap-1 text-sm font-medium text-[#1C4D8D]">
-                  <Loader2 size={14} className="animate-spin" />
-                  Extracting...
-                </span>
-              )}
             </label>
             <div className="relative">
               <input
@@ -807,41 +762,30 @@ const SubmitResearch = () => {
                 name="title"
                 value={formData.title}
                 onChange={handleChange}
-                disabled={extracting}
-                className={`w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 ${extracting ? 'opacity-60 cursor-not-allowed' : ''}`}
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
                 placeholder="Enter your research title"
                 required
               />
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                {extracting ? (
-                  <Loader2 size={20} className="text-[#1C4D8D] animate-spin" />
-                ) : (
-                  <BookOpen size={20} className="text-slate-400" />
-                )}
+                <BookOpen size={20} className="text-slate-400" />
               </div>
             </div>
             <p className="text-sm text-slate-500">Make it descriptive and specific to your research</p>
+            {fieldErrors.title && <p className="text-sm text-red-600">{fieldErrors.title}</p>}
           </div>
 
           {/* Abstract */}
           <div className="space-y-3">
             <label htmlFor="abstract" className="block text-lg font-bold text-slate-900">
               Abstract <span className="text-red-500">*</span>
-              {extracting && (
-                <span className="ml-2 inline-flex items-center gap-1 text-sm font-medium text-[#1C4D8D]">
-                  <Loader2 size={14} className="animate-spin" />
-                  Extracting...
-                </span>
-              )}
             </label>
             <textarea
               id="abstract"
               name="abstract"
               value={formData.abstract}
               onChange={handleChange}
-              disabled={extracting}
               rows={6}
-              className={`w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 resize-none ${extracting ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400 resize-none"
               placeholder="Provide a comprehensive summary of your research (150-250 words recommended)"
               required
             />
@@ -849,6 +793,7 @@ const SubmitResearch = () => {
               <p className="text-sm text-slate-500">Word count: {formData.abstract.split(/\s+/).filter(Boolean).length}</p>
               <p className="text-sm text-slate-500">Recommended: 150-250 words</p>
             </div>
+            {fieldErrors.abstract && <p className="text-sm text-red-600">{fieldErrors.abstract}</p>}
           </div>
 
           {/* Keywords */}
@@ -863,7 +808,7 @@ const SubmitResearch = () => {
                 name="keywords"
                 value={formData.keywords}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
                 placeholder="e.g., machine learning, artificial intelligence, data analysis"
               />
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
@@ -884,7 +829,7 @@ const SubmitResearch = () => {
                 name="category"
                 value={formData.category}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
                 required
               >
                 <option value="" className="text-slate-400">Select a research category</option>
@@ -904,12 +849,16 @@ const SubmitResearch = () => {
               </div>
             </div>
             <p className="text-sm text-slate-500">Choose the most relevant category for your research</p>
+            {fieldErrors.category && <p className="text-sm text-red-600">{fieldErrors.category}</p>}
           </div>
+          </>
+          )}
 
-          {/* Faculty Advisor Selection */}
+          {step === 3 && (
+          <>
           <div className="space-y-3">
             <label htmlFor="facultyId" className="block text-lg font-bold text-slate-900">
-              Faculty Advisor <span className="text-amber-500 text-sm">(Optional for testing)</span>
+              Faculty adviser (required) <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <select
@@ -917,9 +866,9 @@ const SubmitResearch = () => {
                 name="facultyId"
                 value={formData.facultyId}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
               >
-                <option value="">Select your faculty advisor (optional)</option>
+                <option value="">Select your faculty adviser</option>
                 {facultyMembers && facultyMembers.length > 0 ? (
                   facultyMembers.map((faculty) => (
                     <option key={faculty.id} value={faculty.id} className="text-slate-900">
@@ -940,8 +889,9 @@ const SubmitResearch = () => {
               </p>
             )}
             {facultyMembers && facultyMembers.length > 0 && (
-              <p className="text-sm text-slate-500">Your faculty advisor will be the first to review your submission</p>
+              <p className="text-sm text-slate-500">Your faculty adviser will be the first to review your submission</p>
             )}
+            {fieldErrors.facultyId && <p className="text-sm text-red-600">{fieldErrors.facultyId}</p>}
           </div>
 
           {/* Department */}
@@ -955,7 +905,7 @@ const SubmitResearch = () => {
                 name="departmentId"
                 value={formData.departmentId}
                 onChange={handleChange}
-                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 appearance-none font-medium shadow-sm hover:border-slate-400"
               >
                 <option value="">Select department (optional)</option>
                 {departments.map((department) => (
@@ -983,14 +933,14 @@ const SubmitResearch = () => {
                 {selectedCoAuthors.map((author) => (
                   <div
                     key={author.id}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border-2 border-[#1C4D8D]/20 rounded-xl"
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 border-2 border-[#3674B5]/20 rounded-xl"
                   >
-                    <User size={16} className="text-[#1C4D8D]" />
-                    <span className="text-sm font-semibold text-[#1C4D8D]">{formatFullName(author)}</span>
+                    <User size={16} className="text-[#3674B5]" />
+                    <span className="text-sm font-semibold text-[#3674B5]">{formatFullName(author)}</span>
                     <button
                       type="button"
                       onClick={() => removeCoAuthor(author.id)}
-                      className="ml-1 text-[#1C4D8D]/60 hover:text-[#1C4D8D] transition-colors"
+                      className="ml-1 text-[#3674B5]/60 hover:text-[#3674B5] transition-colors"
                     >
                       <X size={16} />
                     </button>
@@ -1006,7 +956,7 @@ const SubmitResearch = () => {
                 value={studentSearch}
                 onChange={(e) => handleStudentSearch(e.target.value)}
                 onFocus={() => studentSearch.length >= 2 && setShowSearchDropdown(true)}
-                className="w-full px-6 py-4 pl-12 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
+                className="w-full px-6 py-4 pl-12 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-400"
                 placeholder="Search students by name or email..."
               />
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
@@ -1014,7 +964,7 @@ const SubmitResearch = () => {
               </div>
               {searchLoading && (
                 <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                  <Loader2 size={20} className="text-[#1C4D8D] animate-spin" />
+                  <Loader2 size={20} className="text-[#3674B5] animate-spin" />
                 </div>
               )}
 
@@ -1026,10 +976,10 @@ const SubmitResearch = () => {
                       key={student.id}
                       type="button"
                       onClick={() => addCoAuthor(student)}
-                      className="w-full px-4 py-3 text-left hover:bg-[#1C4D8D]/10 transition-colors border-b border-slate-100 last:border-b-0 flex items-center gap-3"
+                      className="w-full px-4 py-3 text-left hover:bg-[#3674B5]/10 transition-colors border-b border-slate-100 last:border-b-0 flex items-center gap-3"
                       disabled={selectedCoAuthors.find(a => a.id === student.id)}
                     >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3674B5] to-[#578FCA] flex items-center justify-center">
                         <User size={20} className="text-white" />
                       </div>
                       <div className="flex-1">
@@ -1040,7 +990,7 @@ const SubmitResearch = () => {
                         )}
                       </div>
                       {selectedCoAuthors.find(a => a.id === student.id) && (
-                        <CheckCircle size={20} className="text-[#1C4D8D]" />
+                        <CheckCircle size={20} className="text-[#3674B5]" />
                       )}
                     </button>
                   ))}
@@ -1063,12 +1013,14 @@ const SubmitResearch = () => {
                 name="coAuthors"
                 value={formData.coAuthors}
                 onChange={handleChange}
-                className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent transition-all duration-300 font-medium"
+                className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 font-medium"
                 placeholder="External collaborators not in the system (comma-separated)"
               />
               <p className="text-xs text-slate-400 mt-1">Stored separately from canonical structured authorship.</p>
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* Footer Actions */}
@@ -1084,35 +1036,54 @@ const SubmitResearch = () => {
             <button
               type="button"
               onClick={() => navigate('/student/my-research')}
-              className="px-6 py-3 border-2 border-slate-300 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition-all duration-300 transform hover:-translate-y-0.5"
+              className="px-6 py-3 border-2 border-slate-300 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition-colors"
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-8 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#163a6b] hover:to-[#1C4D8D] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-500 shadow-lg hover:shadow-xl hover:shadow-[#1C4D8D]/25 transform hover:-translate-y-0.5 disabled:hover:transform-none flex items-center gap-3"
-            >
-              {loading ? (
-                <>
-                  <Loader2 size={20} className="animate-spin" />
-                  {resubmitData ? 'Updating...' : 'Submitting...'}
-                </>
-              ) : (
-                <>
-                  {resubmitData ? 'Update Research' : 'Submit for Review'}
-                  <Upload size={18} />
-                </>
-              )}
-            </button>
+            {step > 1 && (
+              <button
+                type="button"
+                onClick={goBack}
+                className="px-6 py-3 border-2 border-slate-300 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition-colors"
+              >
+                Back
+              </button>
+            )}
+            {step < 3 ? (
+              <button
+                type="button"
+                onClick={goNext}
+                className="px-8 py-3 bg-[#3674B5] text-white rounded-xl font-bold hover:bg-[#2d6299] transition-colors"
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-8 py-3 bg-[#3674B5] text-white rounded-xl font-bold hover:bg-[#2d6299] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-3"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin" />
+                    {resubmitData ? 'Updating...' : 'Submitting...'}
+                  </>
+                ) : (
+                  <>
+                    {resubmitData ? 'Update Research' : 'Submit for Review'}
+                    <Upload size={18} />
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </form>
 
       {/* Submission Guidelines */}
-      <div className="mt-10 bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 rounded-2xl border border-[#1C4D8D]/20 p-8">
+      <div className="mt-10 bg-gradient-to-br from-[#3674B5]/10 to-[#578FCA]/10 rounded-2xl border border-[#3674B5]/20 p-8">
         <div className="flex items-start gap-4 mb-6">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center flex-shrink-0">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3674B5] to-[#578FCA] flex items-center justify-center flex-shrink-0">
             <Sparkles size={24} className="text-white" />
           </div>
           <div>
@@ -1139,9 +1110,9 @@ const SubmitResearch = () => {
               <p className="text-sm text-slate-600">All required fields must be filled</p>
             </div>
           </div>
-          <div className="flex items-start gap-3 p-4 rounded-xl bg-white/80 border border-[#1C4D8D]/20">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#1C4D8D]/20 to-[#1C4D8D]/10 flex items-center justify-center">
-              <Tag size={16} className="text-[#1C4D8D]" />
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-white/80 border border-[#3674B5]/20">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#3674B5]/20 to-[#3674B5]/10 flex items-center justify-center">
+              <Tag size={16} className="text-[#3674B5]" />
             </div>
             <div>
               <p className="font-semibold text-slate-800">Proper Keywords</p>
@@ -1160,45 +1131,6 @@ const SubmitResearch = () => {
         </div>
       </div>
 
-      {showChecklistModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white border border-slate-200 shadow-2xl">
-            <div className="px-6 py-5 border-b border-slate-200">
-              <h3 className="text-xl font-bold text-slate-900">Submission Checklist</h3>
-              <p className="text-sm text-slate-600 mt-1">Confirm all required items before final submission.</p>
-            </div>
-            <div className="px-6 py-5 space-y-3">
-              {checklistItems.map((item) => (
-                <div key={item.key} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${item.done ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-                  <span className="text-sm font-semibold text-slate-800">{item.label}</span>
-                  {item.done ? (
-                    <CheckCircle size={18} className="text-emerald-600" />
-                  ) : (
-                    <AlertCircle size={18} className="text-amber-600" />
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowChecklistModal(false)}
-                className="px-5 py-2.5 rounded-xl border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50"
-              >
-                Review Form
-              </button>
-              <button
-                type="button"
-                onClick={confirmChecklistAndSubmit}
-                disabled={!checklistComplete || loading}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white font-bold disabled:opacity-50"
-              >
-                Confirm & Submit
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -11,14 +11,17 @@ import {
   BookOpen,
   ChevronRight,
   Calendar,
-  Eye,
   RefreshCw,
-  Sun,
-  Moon
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
-import GuidancePanel from '../../components/ui/GuidancePanel';
-import { getRoleGuidance } from '../../utils/guidance';
+import UserGuideLink from '../../components/ui/UserGuideLink';
+import {
+  getStudentStatusLabel,
+  getStudentStatusTone,
+  isNeedsAction,
+  isInReview,
+  isDone,
+} from '../../utils/studentStatus';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -27,134 +30,12 @@ const getStructuredCoAuthorCount = (paper) =>
     ? paper.structured_authors.filter((entry) => !entry?.is_primary).length
     : 0;
 
-// Donut Chart Component
-const DonutChart = ({ data, colors, size = 80 }) => {
-  const total = data.reduce((acc, item) => acc + item.value, 0);
-  let cumulativePercent = 0;
-
-  const getCoordinatesForPercent = (percent) => {
-    const x = Math.cos(2 * Math.PI * percent);
-    const y = Math.sin(2 * Math.PI * percent);
-    return [x, y];
-  };
-
-  return (
-    <svg width={size} height={size} viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: 'rotate(-90deg)' }}>
-      {total === 0 ? (
-        <circle cx="0" cy="0" r="1" fill="none" stroke="#e2e8f0" strokeWidth="0.35" />
-      ) : (
-        data.map((slice, index) => {
-          if (slice.value === 0) return null;
-          const percent = slice.value / total;
-          const [startX, startY] = getCoordinatesForPercent(cumulativePercent);
-          cumulativePercent += percent;
-          const [endX, endY] = getCoordinatesForPercent(cumulativePercent);
-          const largeArcFlag = percent > 0.5 ? 1 : 0;
-          const pathData = [
-            `M ${startX} ${startY}`,
-            `A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY}`,
-          ].join(' ');
-          return (
-            <path
-              key={index}
-              d={pathData}
-              fill="none"
-              stroke={colors[index]}
-              strokeWidth="0.35"
-              strokeLinecap="round"
-            />
-          );
-        })
-      )}
-      <circle cx="0" cy="0" r="0.65" fill="white" />
-    </svg>
-  );
-};
-
-// Mini Bar Chart Component
-const MiniBarChart = ({ data, maxHeight = 100 }) => {
-  const maxValue = Math.max(...data.map(d => d.value), 1);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-  return (
-    <div className="flex items-end gap-2 h-full">
-      {data.map((item, index) => {
-        const height = (item.value / maxValue) * maxHeight;
-        const isCurrentMonth = index === new Date().getMonth();
-        return (
-          <div key={index} className="flex flex-col items-center gap-1 flex-1">
-            <div
-              className={`w-full rounded-t-sm transition-all duration-500 ${isCurrentMonth
-                ? 'bg-gradient-to-t from-blue-600 to-blue-400'
-                : 'bg-gradient-to-t from-blue-200 to-blue-100 hover:from-blue-300 hover:to-blue-200'
-                }`}
-              style={{ height: `${Math.max(height, 4)}px` }}
-            />
-            <span className="text-[10px] text-slate-400 font-medium">{months[index]}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// Circular Progress Component
-const CircularProgress = ({ percentage, color, size = 48 }) => {
-  const strokeWidth = 4;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (percentage / 100) * circumference;
-
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="#e2e8f0"
-          strokeWidth={strokeWidth}
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className="transition-all duration-1000 ease-out"
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className={`text-xs font-bold`} style={{ color }}>
-          {percentage > 0 ? `${percentage}%` : '0%'}
-        </span>
-      </div>
-    </div>
-  );
-};
-
 const StudentDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const guide = getRoleGuidance(user?.role);
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    underReview: 0,
-    approved: 0,
-    rejected: 0,
-    revisionRequired: 0
-  });
-  const [recentPapers, setRecentPapers] = useState([]);
-  const [allPapers, setAllPapers] = useState([]);
+  const [papers, setPapers] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     fetchDashboardData();
@@ -167,36 +48,27 @@ const StudentDashboard = () => {
         researchAPI.getMyResearch(),
         researchAPI.getCategories(),
       ]);
-      const papers = unwrapApiData(response).papers || [];
+      setPapers(unwrapApiData(response).papers || []);
       setCategories(unwrapApiData(categoriesResponse).categories || []);
-
-      setAllPapers(papers);
-
-      const statistics = {
-        total: papers.length,
-        pending: papers.filter(p => p.status === 'pending_faculty').length,
-        underReview: papers.filter(p => p.status === 'pending_editor').length,
-        approved: papers.filter(p => p.status === 'approved').length,
-        rejected: papers.filter(p => p.status === 'rejected').length,
-        revisionRequired: papers.filter(p => p.status === 'revision_required').length
-      };
-
-      setStats(statistics);
-
-      const sortedPapers = [...papers].sort((a, b) =>
-        new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at)
-      );
-      setRecentPapers(sortedPapers.slice(0, 5));
-
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
-      setStats({ total: 0, pending: 0, underReview: 0, approved: 0, rejected: 0, revisionRequired: 0 });
-      setRecentPapers([]);
-      setAllPapers([]);
+      setPapers([]);
     } finally {
       setLoading(false);
     }
   };
+
+  const taskCounts = useMemo(() => ({
+    needsAction: papers.filter((p) => isNeedsAction(p.status)).length,
+    inReview: papers.filter((p) => isInReview(p.status)).length,
+    done: papers.filter((p) => isDone(p.status)).length,
+  }), [papers]);
+
+  const recentPapers = useMemo(() => {
+    return [...papers]
+      .sort((a, b) => new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at))
+      .slice(0, 5);
+  }, [papers]);
 
   const getCategoryName = (categoryValue) => {
     if (!categoryValue) return 'Research';
@@ -206,77 +78,57 @@ const StudentDashboard = () => {
     return 'Research';
   };
 
-  const monthlyData = useMemo(() => {
-    const months = Array(12).fill(0).map((_, i) => ({ month: i, value: 0 }));
-    allPapers.forEach(paper => {
-      const date = new Date(paper.submission_date || paper.created_at);
-      if (date.getFullYear() === selectedYear) {
-        months[date.getMonth()].value++;
-      }
-    });
-    return months;
-  }, [allPapers, selectedYear]);
-
-  const getStatusColor = (status) => {
-    const colors = {
-      pending_faculty: 'text-amber-600 bg-amber-50',
-      under_review: 'text-cyan-600 bg-cyan-50',
-      pending_editor: 'text-blue-600 bg-blue-50',
-      approved: 'text-emerald-600 bg-emerald-50',
-      rejected: 'text-red-600 bg-red-50',
-      revision_required: 'text-orange-600 bg-orange-50'
-    };
-    return colors[status] || 'text-slate-600 bg-slate-50';
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
-
-  const getStatusBadge = (status) => {
-    const statusMap = {
-      pending_faculty: 'Pending',
-      under_review: 'With Editor',
-      pending_editor: 'In Review',
-      approved: 'Published',
-      rejected: 'Rejected',
-      revision_required: 'Revision'
-    };
-    return statusMap[status] || status;
-  };
-
-  const statusPercentage = stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0;
-  const reviewPercentage = stats.total > 0 ? Math.round(((stats.pending + stats.underReview) / stats.total) * 100) : 0;
+  const formatDate = (dateString) =>
+    new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
         <div className="relative">
-          <div className="w-16 h-16 border-4 border-slate-200 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-slate-200 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
         </div>
         <p className="mt-4 text-sm text-slate-500">Loading dashboard...</p>
       </div>
     );
   }
 
-  const statusChartData = [
-    { value: stats.approved, label: 'Published' },
-    { value: stats.pending + stats.underReview, label: 'In Review' },
-    { value: stats.rejected, label: 'Rejected' }
+  const taskCards = [
+    {
+      key: 'needsAction',
+      label: 'Needs Action',
+      count: taskCounts.needsAction,
+      icon: AlertCircle,
+      iconBg: 'bg-orange-50',
+      iconColor: 'text-orange-600',
+      description: 'Revisions or follow-ups required',
+      onClick: () => navigate('/student/my-research'),
+    },
+    {
+      key: 'inReview',
+      label: 'In Review',
+      count: taskCounts.inReview,
+      icon: Clock,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+      description: 'Awaiting adviser or staff review',
+      onClick: () => navigate('/student/my-research'),
+    },
+    {
+      key: 'done',
+      label: 'Done',
+      count: taskCounts.done,
+      icon: CheckCircle,
+      iconBg: 'bg-emerald-50',
+      iconColor: 'text-emerald-600',
+      description: 'Approved or published',
+      onClick: () => navigate('/student/my-research'),
+    },
   ];
-  const statusChartColors = ['#10b981', '#f59e0b', '#ef4444'];
-
-  const activityChartData = [
-    { value: stats.approved, label: 'Completed' },
-    { value: stats.revisionRequired, label: 'Needs Work' }
-  ];
-  const activityChartColors = ['#3b82f6', '#8b5cf6'];
 
   return (
     <div className="min-h-screen bg-slate-50/50">
       <div className="max-w-7xl mx-auto px-6 py-8 animate-fadeIn">
-        {/* Header */}
         <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-4">
             <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
@@ -286,193 +138,47 @@ const StudentDashboard = () => {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 p-1 bg-white rounded-lg border border-slate-200">
-              <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Sun size={16} /></button>
-              <button className="p-1.5 rounded bg-slate-100 text-slate-600"><div className="w-4 h-4 rounded-full bg-slate-600"></div></button>
-              <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Moon size={16} /></button>
-            </div>
-            <div className="flex items-center gap-2">
-              <img
-                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'User')}&background=3b82f6&color=fff`}
-                alt="Profile"
-                className="w-9 h-9 rounded-full"
-              />
-              <span className="text-sm font-medium text-slate-700 hidden sm:inline">{user?.fullName}</span>
-            </div>
+            <img
+              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'User')}&background=3674B5&color=fff`}
+              alt="Profile"
+              className="w-9 h-9 rounded-full"
+            />
+            <span className="text-sm font-medium text-slate-700 hidden sm:inline">{user?.fullName}</span>
           </div>
         </div>
 
-        <div className="mb-6">
-          <GuidancePanel
-            title={guide.heading}
-            description={guide.summary}
-            items={guide.dashboardSteps}
-            tone="blue"
-          />
-        </div>
+        <UserGuideLink />
 
-        {/* Stats Row 1 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Submissions</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                <FileText size={20} className="text-slate-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              <span className="text-xs text-emerald-600 font-medium">↑ 8.2%</span>
-              <span className="text-xs text-slate-400">since last month</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Published</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.approved}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <CheckCircle size={20} className="text-emerald-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              <span className="text-xs text-emerald-600 font-medium">↑ 3.4%</span>
-              <span className="text-xs text-slate-400">since last month</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Status</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
-                <p className="text-xs text-slate-400 mt-1">total papers</p>
-              </div>
-              <DonutChart data={statusChartData} colors={statusChartColors} size={70} />
-            </div>
-            <div className="mt-3 flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span className="text-slate-500">{stats.approved} Published</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span className="text-slate-500">{stats.pending + stats.underReview} Review</span>
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Activity</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.approved + stats.revisionRequired}</p>
-                <p className="text-xs text-slate-400 mt-1">actions taken</p>
-              </div>
-              <DonutChart data={activityChartData} colors={activityChartColors} size={70} />
-            </div>
-            <div className="mt-3 flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                <span className="text-slate-500">{statusPercentage}% Complete</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-violet-500"></span>
-                <span className="text-slate-500">{stats.revisionRequired} Revision</span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Row 2 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">In Review</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.pending + stats.underReview}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                <Clock size={20} className="text-amber-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              <span className="text-xs text-slate-400">awaiting review</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Needs Action</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.revisionRequired}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
-                <AlertCircle size={20} className="text-orange-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              <span className="text-xs text-slate-400">revision required</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-          <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-semibold text-slate-900">Submission Activity</h3>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="text-sm text-slate-600 bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+          {taskCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={card.onClick}
+                className="text-left bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md hover:border-[#3674B5]/20 transition-shadow"
               >
-                <option value={2026}>2026</option>
-                <option value={2025}>2025</option>
-                <option value={2024}>2024</option>
-              </select>
-            </div>
-            <div className="h-40">
-              <MiniBarChart data={monthlyData} maxHeight={120} />
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <CheckCircle size={24} className="text-emerald-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-500">Published</p>
-                <p className="text-xl font-bold text-slate-900">{stats.approved} Papers</p>
-                <p className="text-xs text-slate-400">Current Year</p>
-              </div>
-              <CircularProgress percentage={statusPercentage || 0} color="#10b981" size={52} />
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
-                <Eye size={24} className="text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-500">Under Review</p>
-                <p className="text-xl font-bold text-slate-900">{stats.pending + stats.underReview} Papers</p>
-                <p className="text-xs text-slate-400">Current Year</p>
-              </div>
-              <CircularProgress percentage={reviewPercentage || 0} color="#3b82f6" size={52} />
-            </div>
-          </div>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm text-slate-500 mb-1">{card.label}</p>
+                    <p className="text-3xl font-bold text-slate-900">{card.count}</p>
+                    <p className="mt-2 text-xs text-slate-400">{card.description}</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-xl ${card.iconBg} flex items-center justify-center`}>
+                    <Icon size={20} className={card.iconColor} />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
           <button
+            type="button"
             onClick={() => navigate('/student/submit')}
-            className="group bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+            className="group bg-gradient-to-br from-[#3674B5] to-[#578FCA] rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
           >
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
@@ -487,43 +193,44 @@ const StudentDashboard = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => navigate('/student/my-research')}
-            className="group bg-gradient-to-br from-violet-600 to-violet-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+            className="group bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-all hover:-translate-y-0.5"
           >
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <BookOpen size={24} className="text-white" />
+              <div className="w-12 h-12 rounded-xl bg-[#3674B5]/10 flex items-center justify-center">
+                <BookOpen size={24} className="text-[#3674B5]" />
               </div>
               <div className="text-left">
-                <p className="font-semibold text-white">My Research</p>
-                <p className="text-sm text-violet-100">View submissions</p>
+                <p className="font-semibold text-slate-900">My Submissions</p>
+                <p className="text-sm text-slate-500">{papers.length} total</p>
               </div>
-              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+              <ChevronRight size={20} className="text-slate-300 ml-auto group-hover:translate-x-1 transition-transform" />
             </div>
           </button>
 
           <button
+            type="button"
             onClick={() => navigate('/student/browse')}
-            className="group bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
+            className="group bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-all hover:-translate-y-0.5"
           >
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <Search size={24} className="text-white" />
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <Search size={24} className="text-emerald-600" />
               </div>
               <div className="text-left">
-                <p className="font-semibold text-white">Browse Repository</p>
-                <p className="text-sm text-emerald-100">Explore papers</p>
+                <p className="font-semibold text-slate-900">Browse Repository</p>
+                <p className="text-sm text-slate-500">Explore papers</p>
               </div>
-              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
+              <ChevronRight size={20} className="text-slate-300 ml-auto group-hover:translate-x-1 transition-transform" />
             </div>
           </button>
         </div>
 
-        {/* Recent Submissions Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-semibold text-slate-900">Recent Submissions</h3>
-            <button onClick={() => fetchDashboardData()} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+            <button type="button" onClick={fetchDashboardData} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
               <RefreshCw size={16} className="text-slate-400" />
             </button>
           </div>
@@ -536,8 +243,9 @@ const StudentDashboard = () => {
               <p className="text-slate-600 font-medium mb-1">No submissions yet</p>
               <p className="text-sm text-slate-400 mb-4">Start by submitting your first research paper</p>
               <button
+                type="button"
                 onClick={() => navigate('/student/submit')}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-[#3674B5] text-white text-sm font-medium rounded-lg hover:bg-[#2d6299] transition-colors"
               >
                 Submit Research
               </button>
@@ -551,13 +259,12 @@ const StudentDashboard = () => {
                     <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Category</th>
                     <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
                     <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider"></th>
+                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {recentPapers.map((paper) => {
                     const coAuthorCount = getStructuredCoAuthorCount(paper);
-
                     return (
                       <tr
                         key={paper.id}
@@ -582,8 +289,8 @@ const StudentDashboard = () => {
                         <td className="px-5 py-4 text-sm text-slate-600">{getCategoryName(paper.category)}</td>
                         <td className="px-5 py-4 text-sm text-slate-500">{formatDate(paper.submission_date || paper.created_at)}</td>
                         <td className="px-5 py-4">
-                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(paper.status)}`}>
-                            {getStatusBadge(paper.status)}
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium border ${getStudentStatusTone(paper.status)}`}>
+                            {getStudentStatusLabel(paper.status)}
                           </span>
                         </td>
                         <td className="px-5 py-4">

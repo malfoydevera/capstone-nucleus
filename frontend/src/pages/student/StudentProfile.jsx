@@ -172,7 +172,7 @@ const StudentProfile = () => {
             
             <div className="flex flex-col items-center">
               <div className="relative">
-                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center text-white text-3xl font-bold shadow-lg">
+                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-[#3674B5] to-[#578FCA] flex items-center justify-center text-white text-3xl font-bold shadow-lg">
                   {profile.profilePicture ? (
                     <img 
                       src={profile.profilePicture} 
@@ -207,15 +207,15 @@ const StudentProfile = () => {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Info</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-sm">
-                <GraduationCap size={16} className="text-[#1C4D8D]" />
+                <GraduationCap size={16} className="text-[#3674B5]" />
                 <span className="text-gray-600">Year: {profile.year || 'Not specified'}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
-                <Building size={16} className="text-[#1C4D8D]" />
+                <Building size={16} className="text-[#3674B5]" />
                 <span className="text-gray-600">Department: {profile.department || 'Not specified'}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
-                <Mail size={16} className="text-[#1C4D8D]" />
+                <Mail size={16} className="text-[#3674B5]" />
                 <span className="text-gray-600">Email: {profile.email}</span>
               </div>
             </div>
@@ -245,7 +245,7 @@ const StudentProfile = () => {
                       value={profile.fullName}
                       onChange={handleProfileChange}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                       placeholder="Enter your full name"
                     />
                   </div>
@@ -263,7 +263,7 @@ const StudentProfile = () => {
                       value={profile.email}
                       onChange={handleProfileChange}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                       placeholder="Enter your email"
                     />
                   </div>
@@ -280,7 +280,7 @@ const StudentProfile = () => {
                       name="phone"
                       value={profile.phone}
                       onChange={handleProfileChange}
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                       placeholder="Enter your phone number"
                     />
                   </div>
@@ -298,7 +298,7 @@ const StudentProfile = () => {
                       value={profile.studentId}
                       onChange={handleProfileChange}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                       placeholder="Enter your student ID"
                     />
                   </div>
@@ -314,7 +314,7 @@ const StudentProfile = () => {
                       name="department"
                       value={profile.department}
                       onChange={handleProfileChange}
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                     >
                       <option value="">Select Department</option>
                       <option value="computer-science">Computer Science</option>
@@ -338,7 +338,7 @@ const StudentProfile = () => {
                       name="year"
                       value={profile.year}
                       onChange={handleProfileChange}
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                     >
                       <option value="">Select Year</option>
                       <option value="freshman">Freshman (1st Year)</option>
@@ -360,7 +360,7 @@ const StudentProfile = () => {
                   name="program"
                   value={profile.program}
                   onChange={handleProfileChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                   placeholder="e.g., Bachelor of Science in Computer Science"
                 />
               </div>
@@ -374,7 +374,7 @@ const StudentProfile = () => {
                   value={profile.bio}
                   onChange={handleProfileChange}
                   rows={4}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                   placeholder="Tell us a bit about yourself, your interests, and research areas..."
                 />
               </div>
@@ -383,7 +383,7 @@ const StudentProfile = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-lg hover:from-[#1a4374] hover:to-[#1d4ed8] transition-all duration-300 shadow-lg disabled:opacity-50"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#3674B5] to-[#578FCA] text-white rounded-lg hover:from-[#1a4374] hover:to-[#1d4ed8] transition-all duration-300 shadow-lg disabled:opacity-50"
                 >
                   {loading ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
@@ -428,7 +428,7 @@ const StudentProfile = () => {
                       value={passwordForm.currentPassword}
                       onChange={handlePasswordChange}
                       required
-                      className="w-full pl-10 pr-12 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-12 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                       placeholder="Enter current password"
                     />
                     <button
@@ -453,7 +453,7 @@ const StudentProfile = () => {
                       value={passwordForm.newPassword}
                       onChange={handlePasswordChange}
                       required
-                      className="w-full pl-10 pr-12 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-12 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                       placeholder="Enter new password"
                     />
                     <button
@@ -478,7 +478,7 @@ const StudentProfile = () => {
                       value={passwordForm.confirmPassword}
                       onChange={handlePasswordChange}
                       required
-                      className="w-full pl-10 pr-12 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1C4D8D] focus:border-transparent"
+                      className="w-full pl-10 pr-12 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3674B5] focus:border-transparent"
                       placeholder="Confirm new password"
                     />
                     <button
@@ -495,7 +495,7 @@ const StudentProfile = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-lg hover:from-[#1a4374] hover:to-[#1d4ed8] transition-all duration-300 shadow-lg disabled:opacity-50"
+                    className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#3674B5] to-[#578FCA] text-white rounded-lg hover:from-[#1a4374] hover:to-[#1d4ed8] transition-all duration-300 shadow-lg disabled:opacity-50"
                   >
                     {loading ? (
                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>

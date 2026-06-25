@@ -5,9 +5,11 @@
 const supabase = require('../config/supabase');
 const { resolvePaperFileUrl } = require('../utils/fileAccess');
 const { sendSuccess, sendError } = require('../utils/response');
-const { attachFullName } = require('../utils/name');
+const { attachFullName, buildFullName } = require('../utils/name');
+const { logAuditEvent } = require('../utils/audit');
 const { validateWorkflowStages } = require('../utils/workflowEngine');
 const { notifyUser, notifyCoAuthors } = require('../utils/notify');
+const { parseListPagination } = require('../utils/pagination');
 
 const RECYCLE_BIN_RETENTION_DAYS = Number.parseInt(process.env.RECYCLE_BIN_RETENTION_DAYS || '30', 10);
 const WORKFLOW_STAGE_MUTATION_MESSAGE = 'Workflow stages are fixed and cannot be modified through the admin UI.';
@@ -71,9 +73,36 @@ function isValidDoiFormat(doi) {
   return false;
 }
 
+function csvEscape(value) {
+  const raw = value == null ? '' : String(value);
+  if (raw.includes('"') || raw.includes(',') || raw.includes('\n') || raw.includes('\r')) {
+    return `"${raw.replace(/"/g, '""')}"`;
+  }
+  return raw;
+}
+
+function toCsv(headers, rows) {
+  const lines = [headers.map(csvEscape).join(',')];
+  rows.forEach((row) => lines.push(row.map(csvEscape).join(',')));
+  return `${lines.join('\n')}\n`;
+}
+
+async function auditCsvExport(req, action, details = {}) {
+  await logAuditEvent({
+    userId: req.user?.id,
+    userRole: req.user?.role,
+    userName: req.user?.fullName,
+    action,
+    targetType: 'system',
+    details,
+    ipAddress: req.ip || null,
+  });
+}
+
 exports.getAllResearch = async (req, res) => {
   try {
     const { status, includeDeleted } = req.query;
+    const { page, limit, from, to } = parseListPagination(req.query);
     let query = supabase.from('research_papers')
       .select(`
         *,
@@ -82,11 +111,12 @@ exports.getAllResearch = async (req, res) => {
           user_id, is_primary, author_order,
           author:users!research_authors_user_id_fkey (id, first_name, middle_name, last_name, email)
         )
-      `)
-      .order('submission_date', { ascending: false });
+      `, { count: 'exact' })
+      .order('submission_date', { ascending: false })
+      .range(from, to);
     if (status) query = query.eq('status', status);
     if (includeDeleted !== 'true') query = query.is('deleted_at', null);
-    const { data: papers, error } = await query;
+    const { data: papers, error, count } = await query;
     if (error) throw error;
     const transformed = await Promise.all((papers || []).map(async (paper) => {
       const structuredAuthors = normalizeResearchAuthors(paper.research_authors);
@@ -99,7 +129,7 @@ exports.getAllResearch = async (req, res) => {
         file_url: await resolvePaperFileUrl(paper),
       };
     }));
-    return sendSuccess(res, { data: { papers: transformed } });
+    return sendSuccess(res, { data: { papers: transformed, total: count ?? transformed.length, page, limit } });
   } catch (error) {
     console.error('Get all research error:', error);
     return sendError(res, { status: 500, code: 'GET_ALL_RESEARCH_FAILED', message: 'Server error' });
@@ -399,6 +429,96 @@ exports.validateWorkflowStages = async (req, res) => {
       status: 500,
       code: 'VALIDATE_WORKFLOW_STAGES_FAILED',
       message: 'Failed to validate workflow stages',
+    });
+  }
+};
+
+exports.exportStudentsCsv = async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, middle_name, last_name, program, department, is_active, created_at')
+      .eq('role', 'student')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const headers = ['id', 'email', 'full_name', 'program', 'department', 'is_active', 'created_at'];
+    const rows = (users || []).map((user) => [
+      user.id,
+      user.email,
+      buildFullName(user),
+      user.program || '',
+      user.department || '',
+      user.is_active !== false ? 'active' : 'inactive',
+      user.created_at || '',
+    ]);
+
+    await auditCsvExport(req, 'export_students_csv', { rowCount: rows.length });
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="nucleus_students_${stamp}.csv"`);
+    return res.status(200).send(toCsv(headers, rows));
+  } catch (error) {
+    console.error('Export students CSV error:', error);
+    return sendError(res, {
+      status: 500,
+      code: 'EXPORT_STUDENTS_CSV_FAILED',
+      message: 'Failed to export students',
+    });
+  }
+};
+
+exports.exportPapersCsv = async (req, res) => {
+  try {
+    const { status, includeDeleted } = req.query;
+    let query = supabase
+      .from('research_papers')
+      .select(`
+        id, title, status, category, author_id, submission_date, published_date, created_at, deleted_at,
+        author:users!author_id (first_name, middle_name, last_name, email)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (status) query = query.eq('status', status);
+    if (includeDeleted !== 'true') query = query.is('deleted_at', null);
+
+    const { data: papers, error } = await query;
+    if (error) throw error;
+
+    const headers = [
+      'id', 'title', 'status', 'category', 'author_name', 'author_email',
+      'submission_date', 'published_date', 'created_at',
+    ];
+    const rows = (papers || []).map((paper) => [
+      paper.id,
+      paper.title || '',
+      paper.status || '',
+      paper.category || '',
+      buildFullName(paper.author),
+      paper.author?.email || '',
+      paper.submission_date || '',
+      paper.published_date || '',
+      paper.created_at || '',
+    ]);
+
+    await auditCsvExport(req, 'export_papers_csv', {
+      rowCount: rows.length,
+      status: status || null,
+      includeDeleted: includeDeleted === 'true',
+    });
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="nucleus_papers_${stamp}.csv"`);
+    return res.status(200).send(toCsv(headers, rows));
+  } catch (error) {
+    console.error('Export papers CSV error:', error);
+    return sendError(res, {
+      status: 500,
+      code: 'EXPORT_PAPERS_CSV_FAILED',
+      message: 'Failed to export papers',
     });
   }
 };

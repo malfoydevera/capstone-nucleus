@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search,
   Filter,
@@ -11,27 +11,12 @@ import {
   FileText,
   Grid,
   List,
-  TrendingUp,
-  ChevronRight,
-  Hash,
-  Clock,
-  BookOpen,
-  GraduationCap,
-  Building,
-  Award,
-  Star,
-  Sparkles,
   X,
-  ChevronDown,
   SortAsc,
   RefreshCw,
-  Info,
-  Bookmark,
-  Share2,
-  Copy,
-  Heart
+  BookOpen,
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -86,136 +71,148 @@ const getRepositoryListingBadge = (paper) => {
   return { label: 'Repository', className: 'bg-slate-100 text-slate-700 border-slate-200' };
 };
 
+const SORT_API_MAP = {
+  newest: 'newest',
+  oldest: 'oldest',
+  title: 'title',
+  most_viewed: 'newest',
+  most_downloaded: 'newest',
+};
+
 const BrowseRepository = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [papers, setPapers] = useState([]);
-  const [filteredPapers, setFilteredPapers] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [facets, setFacets] = useState({ categories: [] });
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedThemes, setSelectedThemes] = useState([]);
   const [selectedYear, setSelectedYear] = useState('');
   const [authorSearch, setAuthorSearch] = useState('');
+  const [debouncedAuthor, setDebouncedAuthor] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('grid');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [expandedPaper, setExpandedPaper] = useState(null);
   const [availableYears, setAvailableYears] = useState([]);
 
-  // Stats
   const [stats, setStats] = useState({
     totalPapers: 0,
     totalAuthors: 0,
     totalDownloads: 0,
-    totalViews: 0
+    totalViews: 0,
   });
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
-    filterAndSortPapers();
-  }, [papers, searchTerm, selectedCategory, selectedYear, authorSearch, sortBy]);
+    const timer = setTimeout(() => setDebouncedAuthor(authorSearch.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [authorSearch]);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, selectedCategory, selectedThemes, selectedYear, debouncedAuthor, sortBy]);
+
+  const fetchPapers = useCallback(async ({ pageNum = 1, append = false } = {}) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     try {
+      const sortParam = SORT_API_MAP[sortBy] || 'newest';
+      const params = {
+        page: pageNum,
+        limit: 20,
+        sort: sortParam,
+        ...(debouncedSearch && { q: debouncedSearch }),
+        ...(selectedCategory && { category: selectedCategory }),
+        ...(selectedThemes.length > 0 && { themes: selectedThemes.join(',') }),
+        ...(selectedYear && { year: selectedYear }),
+        ...(debouncedAuthor && { author: debouncedAuthor }),
+      };
+
       const [papersRes, categoriesRes] = await Promise.all([
-        researchAPI.getPublishedResearch(),
-        researchAPI.getCategories()
+        researchAPI.getPublishedResearch(params),
+        categories.length ? Promise.resolve(null) : researchAPI.getCategories(),
       ]);
 
-      setPapers(papersRes.data.papers);
-      setCategories(categoriesRes.data.categories || []);
+      const payload = unwrapApiData(papersRes);
+      const nextPapers = payload.papers || [];
+      setPapers((prev) => (append ? [...prev, ...nextPapers] : nextPapers));
+      setTotal(payload.total ?? nextPapers.length);
+      setPage(pageNum);
+      setFacets(payload.facets || { categories: [] });
 
-      // Extract unique years from papers
+      if (categoriesRes) {
+        const categoryPayload = unwrapApiData(categoriesRes);
+        setCategories(categoryPayload.categories || []);
+      }
+
       const years = [...new Set(
-        papersRes.data.papers
-          .map(p => new Date(p.published_date || p.created_at).getFullYear())
-          .filter(year => !isNaN(year))
+        nextPapers
+          .map((p) => new Date(p.published_date || p.created_at).getFullYear())
+          .filter((year) => !Number.isNaN(year))
       )].sort((a, b) => b - a);
-      setAvailableYears(years);
+      if (years.length > 0) setAvailableYears(years);
 
-      // Calculate stats
       const uniqueAuthors = new Set(
-        papersRes.data.papers.flatMap((paper) =>
+        nextPapers.flatMap((paper) =>
           getPaperAuthors(paper)
             .map((entry) => entry?.author?.id || formatFullName(entry?.author))
             .filter(Boolean)
         )
       );
-      const totalDownloads = papersRes.data.papers.reduce((sum, p) => sum + (p.download_count || 0), 0);
-      const totalViews = papersRes.data.papers.reduce((sum, p) => sum + (p.view_count || 0), 0);
 
       setStats({
-        totalPapers: papersRes.data.papers.length,
+        totalPapers: payload.total ?? nextPapers.length,
         totalAuthors: uniqueAuthors.size,
-        totalDownloads,
-        totalViews
+        totalDownloads: nextPapers.reduce((sum, p) => sum + (p.download_count || 0), 0),
+        totalViews: nextPapers.reduce((sum, p) => sum + (p.view_count || 0), 0),
       });
     } catch (error) {
-      console.error('Failed to fetch data:', error);
+      console.error('Failed to fetch repository data:', error);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  }, [
+    debouncedSearch,
+    selectedCategory,
+    selectedThemes,
+    selectedYear,
+    debouncedAuthor,
+    sortBy,
+    categories.length,
+  ]);
+
+  useEffect(() => {
+    fetchPapers({ pageNum: 1, append: false });
+  }, [fetchPapers]);
+
+  const canLoadMore = papers.length < total;
+  const handleLoadMore = () => {
+    if (!canLoadMore || loadingMore) return;
+    fetchPapers({ pageNum: page + 1, append: true });
   };
 
-  const filterAndSortPapers = () => {
-    let filtered = [...papers];
+  const filteredPapers = [...papers].sort((a, b) => {
+    if (sortBy === 'most_viewed') return (b.view_count || 0) - (a.view_count || 0);
+    if (sortBy === 'most_downloaded') return (b.download_count || 0) - (a.download_count || 0);
+    return 0;
+  });
 
-    // Search filter (title, abstract, keywords)
-    if (searchTerm) {
-      filtered = filtered.filter(paper =>
-        paper.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.abstract.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        paper.keywords?.some(keyword =>
-          keyword.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      );
-    }
-
-    // Author filter (primary author and co-authors)
-    if (authorSearch) {
-      filtered = filtered.filter(paper => {
-        const authorName = authorSearch.toLowerCase();
-        return getPaperAuthors(paper).some((entry) =>
-          formatFullName(entry?.author).toLowerCase().includes(authorName)
-        );
-      });
-    }
-
-    // Category filter
-    if (selectedCategory) {
-      filtered = filtered.filter(paper => paper.category === selectedCategory);
-    }
-
-    // Year filter
-    if (selectedYear) {
-      filtered = filtered.filter(paper => {
-        const paperYear = new Date(paper.published_date || paper.created_at).getFullYear();
-        return paperYear === parseInt(selectedYear);
-      });
-    }
-
-    // Sort
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'newest':
-          return new Date(b.published_date || b.created_at) - new Date(a.published_date || a.created_at);
-        case 'oldest':
-          return new Date(a.published_date || a.created_at) - new Date(b.published_date || b.created_at);
-        case 'most_viewed':
-          return (b.view_count || 0) - (a.view_count || 0);
-        case 'most_downloaded':
-          return (b.download_count || 0) - (a.download_count || 0);
-        case 'title':
-          return a.title.localeCompare(b.title);
-        default:
-          return 0;
-      }
-    });
-
-    setFilteredPapers(filtered);
+  const toggleTheme = (categoryId) => {
+    setSelectedThemes((prev) =>
+      prev.includes(categoryId) ? prev.filter((id) => id !== categoryId) : [...prev, categoryId]
+    );
   };
 
   const formatDate = (dateString) => {
@@ -247,14 +244,14 @@ const BrowseRepository = () => {
 
   const getCategoryColor = (categoryId) => {
     const colors = [
-      'from-[#1C4D8D] to-[#2563eb]',
-      'from-[#2563eb] to-[#1C4D8D]',
-      'from-[#1C4D8D] to-teal-500',
+      'from-[#3674B5] to-[#578FCA]',
+      'from-[#578FCA] to-[#3674B5]',
+      'from-[#3674B5] to-teal-500',
       'from-green-500 to-emerald-500',
       'from-amber-500 to-orange-500',
       'from-red-500 to-pink-500',
       'from-teal-500 to-green-500',
-      'from-[#1C4D8D] to-cyan-500'
+      'from-[#3674B5] to-cyan-500'
     ];
     if (!categoryId) return 'from-gray-500 to-slate-500';
     const index = categories.findIndex(cat => cat.id === categoryId);
@@ -262,13 +259,13 @@ const BrowseRepository = () => {
   };
 
   const handleViewDetails = (paper) => {
-    // Navigate to paper detail page
-    navigate(`/research/${paper.id}`);
+    navigate(`/research/${paper.id}`, { state: { from: location.pathname } });
   };
 
   const clearFilters = () => {
     setSearchTerm('');
     setSelectedCategory('');
+    setSelectedThemes([]);
     setSelectedYear('');
     setAuthorSearch('');
     setSortBy('newest');
@@ -278,6 +275,7 @@ const BrowseRepository = () => {
     let count = 0;
     if (searchTerm) count++;
     if (selectedCategory) count++;
+    if (selectedThemes.length) count++;
     if (selectedYear) count++;
     if (authorSearch) count++;
     return count;
@@ -289,12 +287,16 @@ const BrowseRepository = () => {
   };
 
   const sortOptions = [
-    { value: 'newest', label: 'Newest First', icon: Clock },
+    { value: 'newest', label: 'Newest First', icon: Calendar },
     { value: 'oldest', label: 'Oldest First', icon: Calendar },
     { value: 'most_viewed', label: 'Most Viewed', icon: Eye },
     { value: 'most_downloaded', label: 'Most Downloaded', icon: Download },
-    { value: 'title', label: 'Title (A-Z)', icon: SortAsc }
+    { value: 'title', label: 'Title (A-Z)', icon: SortAsc },
   ];
+
+  const thematicCategories = facets.categories?.length
+    ? facets.categories
+    : categories.map((category) => ({ id: category.id, name: category.name, count: null }));
 
   const handleCategorySelect = (categoryId) => {
     setSelectedCategory(categoryId);
@@ -309,8 +311,8 @@ const BrowseRepository = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-50 to-white">
         <div className="text-center">
           <div className="relative">
-            <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
-            <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-20 h-20 border-4 border-[#3674B5]/20 rounded-full"></div>
+            <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin"></div>
           </div>
           <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading research repository...</p>
         </div>
@@ -321,40 +323,13 @@ const BrowseRepository = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Hero Section */}
-        <div className="mb-12 text-center">
-          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 border border-[#1C4D8D]/20 text-[#1C4D8D] text-sm font-semibold mb-6">
-            <Sparkles size={16} />
-            National University Dasmariñas
-          </div>
-
-          <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-4">
-            Research <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Repository</span>
-          </h1>
-
-          <p className="text-xl text-slate-600 max-w-3xl mx-auto mb-10">
-            Discover, explore, and download published academic research from our university community
+        <div className="mb-8 text-center md:text-left">
+          <p className="text-sm font-semibold text-[#3674B5] mb-2">National University Dasmariñas</p>
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">Research Repository</h1>
+          <p className="text-base text-slate-600 max-w-2xl mx-auto md:mx-0">
+            Browse and view approved research from the NU community. PDFs are view-only in the app; downloads are restricted to administrators.
           </p>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto mb-10">
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="text-2xl font-black text-slate-900">{stats.totalPapers}</div>
-              <div className="text-sm text-slate-600 font-medium">Research Papers</div>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="text-2xl font-black text-blue-600">{stats.totalAuthors}</div>
-              <div className="text-sm text-slate-600 font-medium">Unique Authors</div>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="text-2xl font-black text-green-600">{stats.totalViews.toLocaleString()}</div>
-              <div className="text-sm text-slate-600 font-medium">Total Views</div>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="text-2xl font-black text-[#1C4D8D]">{stats.totalDownloads.toLocaleString()}</div>
-              <div className="text-sm text-slate-600 font-medium">Downloads</div>
-            </div>
-          </div>
+          <p className="mt-3 text-sm text-slate-500">{total} paper{total === 1 ? '' : 's'} found</p>
         </div>
 
         {/* Main Search and Filter Bar */}
@@ -368,7 +343,7 @@ const BrowseRepository = () => {
                 placeholder="Search research papers, authors, or keywords..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-14 pr-32 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#1C4D8D] focus:ring-4 focus:ring-[#1C4D8D]/10 text-lg shadow-lg"
+                className="w-full pl-14 pr-32 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#3674B5] focus:ring-4 focus:ring-[#3674B5]/10 text-lg shadow-lg"
               />
               <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
                 {(searchTerm || selectedCategory) && (
@@ -382,26 +357,39 @@ const BrowseRepository = () => {
               </div>
             </div>
 
-            {/* Search Tips */}
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-slate-500">
-              <span className="flex items-center gap-2">
-                <Info size={14} />
-                Try searching for:
-              </span>
-              <button onClick={() => setSearchTerm('machine learning')} className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full hover:bg-slate-200 transition-colors">
-                machine learning
-              </button>
-              <button onClick={() => setSearchTerm('artificial intelligence')} className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full hover:bg-slate-200 transition-colors">
-                AI
-              </button>
-              <button onClick={() => setSearchTerm('data science')} className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full hover:bg-slate-200 transition-colors">
-                data science
-              </button>
-            </div>
+            {thematicCategories.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                {thematicCategories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => toggleTheme(category.id)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                      selectedThemes.includes(category.id)
+                        ? 'bg-[#3674B5] text-white border-[#3674B5]'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#578FCA]'
+                    }`}
+                  >
+                    {category.name}
+                    {category.count != null ? ` (${category.count})` : ''}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Filter Controls - NEW CLEAN DESIGN */}
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 mb-6">
+          <div className="flex md:hidden justify-center mb-4">
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-medium"
+            >
+              <Filter size={18} />
+              Filters ({activeFilterCount()})
+            </button>
+          </div>
+
+          <div className="hidden md:block bg-white rounded-2xl shadow-lg border border-slate-200 p-6 mb-6">
             <div className="flex flex-col lg:flex-row gap-4">
               {/* Author Search */}
               <div className="flex-1">
@@ -414,7 +402,7 @@ const BrowseRepository = () => {
                   placeholder="Enter author name..."
                   value={authorSearch}
                   onChange={(e) => setAuthorSearch(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#1C4D8D] focus:ring-2 focus:ring-[#1C4D8D]/10 text-sm"
+                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#3674B5] focus:ring-2 focus:ring-[#3674B5]/10 text-sm"
                 />
               </div>
 
@@ -427,7 +415,7 @@ const BrowseRepository = () => {
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#1C4D8D] focus:ring-2 focus:ring-[#1C4D8D]/10 text-sm cursor-pointer"
+                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#3674B5] focus:ring-2 focus:ring-[#3674B5]/10 text-sm cursor-pointer"
                 >
                   <option value="">All Categories</option>
                   {categories.map((category) => (
@@ -447,7 +435,7 @@ const BrowseRepository = () => {
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#1C4D8D] focus:ring-2 focus:ring-[#1C4D8D]/10 text-sm cursor-pointer"
+                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#3674B5] focus:ring-2 focus:ring-[#3674B5]/10 text-sm cursor-pointer"
                 >
                   <option value="">All Years</option>
                   {availableYears.map((year) => (
@@ -467,7 +455,7 @@ const BrowseRepository = () => {
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#1C4D8D] focus:ring-2 focus:ring-[#1C4D8D]/10 text-sm cursor-pointer"
+                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#3674B5] focus:ring-2 focus:ring-[#3674B5]/10 text-sm cursor-pointer"
                 >
                   {sortOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -485,9 +473,9 @@ const BrowseRepository = () => {
                   <>
                     <span className="text-sm font-medium text-slate-600">Active filters:</span>
                     {searchTerm && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#1C4D8D]/10 text-[#1C4D8D] text-xs font-semibold rounded-full">
+                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#3674B5]/10 text-[#3674B5] text-xs font-semibold rounded-full">
                         Search: "{searchTerm}"
-                        <button onClick={() => setSearchTerm('')} className="hover:bg-[#1C4D8D]/20 rounded-full p-0.5">
+                        <button onClick={() => setSearchTerm('')} className="hover:bg-[#3674B5]/20 rounded-full p-0.5">
                           <X size={12} />
                         </button>
                       </span>
@@ -509,9 +497,9 @@ const BrowseRepository = () => {
                       </span>
                     )}
                     {selectedYear && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#2563eb]/10 text-[#2563eb] text-xs font-semibold rounded-full">
+                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#578FCA]/10 text-[#578FCA] text-xs font-semibold rounded-full">
                         Year: {selectedYear}
-                        <button onClick={() => setSelectedYear('')} className="hover:bg-[#2563eb]/20 rounded-full p-0.5">
+                        <button onClick={() => setSelectedYear('')} className="hover:bg-[#578FCA]/20 rounded-full p-0.5">
                           <X size={12} />
                         </button>
                       </span>
@@ -562,7 +550,7 @@ const BrowseRepository = () => {
             <div className="mt-4 pt-4 border-t border-slate-200">
               <p className="text-sm text-slate-600">
                 Showing <span className="font-bold text-slate-900">{filteredPapers.length}</span> of{' '}
-                <span className="font-bold text-slate-900">{papers.length}</span> research papers
+                <span className="font-bold text-slate-900">{total}</span> research papers
               </p>
             </div>
           </div>
@@ -590,7 +578,7 @@ const BrowseRepository = () => {
                     <button
                       onClick={() => handleCategorySelect('')}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedCategory === ''
-                          ? 'bg-[#1C4D8D] text-white'
+                          ? 'bg-[#3674B5] text-white'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                     >
@@ -601,7 +589,7 @@ const BrowseRepository = () => {
                         key={category.id}
                         onClick={() => handleCategorySelect(category.id)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedCategory === category.id
-                            ? 'bg-[#1C4D8D] text-white'
+                            ? 'bg-[#3674B5] text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                           }`}
                       >
@@ -625,7 +613,7 @@ const BrowseRepository = () => {
                           key={option.value}
                           onClick={() => handleSortSelect(option.value)}
                           className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${sortBy === option.value
-                              ? 'border-[#1C4D8D] bg-[#1C4D8D]/10 text-[#1C4D8D]'
+                              ? 'border-[#3674B5] bg-[#3674B5]/10 text-[#3674B5]'
                               : 'border-slate-200 hover:border-slate-300'
                             }`}
                         >
@@ -634,7 +622,7 @@ const BrowseRepository = () => {
                             <span>{option.label}</span>
                           </div>
                           {sortBy === option.value && (
-                            <div className="w-2 h-2 bg-[#1C4D8D] rounded-full"></div>
+                            <div className="w-2 h-2 bg-[#3674B5] rounded-full"></div>
                           )}
                         </button>
                       );
@@ -700,7 +688,7 @@ const BrowseRepository = () => {
               <div
                 key={paper.id}
                 onClick={() => handleViewDetails(paper)}
-                className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-[#1C4D8D]/30 transition-all duration-300 overflow-hidden cursor-pointer"
+                className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-[#3674B5]/30 transition-all duration-300 overflow-hidden cursor-pointer"
               >
                 {(() => {
                   const primaryAuthor = getPrimaryAuthor(paper);
@@ -739,7 +727,7 @@ const BrowseRepository = () => {
                     </div>
                   </div>
 
-                  <h3 className="text-lg font-bold text-slate-900 mb-3 line-clamp-2 group-hover:text-[#1C4D8D] transition-colors">
+                  <h3 className="text-lg font-bold text-slate-900 mb-3 line-clamp-2 group-hover:text-[#3674B5] transition-colors">
                     {paper.title}
                   </h3>
 
@@ -777,7 +765,7 @@ const BrowseRepository = () => {
                         {paper.keywords.length > 3 && (
                           <button
                             onClick={(e) => togglePaperExpand(paper.id, e)}
-                            className="px-2.5 py-1 text-xs text-[#1C4D8D] hover:text-[#163a6b]"
+                            className="px-2.5 py-1 text-xs text-[#3674B5] hover:text-[#2d6299]"
                           >
                             +{paper.keywords.length - 3} more
                           </button>
@@ -816,7 +804,7 @@ const BrowseRepository = () => {
               <div
                 key={paper.id}
                 onClick={() => handleViewDetails(paper)}
-                className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-[#1C4D8D]/30 transition-all duration-300 cursor-pointer"
+                className="group bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-[#3674B5]/30 transition-all duration-300 cursor-pointer"
               >
                 {(() => {
                   const primaryAuthor = getPrimaryAuthor(paper);
@@ -853,7 +841,7 @@ const BrowseRepository = () => {
                             </div>
                           </div>
 
-                          <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-[#1C4D8D] transition-colors">
+                          <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-[#3674B5] transition-colors">
                             {paper.title}
                           </h3>
                         </div>
@@ -896,7 +884,7 @@ const BrowseRepository = () => {
                           e.stopPropagation();
                           handleViewDetails(paper);
                         }}
-                        className="px-4 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl hover:from-[#163a6b] hover:to-[#1C4D8D] transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                        className="px-4 py-3 bg-gradient-to-r from-[#3674B5] to-[#578FCA] text-white rounded-xl hover:from-[#2d6299] hover:to-[#3674B5] transition-colors font-medium text-sm flex items-center justify-center gap-2"
                       >
                         <Eye size={16} />
                         View details
@@ -915,20 +903,28 @@ const BrowseRepository = () => {
           </div>
         )}
 
-        {/* Results Footer */}
         {filteredPapers.length > 0 && (
-          <div className="mt-10 text-center">
-            <div className="inline-flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl">
-              <FileText size={18} className="text-[#1C4D8D]" />
-              <div>
-                <p className="text-sm font-medium text-slate-700">
-                  Showing {filteredPapers.length} of {papers.length} research papers
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Click on any paper to view full details • Use filters to narrow results
-                </p>
-              </div>
-            </div>
+          <div className="mt-10 text-center space-y-4">
+            <p className="text-sm text-slate-600">
+              Showing {papers.length} of {total} research papers
+            </p>
+            {canLoadMore && (
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#3674B5] text-white font-semibold hover:bg-[#2d6299] disabled:opacity-60 transition-colors"
+              >
+                {loadingMore ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    Loading…
+                  </>
+                ) : (
+                  'Load more'
+                )}
+              </button>
+            )}
           </div>
         )}
       </div>

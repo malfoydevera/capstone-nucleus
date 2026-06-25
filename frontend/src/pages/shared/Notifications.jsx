@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -6,10 +6,8 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
-  ChevronRight,
-  Clock3,
+  ExternalLink,
   FileText,
-  ListChecks,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -20,12 +18,13 @@ import {
   X,
 } from 'lucide-react';
 import { notificationsAPI, unwrapApiData } from '../../utils/api';
-import GuidancePanel from '../../components/ui/GuidancePanel';
-import useAutoLoadMore from '../../hooks/useAutoLoadMore';
+import { useAuth } from '../../contexts/AuthContext';
+import UserGuideLink from '../../components/ui/UserGuideLink';
+import LoadMoreFooter from '../../components/ui/LoadMoreFooter';
 
-const APPROVAL_PAGE_SIZE = 3;
+const FETCH_PAGE_SIZE = 12;
+const LIST_PAGE_SIZE = 8;
 
-// notification.type → category mapping
 const ACTION_TYPES = new Set([
   'revision_required',
   'returned_for_review',
@@ -59,35 +58,164 @@ const UPLOAD_TYPES = new Set([
   'submission',
 ]);
 
-// Map type → icon component
-function getNotificationIcon(type) {
+const TYPE_LEGEND = [
+  { key: 'action', label: 'Action Required', stripe: 'bg-amber-500', badge: 'bg-amber-50 text-amber-800 border-amber-200' },
+  { key: 'approval', label: 'Approval', stripe: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  { key: 'coauthor', label: 'Co-Author', stripe: 'bg-violet-500', badge: 'bg-violet-50 text-violet-800 border-violet-200' },
+  { key: 'upload', label: 'Submission', stripe: 'bg-blue-500', badge: 'bg-blue-50 text-blue-800 border-blue-200' },
+  { key: 'rejection', label: 'Rejected', stripe: 'bg-rose-500', badge: 'bg-rose-50 text-rose-800 border-rose-200' },
+  { key: 'general', label: 'General', stripe: 'bg-slate-400', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
+];
+
+function getTypeMeta(type) {
   const t = String(type || '').toLowerCase();
-  if (COAUTHOR_TYPES.has(t)) return UserPlus;
-  if (UPLOAD_TYPES.has(t)) return Upload;
-  if (APPROVAL_TYPES.has(t)) return Sparkles;
-  if (t === 'rejection') return X;
-  if (t === 'revision_required' || t === 'returned_to_author') return ShieldAlert;
-  if (t === 'metadata_corrected') return FileText;
-  if (t === 'publication') return BookOpen;
-  return Bell;
+
+  if (t === 'rejection') {
+    return {
+      label: 'Rejected',
+      legendKey: 'rejection',
+      stripe: 'bg-rose-500',
+      badge: 'bg-rose-50 text-rose-800 border-rose-200',
+      iconBg: 'bg-rose-100',
+      iconText: 'text-rose-600',
+      Icon: X,
+    };
+  }
+  if (t === 'revision_required' || t === 'returned_to_author' || t === 'returned_for_review') {
+    return {
+      label: 'Revision',
+      legendKey: 'action',
+      stripe: 'bg-amber-500',
+      badge: 'bg-amber-50 text-amber-800 border-amber-200',
+      iconBg: 'bg-amber-100',
+      iconText: 'text-amber-600',
+      Icon: ShieldAlert,
+    };
+  }
+  if (ACTION_TYPES.has(t)) {
+    return {
+      label: 'Action Required',
+      legendKey: 'action',
+      stripe: 'bg-amber-500',
+      badge: 'bg-amber-50 text-amber-800 border-amber-200',
+      iconBg: 'bg-amber-100',
+      iconText: 'text-amber-600',
+      Icon: ShieldAlert,
+    };
+  }
+  if (APPROVAL_TYPES.has(t)) {
+    return {
+      label: 'Approval',
+      legendKey: 'approval',
+      stripe: 'bg-emerald-500',
+      badge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      iconBg: 'bg-emerald-100',
+      iconText: 'text-emerald-600',
+      Icon: Sparkles,
+    };
+  }
+  if (COAUTHOR_TYPES.has(t)) {
+    return {
+      label: 'Co-Author',
+      legendKey: 'coauthor',
+      stripe: 'bg-violet-500',
+      badge: 'bg-violet-50 text-violet-800 border-violet-200',
+      iconBg: 'bg-violet-100',
+      iconText: 'text-violet-600',
+      Icon: UserPlus,
+    };
+  }
+  if (UPLOAD_TYPES.has(t)) {
+    return {
+      label: 'Submission',
+      legendKey: 'upload',
+      stripe: 'bg-blue-500',
+      badge: 'bg-blue-50 text-blue-800 border-blue-200',
+      iconBg: 'bg-blue-100',
+      iconText: 'text-blue-600',
+      Icon: Upload,
+    };
+  }
+  if (t === 'publication') {
+    return {
+      label: 'Published',
+      legendKey: 'approval',
+      stripe: 'bg-sky-500',
+      badge: 'bg-sky-50 text-sky-800 border-sky-200',
+      iconBg: 'bg-sky-100',
+      iconText: 'text-sky-600',
+      Icon: BookOpen,
+    };
+  }
+  if (t === 'metadata_corrected') {
+    return {
+      label: 'Metadata',
+      legendKey: 'general',
+      stripe: 'bg-slate-400',
+      badge: 'bg-slate-50 text-slate-700 border-slate-200',
+      iconBg: 'bg-slate-100',
+      iconText: 'text-slate-600',
+      Icon: FileText,
+    };
+  }
+
+  return {
+    label: 'Update',
+    legendKey: 'general',
+    stripe: 'bg-slate-400',
+    badge: 'bg-slate-50 text-slate-700 border-slate-200',
+    iconBg: 'bg-slate-100',
+    iconText: 'text-slate-600',
+    Icon: Bell,
+  };
 }
 
-// Map type → color class (icon background + text)
-function getNotificationColor(type) {
-  const t = String(type || '').toLowerCase();
-  if (t === 'rejection') return { bg: 'bg-rose-100', text: 'text-rose-600' };
-  if (t === 'revision_required' || t === 'returned_to_author' || t === 'returned_for_review')
-    return { bg: 'bg-amber-100', text: 'text-amber-600' };
-  if (APPROVAL_TYPES.has(t)) return { bg: 'bg-emerald-100', text: 'text-emerald-600' };
-  if (COAUTHOR_TYPES.has(t)) return { bg: 'bg-violet-100', text: 'text-violet-600' };
-  if (UPLOAD_TYPES.has(t)) return { bg: 'bg-blue-100', text: 'text-blue-600' };
-  if (t === 'publication') return { bg: 'bg-sky-100', text: 'text-sky-600' };
-  return { bg: 'bg-slate-100', text: 'text-slate-600' };
+const REVIEW_ROUTE_BY_ROLE = {
+  faculty: '/faculty/review',
+  dean: '/dean/review',
+  program_chair: '/program-chair/review',
+  staff: '/staff/review',
+  admin: '/admin/review',
+};
+
+function resolveNotificationNavigatePath(user, item) {
+  const researchId = item.research_id;
+  const typeKey = String(item.type || '').toLowerCase();
+
+  if (user?.role === 'student' && researchId) {
+    if (
+      typeKey === 'revision_required' ||
+      typeKey === 'returned_to_author' ||
+      typeKey === 'returned_for_review' ||
+      typeKey === 'rejection'
+    ) {
+      return `/student/my-research/${researchId}`;
+    }
+    return `/research/${researchId}`;
+  }
+
+  const workflowish =
+    ACTION_TYPES.has(typeKey) ||
+    APPROVAL_TYPES.has(typeKey) ||
+    UPLOAD_TYPES.has(typeKey) ||
+    typeKey === 'metadata_corrected';
+
+  const base = REVIEW_ROUTE_BY_ROLE[user?.role];
+  const action = (item.action_url || '').trim();
+  const isGenericResearch =
+    !action || /^\/research\/[0-9a-f-]{36}\/?$/i.test(action) || action.startsWith('/research/');
+
+  if (researchId && base && workflowish && isGenericResearch) {
+    return `${base}/${researchId}`;
+  }
+  if (action) return action;
+  if (researchId) return `/research/${researchId}`;
+  return null;
 }
 
 function getCategory(item) {
   const typeKey = String(item.type || '').toLowerCase();
-  if (ACTION_TYPES.has(typeKey)) return 'action';
+  if (ACTION_TYPES.has(typeKey) || typeKey === 'rejection') return 'action';
   if (APPROVAL_TYPES.has(typeKey)) return 'approval';
 
   const source = `${item.type || ''} ${item.title || ''} ${item.message || ''}`.toLowerCase();
@@ -108,115 +236,191 @@ const formatTimeAgo = (isoDate) => {
   return `${days}d ago`;
 };
 
-// ─── Notification card ────────────────────────────────────────────────────────
-function NotificationCard({ item, onOpen, onDelete, onMarkRead }) {
-  const [deleting, setDeleting] = useState(false);
-  const Icon = getNotificationIcon(item.type);
-  const color = getNotificationColor(item.type);
+const formatFullDate = (isoDate) => {
+  if (!isoDate) return '—';
+  return new Date(isoDate).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const TypeBadge = ({ type }) => {
+  const meta = getTypeMeta(type);
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide whitespace-nowrap ${meta.badge}`}>
+      {meta.label}
+    </span>
+  );
+};
+
+const NotificationCard = memo(function NotificationCard({
+  item,
+  expanded,
+  onToggle,
+  onOpen,
+  onDelete,
+  onMarkRead,
+  deletingId,
+  user,
+  isStudent,
+}) {
+  const meta = getTypeMeta(item.type);
+  const Icon = meta.Icon;
   const isUnread = !item.is_read;
-
-  const handleDelete = async (e) => {
-    e.stopPropagation();
-    setDeleting(true);
-    await onDelete(item.id);
-    setDeleting(false);
-  };
-
-  const handleMarkRead = async (e) => {
-    e.stopPropagation();
-    await onMarkRead(item.id);
-  };
+  const isDeleting = deletingId === item.id;
+  const navigatePath = user ? resolveNotificationNavigatePath(user, item) : null;
 
   return (
     <article
-      className={`group relative rounded-lg border transition-all duration-150 ${
-        isUnread
-          ? 'border-slate-300 bg-white shadow-sm ring-1 ring-slate-200'
-          : 'border-slate-200 bg-slate-50/60'
+      className={`relative overflow-hidden rounded-xl border transition-all duration-200 ${
+        expanded
+          ? 'border-[#3674B5]/40 bg-white shadow-sm ring-1 ring-[#3674B5]/15'
+          : isUnread
+          ? 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+          : 'border-slate-200 bg-slate-50/50 hover:bg-white hover:border-slate-300'
       }`}
     >
-      {/* Unread left accent stripe */}
-      {isUnread && (
-        <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg bg-[#1C4D8D]" />
-      )}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${meta.stripe}`} />
 
-      <div className={`flex gap-3 p-4 ${isUnread ? 'pl-5' : ''}`}>
-        {/* Icon */}
-        <div className={`mt-0.5 h-9 w-9 flex-shrink-0 rounded-full flex items-center justify-center ${color.bg}`}>
-          <Icon size={16} className={color.text} />
-        </div>
+      <div className="flex items-start gap-3 px-4 py-3.5 pl-5">
+        <button
+          type="button"
+          onClick={() => onToggle(item)}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3674B5]/40 rounded-lg"
+        >
+          <div className={`mt-0.5 h-9 w-9 shrink-0 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+            <Icon size={16} className={meta.iconText} />
+          </div>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className={`text-sm leading-snug truncate ${isUnread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
-                {item.title || 'Notification'}
-              </p>
-              <p className="mt-0.5 text-sm text-slate-600 line-clamp-2 break-words">
-                {item.message}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <TypeBadge type={item.type} />
+              {isUnread && (
+                <span className="h-1.5 w-1.5 rounded-full bg-[#3674B5]" aria-label="Unread" />
+              )}
+            </div>
+            <p className={`text-sm leading-snug break-words ${isUnread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
+              {item.title || 'Notification'}
+            </p>
+            {!expanded && (
+              <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{item.message}</p>
+            )}
+            <p className="mt-1.5 text-[11px] text-slate-400">{formatTimeAgo(item.created_at)}</p>
+          </div>
+
+          <ChevronDown
+            size={16}
+            className={`mt-1 shrink-0 text-slate-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onDelete(item.id)}
+          disabled={isDeleting}
+          aria-label="Delete notification"
+          className="mt-1 h-9 w-9 shrink-0 rounded-lg border border-transparent text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 inline-flex items-center justify-center transition-colors"
+        >
+          {isDeleting ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+        </button>
+      </div>
+
+      <div
+        className={`grid transition-all duration-200 ease-in-out ${
+          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="border-t border-slate-100 px-4 py-4 pl-5 space-y-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Full message</p>
+              <p className="mt-1.5 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
+                {item.message || 'No additional details provided.'}
               </p>
             </div>
 
-            {/* Action buttons — visible on hover */}
-            <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {isUnread && (
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <span>{formatFullDate(item.created_at)}</span>
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              <span className="capitalize">{getCategory(item)}</span>
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              <span>{item.is_read ? 'Read' : 'Unread'}</span>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {navigatePath && (
                 <button
-                  onClick={handleMarkRead}
-                  title="Mark as read"
-                  className="h-7 w-7 flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                  type="button"
+                  onClick={() => onOpen(item)}
+                  className="h-8 px-3 rounded-lg bg-[#3674B5] text-white text-xs font-semibold hover:bg-[#2d6299] inline-flex items-center gap-1.5"
+                >
+                  <ExternalLink size={13} />
+                  {isStudent ? 'Open submission' : 'Open related page'}
+                </button>
+              )}
+              {!item.is_read && (
+                <button
+                  type="button"
+                  onClick={() => onMarkRead(item.id)}
+                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 inline-flex items-center gap-1.5"
                 >
                   <Check size={13} />
+                  Mark as read
                 </button>
               )}
               <button
-                onClick={handleDelete}
-                disabled={deleting}
-                title="Delete notification"
-                className="h-7 w-7 flex items-center justify-center rounded-md text-slate-400 hover:bg-rose-100 hover:text-rose-600"
+                type="button"
+                onClick={() => onDelete(item.id)}
+                disabled={isDeleting}
+                className="h-8 px-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 inline-flex items-center gap-1.5 disabled:opacity-60"
               >
-                {deleting ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={13} />}
+                {isDeleting ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                Delete
               </button>
             </div>
-          </div>
-
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className={`text-[11px] ${isUnread ? 'font-semibold text-[#1C4D8D]' : 'text-slate-400'}`}>
-              {formatTimeAgo(item.created_at)}
-            </span>
-
-            {item.research_id && (
-              <button
-                onClick={() => onOpen(item)}
-                className="text-[11px] font-semibold text-slate-600 hover:text-[#1C4D8D] hover:underline"
-              >
-                View paper →
-              </button>
-            )}
           </div>
         </div>
       </div>
     </article>
   );
-}
+});
 
-// ─── Main component ───────────────────────────────────────────────────────────
 const Notifications = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const isStudent = user?.role === 'student';
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [query, setQuery] = useState('');
-  const [showActionsMenu, setShowActionsMenu] = useState(false);
-  const [visibleApprovalCount, setVisibleApprovalCount] = useState(APPROVAL_PAGE_SIZE);
+  const [expandedId, setExpandedId] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(LIST_PAGE_SIZE);
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.is_read).length,
     [notifications]
   );
+
+  const applyNotificationPayload = (payload, { append = false } = {}) => {
+    const rows = payload.notifications || [];
+    setNotifications((prev) => (append ? [...prev, ...rows] : rows));
+    setTotalCount(payload.total ?? rows.length);
+    setHasMore(Boolean(payload.hasMore));
+  };
 
   const fetchNotifications = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -224,15 +428,35 @@ const Notifications = () => {
     setError(false);
 
     try {
-      const response = await notificationsAPI.getMine({ limit: 100 });
-      setNotifications(unwrapApiData(response).notifications || []);
+      const response = await notificationsAPI.getMine({ limit: FETCH_PAGE_SIZE, offset: 0 });
+      applyNotificationPayload(unwrapApiData(response));
+      setExpandedId(null);
     } catch (err) {
       console.error('Failed to fetch notifications:', err);
       if (!silent) setError(true);
       setNotifications([]);
+      setTotalCount(0);
+      setHasMore(false);
+      setExpandedId(null);
     } finally {
       if (!silent) setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const loadMoreNotifications = async () => {
+    if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const response = await notificationsAPI.getMine({
+        limit: FETCH_PAGE_SIZE,
+        offset: notifications.length,
+      });
+      applyNotificationPayload(unwrapApiData(response), { append: true });
+    } catch (err) {
+      console.error('Failed to load more notifications:', err);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -248,12 +472,19 @@ const Notifications = () => {
           prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
         );
       }
-    } catch { /* non-critical */ }
+    } catch {
+      /* non-critical */
+    }
 
-    if (item.action_url) {
-      navigate(item.action_url);
-    } else if (item.research_id) {
-      navigate(`/research/${item.research_id}`);
+    const path = resolveNotificationNavigatePath(user, item);
+    if (path) navigate(path);
+  };
+
+  const handleToggle = (item) => {
+    const willExpand = expandedId !== item.id;
+    setExpandedId(willExpand ? item.id : null);
+    if (willExpand && !item.is_read) {
+      handleMarkRead(item.id);
     }
   };
 
@@ -282,16 +513,41 @@ const Notifications = () => {
 
   const handleDelete = async (id) => {
     try {
+      setDeletingId(id);
       await notificationsAPI.deleteOne(id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setNotifications((prev) => {
+        const next = prev.filter((n) => n.id !== id);
+        setTotalCount((count) => Math.max(0, count - 1));
+        return next;
+      });
+      if (expandedId === id) setExpandedId(null);
     } catch (err) {
       console.error('Delete notification error:', err);
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  // ── Categorisation ──────────────────────────────────────────────────────────
+  const handleClearAll = async () => {
+    try {
+      setClearingAll(true);
+      await notificationsAPI.deleteAll();
+      setNotifications([]);
+      setTotalCount(0);
+      setHasMore(false);
+      setExpandedId(null);
+      setShowClearConfirm(false);
+    } catch (err) {
+      console.error('Clear all notifications error:', err);
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
   const categorized = useMemo(() => {
-    const action = [], approval = [], update = [];
+    const action = [];
+    const approval = [];
+    const update = [];
     notifications.forEach((item) => {
       const cat = getCategory(item);
       if (cat === 'action') action.push(item);
@@ -301,11 +557,14 @@ const Notifications = () => {
     return { action, approval, update };
   }, [notifications]);
 
-  const tabCounts = useMemo(() => ({
-    all: notifications.length,
-    action: categorized.action.length,
-    updates: categorized.approval.length + categorized.update.length,
-  }), [notifications.length, categorized]);
+  const tabCounts = useMemo(
+    () => ({
+      all: totalCount || notifications.length,
+      action: categorized.action.length,
+      updates: categorized.approval.length + categorized.update.length,
+    }),
+    [totalCount, notifications.length, categorized]
+  );
 
   const filteredByTab = useMemo(() => {
     if (activeTab === 'action') return categorized.action;
@@ -321,68 +580,56 @@ const Notifications = () => {
     );
   }, [filteredByTab, query]);
 
-  const highPriorityItem = useMemo(() => {
-    const actionItems = searchedNotifications.filter((n) => getCategory(n) === 'action');
-    return actionItems.find((n) => !n.is_read) || actionItems[0] || null;
+  const sortedNotifications = useMemo(() => {
+    return [...searchedNotifications].sort((a, b) => {
+      const score = (item) =>
+        (!item.is_read ? 10 : 0) + (getCategory(item) === 'action' ? 5 : 0);
+      const diff = score(b) - score(a);
+      if (diff !== 0) return diff;
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
   }, [searchedNotifications]);
 
-  const approvalItems = useMemo(
-    () => searchedNotifications.filter((n) => getCategory(n) === 'approval' && n.id !== highPriorityItem?.id),
-    [searchedNotifications, highPriorityItem]
+  const visibleNotifications = useMemo(
+    () => sortedNotifications.slice(0, visibleCount),
+    [sortedNotifications, visibleCount]
   );
 
-  const visibleApprovalItems = useMemo(
-    () => approvalItems.slice(0, visibleApprovalCount),
-    [approvalItems, visibleApprovalCount]
-  );
-
-  const updateItems = useMemo(
-    () => searchedNotifications.filter((n) => getCategory(n) === 'update' && n.id !== highPriorityItem?.id),
-    [searchedNotifications, highPriorityItem]
-  );
-
-  const canLoadMoreApprovals = visibleApprovalCount < approvalItems.length;
-  const approvalLoadMoreRef = useAutoLoadMore({
-    canLoadMore: canLoadMoreApprovals,
-    setVisibleCount: setVisibleApprovalCount,
-    step: APPROVAL_PAGE_SIZE,
-  });
+  const canLoadMoreList = visibleCount < sortedNotifications.length;
 
   useEffect(() => {
-    setVisibleApprovalCount(APPROVAL_PAGE_SIZE);
+    setVisibleCount(LIST_PAGE_SIZE);
   }, [activeTab, query]);
 
-  const snapshot = useMemo(() => {
-    const pending = categorized.action.filter((n) => !n.is_read).length;
-    const active = categorized.approval.filter((n) => !n.is_read).length;
-    const total = Math.max(1, pending + active);
-    return { pending, active, progress: Math.min(100, Math.round((active / total) * 100)) };
-  }, [categorized]);
+  useEffect(() => {
+    if (expandedId && !notifications.some((n) => n.id === expandedId)) {
+      setExpandedId(null);
+    }
+  }, [notifications, expandedId]);
 
-  // ── Loading ─────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="max-w-6xl mx-auto px-6 py-10">
-        <div className="flex items-center gap-3 text-slate-600 bg-white rounded-lg border border-slate-200 px-5 py-4 shadow-sm">
+      <div className="w-full min-h-full px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm text-slate-600">
           <RefreshCw size={18} className="animate-spin" />
-          <span className="font-medium">Loading notifications...</span>
+          <span className="font-medium">Loading notifications…</span>
         </div>
       </div>
     );
   }
 
-  // ── Error ───────────────────────────────────────────────────────────────────
   if (error) {
     return (
-      <div className="max-w-6xl mx-auto px-6 py-10">
-        <div className="flex items-center justify-between gap-3 bg-rose-50 rounded-lg border border-rose-200 px-5 py-4">
+      <div className="w-full min-h-full px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-5 py-4">
           <div className="flex items-center gap-3 text-rose-700">
             <ShieldAlert size={18} />
-            <span className="font-medium">Failed to load notifications. Check your connection and try again.</span>
+            <span className="font-medium">Failed to load notifications.</span>
           </div>
           <button
+            type="button"
             onClick={() => fetchNotifications({ silent: false })}
-            className="h-9 px-4 rounded-md border border-rose-300 bg-white text-rose-700 text-sm font-semibold hover:bg-rose-100"
+            className="h-9 px-4 rounded-lg border border-rose-300 bg-white text-rose-700 text-sm font-semibold hover:bg-rose-100"
           >
             Retry
           </button>
@@ -392,315 +639,207 @@ const Notifications = () => {
   }
 
   return (
-    <div
-      className="w-full min-h-full -m-4 md:-m-8 p-4 md:p-8"
-      style={{
-        fontFamily: 'Montserrat, Inter, Segoe UI, sans-serif',
-        background: 'radial-gradient(circle at 20% -30%, #ffffff 0%, #f5f6f7 42%, #eceff1 100%)',
-      }}
-    >
-      <div className="mx-auto max-w-7xl">
-        <div className="grid grid-cols-1 xl:grid-cols-[1.8fr_0.9fr] gap-5">
+    <div className="w-full min-h-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Notifications</h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {isStudent ? 'Stay updated on your submissions and reviews' : 'Your activity and system updates'}
+          </p>
+        </div>
 
-          {/* ── Main panel ── */}
-          <section className="rounded-xl border border-slate-200 bg-white/95 p-5 md:p-6 shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fetchNotifications({ silent: true })}
+            disabled={refreshing}
+            className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 inline-flex items-center justify-center"
+            aria-label="Refresh notifications"
+          >
+            <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+          </button>
+          <button
+            type="button"
+            onClick={handleMarkAllRead}
+            disabled={markingAll || unreadCount === 0}
+            className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            <CheckCheck size={14} />
+            {markingAll ? 'Marking…' : 'Mark all read'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowClearConfirm(true)}
+            disabled={notifications.length === 0 || clearingAll}
+            className="h-9 px-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            <Trash2 size={14} />
+            Clear all
+          </button>
+        </div>
+      </div>
 
-            {/* Header row */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-800 leading-tight">
-                  Notifications
-                </h1>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  {notifications.length} total
-                  {unreadCount > 0 && (
-                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full bg-[#1C4D8D] text-white text-[11px] font-bold">
-                      {unreadCount} new
-                    </span>
-                  )}
-                </p>
-              </div>
+      {showClearConfirm && (
+        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-rose-800 font-medium">
+            Delete all {notifications.length} loaded notifications? This cannot be undone.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowClearConfirm(false)}
+              className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={clearingAll}
+              className="h-8 px-3 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-60 inline-flex items-center gap-1.5"
+            >
+              {clearingAll ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              {clearingAll ? 'Clearing…' : 'Confirm clear'}
+            </button>
+          </div>
+        </div>
+      )}
 
-              <div className="flex items-center gap-2 relative">
-                <button
-                  onClick={() => fetchNotifications({ silent: true })}
-                  disabled={refreshing}
-                  className="h-9 w-9 flex items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50"
-                  aria-label="Refresh notifications"
-                >
-                  <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
-                </button>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {TYPE_LEGEND.map((entry) => (
+          <span
+            key={entry.key}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${entry.badge}`}
+          >
+            <span className={`h-2 w-2 rounded-full ${entry.stripe}`} />
+            {entry.label}
+          </span>
+        ))}
+      </div>
 
-                <div className="relative">
-                  <button
-                    onClick={() => setShowActionsMenu((p) => !p)}
-                    className="h-9 px-3 rounded-md border border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100 text-sm font-semibold inline-flex items-center gap-1.5"
-                  >
-                    Actions <ChevronDown size={13} />
-                  </button>
-                  {showActionsMenu && (
-                    <div className="absolute z-20 right-0 top-full mt-1 w-48 rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                      <button
-                        onClick={() => { setShowActionsMenu(false); handleMarkAllRead(); }}
-                        disabled={markingAll || unreadCount === 0}
-                        className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2"
-                      >
-                        <CheckCheck size={14} className="text-emerald-600" />
-                        {markingAll ? 'Marking...' : 'Mark all as read'}
-                      </button>
-                    </div>
-                  )}
-                </div>
+      <div className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="border-b border-slate-100 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-slate-600">
+              <span className="font-bold text-slate-900">{totalCount || notifications.length}</span> total
+              {unreadCount > 0 && (
+                <span className="ml-2 inline-flex items-center rounded-full bg-[#3674B5] px-2 py-0.5 text-[10px] font-bold text-white">
+                  {unreadCount} unread
+                </span>
+              )}
+            </p>
+          </div>
 
-                <button
-                  onClick={handleMarkAllRead}
-                  disabled={markingAll || unreadCount === 0}
-                  className="h-9 px-4 rounded-md border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 hidden sm:inline-flex items-center gap-2"
-                >
-                  <CheckCheck size={14} />
-                  {markingAll ? 'Marking...' : 'Mark all read'}
-                </button>
-              </div>
-            </div>
-
-            {/* Search */}
-            <div className="mt-4 relative">
+          <div className="px-4 py-3 border-b border-slate-100">
+            <div className="relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search notifications..."
-                className="w-full h-10 rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1C4D8D]/30 focus:border-[#1C4D8D]"
+                placeholder="Search notifications…"
+                className="w-full h-9 rounded-lg border border-slate-200 bg-white pl-9 pr-8 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3674B5]/25 focus:border-[#3674B5]"
               />
               {query && (
                 <button
+                  type="button"
                   onClick={() => setQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  aria-label="Clear search"
                 >
                   <X size={14} />
                 </button>
               )}
             </div>
 
-            {/* Tabs */}
-            <div className="mt-4 flex items-center gap-6 border-b border-slate-200 pb-0">
+            <div className="mt-3 flex flex-wrap gap-1 border-b border-slate-100 -mb-px">
               {[
                 { key: 'all', label: 'All', count: tabCounts.all },
                 { key: 'action', label: 'Needs Action', count: tabCounts.action },
-                { key: 'updates', label: 'System Updates', count: tabCounts.updates },
+                { key: 'updates', label: 'Updates', count: tabCounts.updates },
               ].map(({ key, label, count }) => (
                 <button
                   key={key}
+                  type="button"
                   onClick={() => setActiveTab(key)}
-                  className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${
+                  className={`pb-2.5 px-2 mr-2 text-xs font-semibold border-b-2 transition-colors ${
                     activeTab === key
                       ? key === 'action'
                         ? 'border-amber-500 text-amber-700'
-                        : 'border-[#1C4D8D] text-[#1C4D8D]'
+                        : 'border-[#3674B5] text-[#3674B5]'
                       : 'border-transparent text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   {label}
                   {count > 0 && (
-                    <span className={`ml-1.5 inline-flex items-center justify-center min-w-5 h-4.5 px-1.5 rounded-full text-[10px] font-bold ${
-                      activeTab === key
-                        ? key === 'action' ? 'bg-amber-100 text-amber-700' : 'bg-[#1C4D8D]/10 text-[#1C4D8D]'
-                        : 'bg-slate-100 text-slate-500'
-                    }`}>
+                    <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
                       {count}
                     </span>
                   )}
                 </button>
               ))}
             </div>
+          </div>
 
-            {/* Guidance */}
-            <div className="mt-4">
-              <GuidancePanel
-                title="Notification Guide"
-                description="Stay on top of your paper's journey through the review pipeline."
-                items={[
-                  'Unread notifications appear with a blue accent and bold title — address action items first.',
-                  'Click "View paper →" or the notification itself to jump directly to the related paper.',
-                  'Hover over any notification to reveal Mark-as-read and Delete controls.',
-                ]}
-                tone="blue"
-              />
-            </div>
+          <UserGuideLink />
 
-            {/* Empty state for the whole view */}
-            {searchedNotifications.length === 0 && (
-              <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 px-6 py-10 text-center">
-                <Bell size={32} className="mx-auto text-slate-300 mb-3" />
-                <p className="text-slate-700 font-semibold">
-                  {query ? 'No notifications match your search.' : 'No notifications yet.'}
-                </p>
-                <p className="text-sm text-slate-500 mt-1">
-                  {query
-                    ? 'Try a different search term or clear the filter.'
-                    : 'Notifications will appear here when there is activity on your papers.'}
-                </p>
-              </div>
-            )}
-
-            {searchedNotifications.length > 0 && (
-              <div className="mt-5 space-y-5">
-
-                {/* ── Action required banner ─────────────────────────── */}
-                {highPriorityItem ? (
-                  <article className="rounded-lg border border-amber-300 bg-amber-50/60 overflow-hidden">
-                    <div className="flex">
-                      <div className="w-1.5 bg-amber-500 flex-shrink-0" />
-                      <div className="flex-1 p-4 md:p-5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="inline-flex items-center gap-2 text-xs font-bold tracking-wide text-amber-700 uppercase">
-                            <ShieldAlert size={14} /> Action Required
-                          </div>
-                          {!highPriorityItem.is_read && (
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#1C4D8D] text-white">New</span>
-                          )}
-                        </div>
-
-                        <h2 className="mt-2 text-xl font-bold text-slate-900 leading-tight">
-                          {highPriorityItem.title}
-                        </h2>
-                        <p className="text-slate-700 mt-1 text-sm">
-                          {highPriorityItem.message}
-                        </p>
-
-                        <div className="mt-4 flex flex-wrap items-center gap-3">
-                          <button
-                            onClick={() => openNotification(highPriorityItem)}
-                            className="h-9 px-4 rounded-md bg-[#bb5b00] text-white text-sm font-semibold hover:bg-[#a44f00] shadow-sm"
-                          >
-                            Resolve Revision
-                          </button>
-                          <button
-                            onClick={() => handleDelete(highPriorityItem.id)}
-                            className="h-9 px-3 rounded-md border border-slate-300 text-slate-600 text-sm hover:bg-slate-100 inline-flex items-center gap-1.5"
-                          >
-                            <Trash2 size={13} /> Dismiss
-                          </button>
-                          <span className="text-xs text-slate-500 ml-auto">
-                            <Clock3 size={12} className="inline mr-1" />
-                            {formatTimeAgo(highPriorityItem.created_at)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                ) : activeTab !== 'updates' && (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                    No high-priority action items match your current filters.
-                  </div>
-                )}
-
-                {/* ── Approvals / Workflow ───────────────────────────── */}
-                {approvalItems.length > 0 && (
-                  <section>
-                    <h3 className="text-xs tracking-widest uppercase font-bold text-slate-500 mb-3">
-                      Approvals &amp; Workflow
-                    </h3>
-                    <div className="space-y-2">
-                      {visibleApprovalItems.map((item) => (
-                        <NotificationCard
-                          key={item.id}
-                          item={item}
-                          onOpen={openNotification}
-                          onDelete={handleDelete}
-                          onMarkRead={handleMarkRead}
-                        />
-                      ))}
-                    </div>
-
-                    {approvalItems.length > APPROVAL_PAGE_SIZE && (
-                      <div ref={approvalLoadMoreRef} className="mt-3 text-center">
-                        <p className="text-xs text-slate-500">
-                          Showing {visibleApprovalItems.length} of {approvalItems.length} workflow updates
-                        </p>
-                        {canLoadMoreApprovals && (
-                          <button
-                            onClick={() => setVisibleApprovalCount((c) => c + APPROVAL_PAGE_SIZE)}
-                            className="mt-2 h-8 px-4 rounded-md border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                          >
-                            Load more
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                {/* ── General Updates ────────────────────────────────── */}
-                {updateItems.length > 0 && (
-                  <section>
-                    <h3 className="text-xs tracking-widest uppercase font-bold text-slate-500 mb-3">
-                      General Updates
-                    </h3>
-                    <div className="space-y-2">
-                      {updateItems.map((item) => (
-                        <NotificationCard
-                          key={item.id}
-                          item={item}
-                          onOpen={openNotification}
-                          onDelete={handleDelete}
-                          onMarkRead={handleMarkRead}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </div>
-            )}
-          </section>
-
-          {/* ── Sidebar snapshot ── */}
-          <aside className="rounded-xl border border-slate-200 bg-white/95 p-5 md:p-6 shadow-[0_8px_20px_rgba(15,23,42,0.06)] h-fit xl:sticky xl:top-6 space-y-5">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">My Paper Status</h2>
-              <p className="text-sm text-slate-500 mt-0.5">Workflow snapshot</p>
-            </div>
-
-            {/* Progress bar */}
-            <div>
-              <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#1C4D8D] to-blue-400 transition-all duration-500"
-                  style={{ width: `${snapshot.progress}%` }}
-                />
-              </div>
-              <p className="text-xs text-slate-500 mt-1.5">Progress: {snapshot.progress}%</p>
-            </div>
-
-            {/* Stats */}
-            <div className="space-y-2">
-              {[
-                { icon: ShieldAlert, color: 'text-amber-600', label: 'Pending Revision', value: snapshot.pending },
-                { icon: ListChecks, color: 'text-emerald-600', label: 'Active Reviews', value: snapshot.active },
-                { icon: Bell, color: 'text-[#1C4D8D]', label: 'Unread', value: unreadCount },
-              ].map(({ icon: Icon, color, label, value }) => (
-                <div key={label} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <span className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <Icon size={14} className={color} /> {label}
-                  </span>
-                  <span className={`text-sm font-bold ${value > 0 ? 'text-slate-900' : 'text-slate-400'}`}>{value}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Insight */}
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 leading-relaxed">
-              <p className="font-semibold text-slate-800 mb-1">Priority Tip</p>
-              <p>
-                {snapshot.pending > 0
-                  ? 'You have revision requests waiting — open the Needs Action tab to address them.'
-                  : snapshot.active > 0
-                    ? 'Your papers are progressing through review. Check back for approvals.'
-                    : 'All caught up! No urgent items at the moment.'}
+          {sortedNotifications.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <Bell size={32} className="mx-auto text-slate-300 mb-3" />
+              <p className="text-sm font-semibold text-slate-700">
+                {query ? 'No notifications match your search.' : 'No notifications yet.'}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                {query
+                  ? 'Try a different search term.'
+                  : 'Activity on your papers will appear here.'}
               </p>
             </div>
-          </aside>
-        </div>
+          ) : (
+            <>
+              <div className="space-y-2 p-3 sm:p-4">
+                {visibleNotifications.map((item) => (
+                  <NotificationCard
+                    key={item.id}
+                    item={item}
+                    expanded={expandedId === item.id}
+                    onToggle={handleToggle}
+                    onOpen={openNotification}
+                    onDelete={handleDelete}
+                    onMarkRead={handleMarkRead}
+                    deletingId={deletingId}
+                    user={user}
+                    isStudent={isStudent}
+                  />
+                ))}
+              </div>
+
+              {sortedNotifications.length > LIST_PAGE_SIZE && (
+                <div className="border-t border-slate-100 px-4">
+                  <LoadMoreFooter
+                    visibleCount={visibleNotifications.length}
+                    totalCount={sortedNotifications.length}
+                    canLoadMore={canLoadMoreList}
+                    onLoadMore={() => setVisibleCount((c) => c + LIST_PAGE_SIZE)}
+                    label="in this view"
+                    step={LIST_PAGE_SIZE}
+                  />
+                </div>
+              )}
+
+              {hasMore && (
+                <div className="border-t border-slate-100 px-4">
+                  <LoadMoreFooter
+                    visibleCount={notifications.length}
+                    totalCount={totalCount || notifications.length}
+                    canLoadMore={hasMore}
+                    onLoadMore={loadMoreNotifications}
+                    loading={loadingMore}
+                    label="notifications"
+                    step={FETCH_PAGE_SIZE}
+                  />
+                </div>
+              )}
+            </>
+          )}
       </div>
     </div>
   );

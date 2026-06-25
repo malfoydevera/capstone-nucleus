@@ -1,123 +1,68 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileText, 
-  Clock, 
-  CheckCircle, 
-  Eye, 
-  Search, 
-  Users,
+  FileText,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Eye,
   ChevronRight,
-  Calendar,
   RefreshCw,
-  Sun,
-  Moon,
-  User
+  Calendar,
+  Search,
+  Users,
+  BookOpen,
 } from 'lucide-react';
-import { researchAPI } from '../../utils/api';
+import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
-import GuidancePanel from '../../components/ui/GuidancePanel';
-import { getRoleGuidance } from '../../utils/guidance';
+import UserGuideLink from '../../components/ui/UserGuideLink';
+import { reviewStatusLabel, reviewStatusTone } from '../../components/review/reviewStatus';
 
-// Donut Chart Component
-const DonutChart = ({ data, colors, size = 80 }) => {
-  const total = data.reduce((acc, item) => acc + item.value, 0);
-  let cumulativePercent = 0;
+const POLL_MS = 10000;
+const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
-  const getCoordinatesForPercent = (percent) => {
-    const x = Math.cos(2 * Math.PI * percent);
-    const y = Math.sin(2 * Math.PI * percent);
-    return [x, y];
-  };
-
-  return (
-    <svg width={size} height={size} viewBox="-1.1 -1.1 2.2 2.2" style={{ transform: 'rotate(-90deg)' }}>
-      {total === 0 ? (
-        <circle cx="0" cy="0" r="1" fill="none" stroke="#e2e8f0" strokeWidth="0.35" />
-      ) : (
-        data.map((slice, index) => {
-          if (slice.value === 0) return null;
-          const percent = slice.value / total;
-          const [startX, startY] = getCoordinatesForPercent(cumulativePercent);
-          cumulativePercent += percent;
-          const [endX, endY] = getCoordinatesForPercent(cumulativePercent);
-          const largeArcFlag = percent > 0.5 ? 1 : 0;
-          const pathData = [
-            `M ${startX} ${startY}`,
-            `A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY}`,
-          ].join(' ');
-          return (
-            <path
-              key={index}
-              d={pathData}
-              fill="none"
-              stroke={colors[index]}
-              strokeWidth="0.35"
-              strokeLinecap="round"
-            />
-          );
-        })
-      )}
-      <circle cx="0" cy="0" r="0.65" fill="white" />
-    </svg>
-  );
+const formatDate = (dateString) => {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleDateString('en-US', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  });
 };
 
-// Mini Bar Chart Component
-const MiniBarChart = ({ data, maxHeight = 100 }) => {
-  const maxValue = Math.max(...data.map(d => d.value), 1);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
+const CompactMonthlyChart = ({ data, year, onYearChange }) => {
+  const maxValue = Math.max(...data.map((d) => d.value), 1);
+  const currentMonth = new Date().getMonth();
+
   return (
-    <div className="flex items-end gap-2 h-full">
-      {data.map((item, index) => {
-        const height = (item.value / maxValue) * maxHeight;
-        const isCurrentMonth = index === new Date().getMonth();
-        return (
-          <div key={index} className="flex flex-col items-center gap-1 flex-1">
-            <div 
-              className={`w-full rounded-t-sm transition-all duration-500 ${
-                isCurrentMonth 
-                  ? 'bg-gradient-to-t from-cyan-600 to-cyan-400' 
-                  : 'bg-gradient-to-t from-cyan-200 to-cyan-100 hover:from-cyan-300 hover:to-cyan-200'
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-2">
+        <h2 className="font-semibold text-slate-900 text-sm">Submissions</h2>
+        <select
+          value={year}
+          onChange={(e) => onYearChange(Number(e.target.value))}
+          className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#3674B5]/30"
+          aria-label="Select year"
+        >
+          {[2026, 2025, 2024].map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-end gap-1 h-20 px-4 sm:px-5 py-4">
+        {data.map((item, index) => (
+          <div key={index} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+            <div
+              className={`w-full rounded-t transition-all ${
+                index === currentMonth && year === new Date().getFullYear()
+                  ? 'bg-gradient-to-t from-[#3674B5] to-[#578FCA]'
+                  : 'bg-[#3674B5]/20'
               }`}
-              style={{ height: `${Math.max(height, 4)}px` }}
+              style={{ height: `${Math.max((item.value / maxValue) * 48, item.value > 0 ? 4 : 2)}px` }}
+              title={`${item.value} submission${item.value !== 1 ? 's' : ''}`}
             />
-            <span className="text-[10px] text-slate-400 font-medium">{months[index]}</span>
+            <span className="text-[9px] text-slate-400">{MONTH_LABELS[index]}</span>
           </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// Circular Progress Component
-const CircularProgress = ({ percentage, color, size = 48 }) => {
-  const strokeWidth = 4;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (percentage / 100) * circumference;
-
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e2e8f0" strokeWidth={strokeWidth} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className="transition-all duration-1000 ease-out"
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className={`text-xs font-bold`} style={{ color }}>{percentage}%</span>
+        ))}
       </div>
     </div>
   );
@@ -126,428 +71,336 @@ const CircularProgress = ({ percentage, color, size = 48 }) => {
 const StaffDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const guide = getRoleGuidance(user?.role);
-  const [stats, setStats] = useState({
-    total: 0, pending: 0, underReview: 0, approved: 0, rejected: 0, revisionRequired: 0
-  });
-  const [recentPapers, setRecentPapers] = useState([]);
   const [allPapers, setAllPapers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const fetchDashboardData = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true);
+    try {
+      const response = await researchAPI.getAllResearch();
+      setAllPapers(unwrapApiData(response).papers || []);
+      setLastRefreshed(new Date());
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error);
+    } finally {
+      if (!silent) setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+    const interval = setInterval(() => fetchDashboardData(true), POLL_MS);
+    return () => clearInterval(interval);
+  }, [fetchDashboardData]);
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const response = await researchAPI.getAllResearch();
-      const papers = response.data?.papers || response.data || [];
-      setAllPapers(papers);
+  const stats = useMemo(() => ({
+    needsReview: allPapers.filter((p) => p.status === 'pending_editor').length,
+    withAdmin: allPapers.filter((p) => p.status === 'pending_admin').length,
+    approved: allPapers.filter((p) => p.status === 'approved' || p.status === 'published').length,
+    revisionRequired: allPapers.filter((p) => p.status === 'revision_required').length,
+    rejected: allPapers.filter((p) => p.status === 'rejected').length,
+    total: allPapers.length,
+    thisMonth: allPapers.filter((p) => {
+      const d = new Date(p.created_at || p.submission_date);
+      const now = new Date();
+      return !Number.isNaN(d.getTime())
+        && d.getMonth() === now.getMonth()
+        && d.getFullYear() === now.getFullYear();
+    }).length,
+  }), [allPapers]);
 
-      const statistics = {
-        total: papers.length,
-        pending: papers.filter(p => p.status === 'pending_faculty' || p.status === 'pending_editor').length,
-        underReview: papers.filter(p => p.status === 'pending_admin').length,
-        approved: papers.filter(p => p.status === 'approved' || p.status === 'published').length,
-        rejected: papers.filter(p => p.status === 'rejected').length,
-        revisionRequired: papers.filter(p => p.status === 'revision_required').length
-      };
-      setStats(statistics);
+  const uniqueResearchers = useMemo(
+    () => new Set(allPapers.map((p) => p.author_id || p.users?.id).filter(Boolean)).size,
+    [allPapers],
+  );
 
-      const sortedPapers = [...papers].sort((a, b) => 
-        new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at)
-      );
-      setRecentPapers(sortedPapers.slice(0, 5));
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-      setStats({ total: 0, pending: 0, underReview: 0, approved: 0, rejected: 0, revisionRequired: 0 });
-      setRecentPapers([]);
-      setAllPapers([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const reviewedPapers = stats.approved + stats.rejected + stats.revisionRequired;
+  const approvalRate = reviewedPapers > 0 ? Math.round((stats.approved / reviewedPapers) * 100) : 0;
+
+  const recentPapers = useMemo(() => {
+    const priority = (status) => {
+      if (status === 'pending_editor') return 0;
+      if (status === 'pending_admin') return 1;
+      if (status === 'revision_required') return 2;
+      return 3;
+    };
+    return [...allPapers]
+      .sort((a, b) => {
+        const p = priority(a.status) - priority(b.status);
+        if (p !== 0) return p;
+        return new Date(b.updated_at || b.submission_date || b.created_at)
+          - new Date(a.updated_at || a.submission_date || a.created_at);
+      })
+      .slice(0, 5);
+  }, [allPapers]);
 
   const monthlyData = useMemo(() => {
-    const months = Array(12).fill(0).map((_, i) => ({ month: i, value: 0 }));
-    allPapers.forEach(paper => {
+    const months = Array.from({ length: 12 }, (_, i) => ({ month: i, value: 0 }));
+    allPapers.forEach((paper) => {
       const date = new Date(paper.submission_date || paper.created_at);
       if (date.getFullYear() === selectedYear) {
-        months[date.getMonth()].value++;
+        months[date.getMonth()].value += 1;
       }
     });
     return months;
   }, [allPapers, selectedYear]);
 
-  const uniqueStudents = new Set(allPapers.map(p => p.author_id || p.users?.id)).size;
-  const reviewedPapers = stats.approved + stats.rejected + stats.revisionRequired;
-  const approvalRate = reviewedPapers > 0 ? Math.round((stats.approved / reviewedPapers) * 100) : 0;
-  const reviewPercentage = stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0;
-
-  const getStatusColor = (status) => {
-    const colors = {
-      pending_faculty: 'text-amber-600 bg-amber-50',
-      pending_editor: 'text-cyan-600 bg-cyan-50',
-      pending_admin: 'text-indigo-600 bg-indigo-50',
-      under_review: 'text-indigo-600 bg-indigo-50',
-      approved: 'text-emerald-600 bg-emerald-50',
-      published: 'text-emerald-600 bg-emerald-50',
-      rejected: 'text-red-600 bg-red-50',
-      revision_required: 'text-orange-600 bg-orange-50'
-    };
-    return colors[status] || 'text-slate-600 bg-slate-50';
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
-
-  const getStatusBadge = (status) => {
-    const statusMap = {
-      pending_faculty: 'With Faculty', pending_editor: 'With Editor',
-      pending_admin: 'With Admin', under_review: 'With Admin', approved: 'Approved',
-      published: 'Published', rejected: 'Rejected', revision_required: 'Revision'
-    };
-    return statusMap[status] || status;
-  };
+  const taskCards = useMemo(() => [
+    {
+      key: 'review',
+      label: 'Needs your review',
+      count: stats.needsReview,
+      icon: Clock,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+      description: stats.needsReview > 0 ? 'Editorial queue' : 'All caught up',
+      onClick: () => navigate('/staff/review'),
+    },
+    {
+      key: 'approved',
+      label: 'Approved',
+      count: stats.approved,
+      icon: CheckCircle,
+      iconBg: 'bg-emerald-50',
+      iconColor: 'text-emerald-600',
+      description: reviewedPapers > 0 ? `${approvalRate}% approval rate` : 'Forwarded or published',
+      onClick: () => navigate('/staff/review'),
+    },
+    {
+      key: 'attention',
+      label: 'Needs attention',
+      count: stats.revisionRequired + stats.withAdmin,
+      icon: AlertCircle,
+      iconBg: 'bg-orange-50',
+      iconColor: 'text-orange-600',
+      description: `${stats.withAdmin} with admin · ${stats.revisionRequired} revisions`,
+      onClick: () => navigate('/staff/review'),
+    },
+  ], [stats, approvalRate, reviewedPapers, navigate]);
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] animate-fadeIn">
         <div className="relative">
-          <div className="w-16 h-16 border-4 border-slate-200 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-slate-200 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
         </div>
-        <p className="mt-4 text-sm text-slate-500">Loading dashboard...</p>
+        <p className="mt-4 text-sm text-slate-500">Loading dashboard…</p>
       </div>
     );
   }
 
-  const statusChartData = [
-    { value: stats.approved, label: 'Approved' },
-    { value: stats.pending + stats.underReview, label: 'Pending' },
-    { value: stats.rejected, label: 'Rejected' }
-  ];
-  const statusChartColors = ['#10b981', '#f59e0b', '#ef4444'];
-
-  const activityChartData = [
-    { value: stats.approved, label: 'Completed' },
-    { value: stats.revisionRequired, label: 'Needs Work' }
-  ];
-  const activityChartColors = ['#06b6d4', '#8b5cf6'];
-
   return (
     <div className="min-h-screen bg-slate-50/50">
-      <div className="max-w-7xl mx-auto px-6 py-8 animate-fadeIn">
-        {/* Header */}
-        <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap items-center gap-4">
-            <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 animate-fadeIn">
+        <div className="mb-6 sm:mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Dashboard</h1>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-sm text-slate-600">
-              <Calendar size={14} />
+              <Calendar size={14} aria-hidden="true" />
               <span>{new Date().toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 p-1 bg-white rounded-lg border border-slate-200">
-              <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Sun size={16} /></button>
-              <button className="p-1.5 rounded bg-slate-100 text-slate-600"><div className="w-4 h-4 rounded-full bg-slate-600"></div></button>
-              <button className="p-1.5 rounded text-slate-400 hover:text-slate-600"><Moon size={16} /></button>
-            </div>
-            <div className="flex items-center gap-2">
-              <img 
-                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Staff')}&background=06b6d4&color=fff`}
-                alt="Profile"
-                className="w-9 h-9 rounded-full"
-              />
-              <span className="hidden text-sm font-medium text-slate-700 sm:inline">{user?.fullName}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <GuidancePanel
-            title={guide.heading}
-            description={guide.summary}
-            items={guide.dashboardSteps}
-            tone="blue"
-          />
-        </div>
-
-        {/* Stats Row 1 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Total Papers</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                <FileText size={20} className="text-slate-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              <span className="text-xs text-emerald-600 font-medium">↑ 12.5%</span>
-              <span className="text-xs text-slate-400">since last month</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Approved</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.approved}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <CheckCircle size={20} className="text-emerald-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              <span className="text-xs text-emerald-600 font-medium">↑ 8.2%</span>
-              <span className="text-xs text-slate-400">since last month</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Status</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.total}</p>
-                <p className="text-xs text-slate-400 mt-1">total papers</p>
-              </div>
-              <DonutChart data={statusChartData} colors={statusChartColors} size={70} />
-            </div>
-            <div className="mt-3 flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span className="text-slate-500">{stats.approved} Approved</span>
+            {lastRefreshed && (
+              <span className="text-[11px] text-slate-400">
+                Updated {lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
               </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span className="text-slate-500">{stats.pending} Pending</span>
-              </span>
-            </div>
+            )}
           </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Activity</p>
-                <p className="text-3xl font-bold text-slate-900">{reviewedPapers}</p>
-                <p className="text-xs text-slate-400 mt-1">reviewed</p>
-              </div>
-              <DonutChart data={activityChartData} colors={activityChartColors} size={70} />
-            </div>
-            <div className="mt-3 flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
-                <span className="text-slate-500">{approvalRate}% Rate</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-violet-500"></span>
-                <span className="text-slate-500">{stats.revisionRequired} Revision</span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Row 2 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Pending Review</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.pending + stats.underReview}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                <Clock size={20} className="text-amber-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              {stats.pending > 0 ? (
-                <span className="text-xs text-amber-600 font-medium">Action needed</span>
-              ) : (
-                <span className="text-xs text-slate-400">All caught up</span>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-slate-500 mb-1">Researchers</p>
-                <p className="text-3xl font-bold text-slate-900">{uniqueStudents}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-                <Users size={20} className="text-violet-600" />
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1">
-              <span className="text-xs text-slate-400">active contributors</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-          <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-semibold text-slate-900">Submission Activity</h3>
-              <select 
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="text-sm text-slate-600 bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              >
-                <option value={2026}>2026</option>
-                <option value={2025}>2025</option>
-                <option value={2024}>2024</option>
-              </select>
-            </div>
-            <div className="h-40">
-              <MiniBarChart data={monthlyData} maxHeight={120} />
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <CheckCircle size={24} className="text-emerald-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-500">Approval Rate</p>
-                <p className="text-xl font-bold text-slate-900">{approvalRate}%</p>
-                <p className="text-xs text-slate-400">{reviewedPapers} reviewed</p>
-              </div>
-              <CircularProgress percentage={approvalRate || 0} color="#10b981" size={52} />
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-cyan-50 flex items-center justify-center">
-                <Eye size={24} className="text-cyan-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-500">Pending</p>
-                <p className="text-xl font-bold text-slate-900">{stats.pending} Papers</p>
-                <p className="text-xs text-slate-400">awaiting review</p>
-              </div>
-              <CircularProgress percentage={reviewPercentage || 0} color="#06b6d4" size={52} />
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-          <button
-            onClick={() => navigate('/staff/review')}
-            className="group bg-gradient-to-br from-cyan-600 to-cyan-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <Eye size={24} className="text-white" />
-              </div>
-              <div className="text-left">
-                <p className="font-semibold text-white">Review Papers</p>
-                <p className="text-sm text-cyan-100">{stats.pending} pending</p>
-              </div>
-              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate('/staff/repository')}
-            className="group bg-gradient-to-br from-violet-600 to-violet-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <Search size={24} className="text-white" />
-              </div>
-              <div className="text-left">
-                <p className="font-semibold text-white">Browse Repository</p>
-                <p className="text-sm text-violet-100">Explore papers</p>
-              </div>
-              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate('/profile')}
-            className="group bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <User size={24} className="text-white" />
-              </div>
-              <div className="text-left">
-                <p className="font-semibold text-white">Profile</p>
-                <p className="text-sm text-emerald-100">Details and export</p>
-              </div>
-              <ChevronRight size={20} className="text-white/70 ml-auto group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
-        </div>
-
-        {/* Recent Submissions Table */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-900">Recent Submissions</h3>
-            <button onClick={() => fetchDashboardData()} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-              <RefreshCw size={16} className="text-slate-400" />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => fetchDashboardData()}
+              disabled={refreshing}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
+              Refresh
             </button>
+            <img
+              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Staff')}&background=3674B5&color=fff`}
+              alt=""
+              className="w-9 h-9 rounded-full shrink-0"
+            />
+            <span className="text-sm font-medium text-slate-700 truncate">{user?.fullName}</span>
           </div>
-          
-          {recentPapers.length === 0 ? (
-            <div className="px-5 py-12 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                <FileText size={24} className="text-slate-400" />
+        </div>
+
+        <UserGuideLink />
+
+        <div className="mb-5 sm:mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-[#3674B5]/15 bg-[#3674B5]/5 px-4 py-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#3674B5]/10">
+            <BookOpen size={18} className="text-[#3674B5]" aria-hidden="true" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-[#3674B5] uppercase tracking-wide">Editorial review</p>
+            <p className="text-sm text-slate-700">Review manuscripts forwarded from program chairs before final admin approval.</p>
+          </div>
+          <span className="text-xs text-slate-500 shrink-0">{stats.total} total papers</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-5 sm:mb-6">
+          {taskCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={card.onClick}
+                className="text-left bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100 hover:shadow-md hover:border-[#3674B5]/20 transition-shadow"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-500 mb-1">{card.label}</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-slate-900">{card.count}</p>
+                    <p className="mt-2 text-xs text-slate-400 truncate">{card.description}</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-xl shrink-0 ${card.iconBg} flex items-center justify-center`}>
+                    <Icon size={20} className={card.iconColor} aria-hidden="true" />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <button
+            type="button"
+            onClick={() => navigate('/staff/review')}
+            className="group bg-gradient-to-br from-[#3674B5] to-[#578FCA] rounded-xl p-3.5 sm:p-4 shadow-sm hover:shadow-md transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                <Eye size={20} className="text-white" aria-hidden="true" />
               </div>
-              <p className="text-slate-600 font-medium mb-1">No submissions yet</p>
-              <p className="text-sm text-slate-400">Papers will appear here as they are submitted</p>
+              <div className="text-left min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white">Review queue</p>
+                <p className="text-xs text-blue-100 truncate">
+                  {stats.needsReview > 0 ? `${stats.needsReview} pending` : 'Open workspace'}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-white/70 shrink-0" aria-hidden="true" />
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 text-left">
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Title</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Author</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recentPapers.map((paper) => (
-                    <tr 
-                      key={paper.id} 
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/staff/review/${paper.id}`)}
-                    >
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                            <FileText size={16} className="text-slate-500" />
-                          </div>
-                          <span className="font-medium text-slate-900 truncate max-w-[200px]">{paper.title}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{formatFullName(paper.users) || 'Unknown'}</td>
-                      <td className="px-5 py-4 text-sm text-slate-500">{formatDate(paper.submission_date || paper.created_at)}</td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(paper.status)}`}>
-                          {getStatusBadge(paper.status)}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/staff/repository')}
+            className="group bg-white rounded-xl p-3.5 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                <Search size={20} className="text-emerald-600" aria-hidden="true" />
+              </div>
+              <div className="text-left min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">Repository</p>
+                <p className="text-xs text-slate-500">Browse all papers</p>
+              </div>
+              <ChevronRight size={16} className="text-slate-300 shrink-0" aria-hidden="true" />
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/staff/review')}
+            className="group bg-white rounded-xl p-3.5 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[#3674B5]/10 flex items-center justify-center shrink-0">
+                <Users size={20} className="text-[#3674B5]" aria-hidden="true" />
+              </div>
+              <div className="text-left min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">Researchers</p>
+                <p className="text-xs text-slate-500">{uniqueResearchers} active contributors</p>
+              </div>
+              <ChevronRight size={16} className="text-slate-300 shrink-0" aria-hidden="true" />
+            </div>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 sm:gap-6">
+          <div className="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+              <h2 className="font-semibold text-slate-900">Recent manuscripts</h2>
+              <button
+                type="button"
+                onClick={() => navigate('/staff/review')}
+                className="text-xs font-semibold text-[#3674B5] hover:text-[#2d6299]"
+              >
+                View all
+              </button>
+            </div>
+
+            {recentPapers.length === 0 ? (
+              <div className="px-4 sm:px-5 py-10 text-center">
+                <FileText size={28} className="mx-auto text-slate-300 mb-3" aria-hidden="true" />
+                <p className="text-sm text-slate-500">No submissions yet</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {recentPapers.map((paper) => (
+                  <button
+                    key={paper.id}
+                    type="button"
+                    onClick={() => navigate(`/staff/review/${paper.id}`)}
+                    className="w-full text-left px-4 sm:px-5 py-4 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+                        <FileText size={16} className="text-slate-500" aria-hidden="true" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-900 line-clamp-2">{paper.title || 'Untitled'}</p>
+                        <p className="text-xs text-slate-500 mt-1 truncate">
+                          {formatFullName(paper.users) || 'Unknown author'} · {formatDate(paper.submission_date || paper.created_at)}
+                        </p>
+                        <span className={`inline-flex mt-2 px-2.5 py-0.5 rounded-full text-xs font-medium border ${reviewStatusTone(paper.status)}`}>
+                          {reviewStatusLabel(paper.status)}
                         </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <ChevronRight size={16} className="text-slate-300" />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                      <ChevronRight size={16} className="text-slate-300 shrink-0 mt-1" aria-hidden="true" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-5 sm:space-y-6">
+            <CompactMonthlyChart
+              data={monthlyData}
+              year={selectedYear}
+              onYearChange={setSelectedYear}
+            />
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100">
+                <h2 className="font-semibold text-slate-900 text-sm">Workflow summary</h2>
+              </div>
+              <dl className="divide-y divide-slate-100">
+                <div className="flex items-center justify-between px-4 sm:px-5 py-3">
+                  <dt className="text-xs text-slate-500">With editor (you)</dt>
+                  <dd className="text-sm font-semibold text-slate-900 tabular-nums">{stats.needsReview}</dd>
+                </div>
+                <div className="flex items-center justify-between px-4 sm:px-5 py-3">
+                  <dt className="text-xs text-slate-500">With admin</dt>
+                  <dd className="text-sm font-semibold text-slate-900 tabular-nums">{stats.withAdmin}</dd>
+                </div>
+                <div className="flex items-center justify-between px-4 sm:px-5 py-3">
+                  <dt className="text-xs text-slate-500">This month</dt>
+                  <dd className="text-sm font-semibold text-slate-900 tabular-nums">{stats.thisMonth}</dd>
+                </div>
+                <div className="flex items-center justify-between px-4 sm:px-5 py-3">
+                  <dt className="text-xs text-slate-500">Approval rate</dt>
+                  <dd className="text-sm font-semibold text-emerald-600 tabular-nums">{approvalRate}%</dd>
+                </div>
+              </dl>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

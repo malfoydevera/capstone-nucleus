@@ -1,50 +1,111 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
-import { 
-  ArrowLeft, 
-  FileText, 
-  User, 
-  Calendar, 
-  Eye, 
-  Tag, 
-  Users, 
-  GraduationCap,
+import {
+  FileText,
+  Calendar,
+  Eye,
+  Tag,
+  Users,
   Clock,
-  Building,
   Award,
-  Bookmark,
-  Share2,
   Copy,
-  Printer,
   Download,
   ChevronRight,
   BookOpen,
-  TrendingUp,
-  Lightbulb,
-  Heart,
   ShieldCheck,
-  Maximize2,
-  MessageSquare
+  Lock,
+  MessageSquare,
+  Share2,
+  GraduationCap,
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import ResearchChat from '../../components/ai/ResearchChat';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
+import ReviewDetailNav from '../../components/review/ReviewDetailNav';
+import ReviewSection from '../../components/review/ReviewSection';
 import { formatFullName } from '../../utils/names';
+
+const INTERNAL_CITE_NOTE = 'NUCLEUS internal repository — not for external reference.';
+
+const formatDate = (dateString) => {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+};
+
+const getTimeAgo = (dateString) => {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffDays = Math.ceil(Math.abs(now - date) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+  return `${Math.floor(diffDays / 365)} years ago`;
+};
+
+const getDefaultRepositoryPath = (role) => {
+  switch (role) {
+    case 'faculty': return '/faculty/repository';
+    case 'dean': return '/dean/repository';
+    case 'program_chair': return '/program-chair/repository';
+    case 'staff': return '/staff/repository';
+    case 'admin': return '/admin/analytics';
+    default: return '/student/browse';
+  }
+};
+
+const getBackLabel = (path) => {
+  if (path.includes('my-research')) return 'My submissions';
+  if (path.includes('analytics')) return 'Analytics';
+  return 'Repository';
+};
+
+const getStatusConfig = (status) => {
+  if (status === 'published') {
+    return {
+      badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      icon: Award,
+      label: 'Published',
+    };
+  }
+  if (status === 'approved') {
+    return {
+      badgeColor: 'bg-amber-50 text-amber-900 border-amber-200',
+      icon: ShieldCheck,
+      label: 'Approved (internal)',
+    };
+  }
+  return {
+    badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+    icon: BookOpen,
+    label: 'Repository',
+  };
+};
 
 const ResearchDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [paper, setPaper] = useState(null);
   const [loading, setLoading] = useState(true);
   const [relatedPapers, setRelatedPapers] = useState([]);
-  const [isBookmarked, setIsBookmarked] = useState(false);
   const [downloadCount, setDownloadCount] = useState(0);
   const [viewCount, setViewCount] = useState(0);
   const [annotations, setAnnotations] = useState([]);
   const [workflowHistory, setWorkflowHistory] = useState([]);
+  const [stablePreviewPdfUrl, setStablePreviewPdfUrl] = useState(null);
+
+  const backTarget = location.state?.from || getDefaultRepositoryPath(user?.role);
+  const backLabel = getBackLabel(backTarget);
 
   const isAuthorOrCoAuthor = useMemo(() => {
     if (!user || !paper) return false;
@@ -62,23 +123,39 @@ const ResearchDetail = () => {
       annotations
         .filter((a) => a.annotationType === 'draw' && a.drawImageUrl && a.pageNumber)
         .map((a) => ({ id: a.id, pageNumber: a.pageNumber, imageUrl: a.drawImageUrl })),
-    [annotations]
+    [annotations],
   );
 
-  useEffect(() => {
-    fetchPaperDetail();
-    fetchRelatedPapers();
-    trackView();
-  }, [id]);
-
-  const fetchPaperDetail = async () => {
+  const fetchPaperDetail = useCallback(async () => {
     try {
-      const response = await researchAPI.getResearchById(id);
-      const payload = unwrapApiData(response);
-      setPaper(payload.paper || null);
-      setWorkflowHistory(payload.workflowHistory || []);
-      setDownloadCount(payload.paper?.download_count || 0);
-      setViewCount(payload.paper?.view_count || 0);
+      const [paperResponse, fileResponse] = await Promise.allSettled([
+        researchAPI.getResearchById(id),
+        researchAPI.getResearchFile(id),
+      ]);
+
+      if (paperResponse.status === 'fulfilled') {
+        const payload = unwrapApiData(paperResponse.value);
+        setPaper(payload.paper || null);
+        setWorkflowHistory(payload.workflowHistory || []);
+        setDownloadCount(payload.paper?.download_count || 0);
+        setViewCount(payload.paper?.view_count || 0);
+      }
+
+      if (fileResponse.status === 'fulfilled') {
+        const fileUrl = unwrapApiData(fileResponse.value).fileUrl;
+        if (fileUrl) {
+          setStablePreviewPdfUrl((prev) => {
+            if (!prev) return fileUrl;
+            try {
+              if (new URL(prev).pathname === new URL(fileUrl).pathname) return prev;
+            } catch {
+              if (prev.split('?')[0] === fileUrl.split('?')[0]) return prev;
+            }
+            return fileUrl;
+          });
+        }
+      }
+
       const annotationResponse = await researchAPI.getAnnotations(id);
       setAnnotations(unwrapApiData(annotationResponse).annotations || []);
     } catch (error) {
@@ -86,13 +163,21 @@ const ResearchDetail = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    setLoading(true);
+    setStablePreviewPdfUrl(null);
+    fetchPaperDetail();
+    fetchRelatedPapers();
+    trackView();
+  }, [id, fetchPaperDetail]);
 
   const fetchRelatedPapers = async () => {
     try {
       const response = await researchAPI.getPublishedResearch();
-      const allPapers = (unwrapApiData(response).papers || []).filter(p => p.id !== id);
-      setRelatedPapers(allPapers.slice(0, 3));
+      const allPapers = (unwrapApiData(response).papers || []).filter((p) => p.id !== id);
+      setRelatedPapers(allPapers.slice(0, 4));
     } catch (error) {
       console.error('Failed to fetch related papers:', error);
     }
@@ -101,35 +186,10 @@ const ResearchDetail = () => {
   const trackView = async () => {
     try {
       await researchAPI.trackView(id);
-      setViewCount(prev => prev + 1);
+      setViewCount((prev) => prev + 1);
     } catch (error) {
       console.error('Failed to track view:', error);
     }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Date not available';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
-  const getTimeAgo = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffTime = Math.abs(now - date);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
-    return `${Math.floor(diffDays / 365)} years ago`;
   };
 
   const getCitationYear = () => {
@@ -140,35 +200,21 @@ const ResearchDetail = () => {
 
   const getExternalAuthorNames = () => {
     const notes = paper?.external_author_notes;
-    if (!notes) {
-      return [];
-    }
-
+    if (!notes) return [];
     return Array.from(new Set(
-      String(notes)
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean)
+      String(notes).split(',').map((entry) => entry.trim()).filter(Boolean),
     ));
   };
 
   const getAuthors = () => {
     const authors = [];
     const primaryAuthor = formatFullName(paper?.users);
-    if (primaryAuthor) {
-      authors.push(primaryAuthor);
-    }
+    if (primaryAuthor) authors.push(primaryAuthor);
     const structuredAuthors = Array.isArray(paper?.structured_authors)
-      ? paper.structured_authors
-          .map((entry) => formatFullName(entry.author))
-          .filter(Boolean)
+      ? paper.structured_authors.map((entry) => formatFullName(entry.author)).filter(Boolean)
       : [];
-    if (structuredAuthors.length > 0) {
-      authors.push(...structuredAuthors);
-    }
-
+    if (structuredAuthors.length > 0) authors.push(...structuredAuthors);
     getExternalAuthorNames().forEach((entry) => authors.push(entry));
-
     return Array.from(new Set(authors));
   };
 
@@ -179,14 +225,8 @@ const ResearchDetail = () => {
           .map((entry) => formatFullName(entry.author))
           .filter(Boolean)
       : [];
-
-    return Array.from(new Set([
-      ...structuredAuthors,
-      ...getExternalAuthorNames(),
-    ]));
+    return Array.from(new Set([...structuredAuthors, ...getExternalAuthorNames()]));
   };
-
-  const INTERNAL_CITE_NOTE = 'NUCLEUS internal repository — not for external reference.';
 
   const isFormalPublished = paper?.status === 'published' && paper?.doi;
 
@@ -221,65 +261,73 @@ const ResearchDetail = () => {
   const formatWorkflowLabel = (entry) => {
     const actionType = (entry?.action_type || '').toLowerCase();
     const status = (entry?.status || '').toLowerCase();
-    if (actionType === 'dean_bypass') return 'Dean Bypass';
-    if (actionType === 'assigned_to_faculty') return 'Assigned to Faculty';
-    if (actionType === 'conflict_declared') return 'Conflict Declared';
-    if (actionType === 'returned_to_author') return 'Returned to Author';
-    if (actionType === 'returned_for_review') return 'Returned for Review';
-    if (actionType === 'request_revision') return 'Revision Requested';
+    if (actionType === 'dean_bypass') return 'Dean bypass';
+    if (actionType === 'assigned_to_faculty') return 'Assigned to faculty';
+    if (actionType === 'conflict_declared') return 'Conflict declared';
+    if (actionType === 'returned_to_author') return 'Returned to author';
+    if (actionType === 'returned_for_review') return 'Returned for review';
+    if (actionType === 'request_revision') return 'Revision requested';
     if (actionType === 'approve') return 'Approved';
     if (actionType === 'reject') return 'Rejected';
     if (status === 'approved') return 'Approved';
     if (status === 'rejected') return 'Rejected';
-    if (status === 'revision_required') return 'Revision Requested';
-    if (status === 'bypassed') return 'Dean Bypass';
+    if (status === 'revision_required') return 'Revision requested';
+    if (status === 'bypassed') return 'Dean bypass';
     return entry?.status || 'Updated';
   };
 
   const copyCitation = async (content) => {
     try {
       await navigator.clipboard.writeText(content);
+      toast.success('Citation copied');
     } catch (error) {
       console.error('Failed to copy citation:', error);
+      toast.error('Unable to copy citation');
+    }
+  };
+
+  const copyPageLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success('Link copied to clipboard');
+    } catch {
+      toast.error('Unable to copy link');
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-50 to-white">
-        <div className="text-center">
-          <div className="relative">
-            <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
-            <div className="absolute top-0 left-0 w-20 h-20 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-          <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading research paper...</p>
+      <div className="review-screen flex flex-1 min-h-0 flex-col items-center justify-center">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
         </div>
+        <p className="mt-6 text-sm font-medium text-slate-600">Loading research paper…</p>
       </div>
     );
   }
 
   if (!paper) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-        <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="review-screen flex flex-1 min-h-0 flex-col">
+        <div className="review-screen__inner flex-1 py-8">
           <button
-            onClick={() => navigate('/student/browse')}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors mb-8"
+            type="button"
+            onClick={() => navigate(backTarget)}
+            className="mb-8 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-[#3674B5]/30 transition-colors"
           >
-            <ArrowLeft size={18} />
-            Back to Repository
+            Back to {backLabel}
           </button>
-          <div className="text-center py-16">
-            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-slate-100 to-white flex items-center justify-center mx-auto mb-6">
-              <FileText size={40} className="text-slate-400" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-3">Research paper not found</h2>
-            <p className="text-slate-600 mb-8">The requested research paper could not be loaded.</p>
+          <div className="py-16 text-center">
+            <FileText size={36} className="mx-auto mb-4 text-slate-300" aria-hidden="true" />
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Research paper not found</h2>
+            <p className="text-sm text-slate-500 mb-6">The requested paper could not be loaded.</p>
             <button
-              onClick={() => navigate('/student/browse')}
-              className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-300"
+              type="button"
+              onClick={() => navigate(backTarget)}
+              className="rounded-lg bg-gradient-to-r from-[#3674B5] to-[#578FCA] px-5 py-2.5 text-sm font-semibold text-white hover:from-[#2d6299] hover:to-[#3674B5] transition-colors"
             >
-              Return to Repository
+              Return to {backLabel}
             </button>
           </div>
         </div>
@@ -288,505 +336,416 @@ const ResearchDetail = () => {
   }
 
   const displayedCoAuthors = getDisplayedCoAuthors();
+  const statusConfig = getStatusConfig(paper.status);
+  const StatusIcon = statusConfig.icon;
+  const previewPdfUrl = stablePreviewPdfUrl;
+  const publishedLabel = paper.status === 'published'
+    ? `Published ${formatDate(paper.published_date || paper.created_at)}`
+    : `In repository ${formatDate(paper.published_date || paper.submission_date || paper.created_at)}`;
+
+  const headerTrailing = (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={copyPageLink}
+        className="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 sm:px-3 text-[11px] sm:text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+      >
+        <Share2 size={14} aria-hidden="true" />
+        Share
+      </button>
+      {user?.role === 'admin' && paper.file_url && (
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await researchAPI.trackDownload(id);
+              window.open(paper.file_url, '_blank', 'noopener,noreferrer');
+              toast.success('Download logged');
+            } catch {
+              toast.error('Unable to download');
+            }
+          }}
+          className="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg bg-[#3674B5] px-2.5 sm:px-3 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#2d6299] transition-colors"
+        >
+          <Download size={14} aria-hidden="true" />
+          Download
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <button
-            onClick={() => navigate('/student/browse')}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors mb-6 group"
-          >
-            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-            Back to Repository
-          </button>
+    <div className="review-screen flex flex-1 min-h-0 flex-col">
+      <ReviewDetailNav
+        backPath={backTarget}
+        breadcrumbs={[
+          { label: 'Dashboard', path: '/dashboard' },
+          { label: backLabel, path: backTarget },
+        ]}
+        title={paper.title || 'Untitled manuscript'}
+        statusBadge={(
+          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold ${statusConfig.badgeColor}`}>
+            <StatusIcon size={10} aria-hidden="true" />
+            {statusConfig.label}
+          </span>
+        )}
+        trailing={headerTrailing}
+      />
 
-          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center shadow-lg">
-                  <BookOpen size={28} className="text-white" />
+      <div className="review-screen__inner flex-1 py-4 sm:py-5 pb-24 lg:pb-8">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,20rem)] 2xl:grid-cols-[minmax(0,1fr)_minmax(300px,22rem)] gap-4 sm:gap-5 xl:gap-6 items-start">
+          <div className="space-y-4 sm:space-y-5 min-w-0">
+            <ReviewSection
+              id="publication-details"
+              icon={FileText}
+              title="Publication details"
+              description={publishedLabel}
+            >
+              <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-5">
+                <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Primary author</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900">{formatFullName(paper.users) || 'Researcher'}</dd>
+                  <dd className="text-xs text-slate-600 flex items-center gap-1 mt-1">
+                    <GraduationCap size={12} aria-hidden="true" />
+                    National University Dasmariñas
+                  </dd>
                 </div>
-                <div>
-                  <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                    Research <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600">Details</span>
-                  </h1>
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <span
-                      className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold border ${
-                        paper.status === 'published'
-                          ? 'bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-900 border-emerald-200'
-                          : 'bg-gradient-to-r from-amber-50 to-amber-100 text-amber-900 border-amber-200'
-                      }`}
-                    >
-                      <ShieldCheck size={14} />
-                      {paper.status === 'published' ? 'Published' : 'Approved (internal repository)'}
-                    </span>
-                    <span className="text-sm text-slate-600 font-medium">
-                      {paper.status === 'published'
-                        ? `Published ${formatDate(paper.published_date || paper.created_at)}`
-                        : `In repository ${formatDate(paper.published_date || paper.submission_date || paper.created_at)}`}
-                    </span>
+                <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Publication date</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900">
+                    {formatDate(paper.published_date || paper.submission_date || paper.created_at)}
+                  </dd>
+                  <dd className="text-xs text-slate-500 mt-1">{getTimeAgo(paper.published_date || paper.created_at)}</dd>
+                </div>
+                <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Engagement</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900">{viewCount} views · {downloadCount} downloads</dd>
+                  <dd className="text-xs text-slate-500 mt-1">{paper.keywords?.length || 0} keywords</dd>
+                </div>
+              </dl>
+
+              {displayedCoAuthors.length > 0 && (
+                <div className="mb-5 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users size={14} className="text-[#3674B5]" aria-hidden="true" />
+                    <h4 className="text-sm font-semibold text-slate-900">Co-authors</h4>
                   </div>
+                  <p className="text-sm text-slate-700">{displayedCoAuthors.join(', ')}</p>
                 </div>
-              </div>
-            </div>
+              )}
 
-            {user?.role === 'admin' && paper.file_url && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await researchAPI.trackDownload(id);
-                    window.open(paper.file_url, '_blank', 'noopener,noreferrer');
-                    toast.success('Download logged');
-                  } catch (e) {
-                    toast.error('Unable to download');
-                  }
-                }}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
+              {isFormalPublished && paper.doi && (
+                <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+                  DOI:{' '}
+                  <a
+                    href={`https://doi.org/${paper.doi}`}
+                    className="font-mono underline hover:no-underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {paper.doi}
+                  </a>
+                </div>
+              )}
+            </ReviewSection>
+
+            <ReviewSection
+              id="abstract"
+              icon={BookOpen}
+              title="Abstract"
+              description="Summary of the research"
+            >
+              <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+                <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{paper.abstract || 'No abstract provided.'}</p>
+              </div>
+            </ReviewSection>
+
+            {paper.keywords?.length > 0 && (
+              <ReviewSection
+                id="keywords"
+                icon={Tag}
+                title="Keywords"
+                description="Topics covered in this paper"
               >
-                <Download size={16} />
-                Download PDF (admin)
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Paper Details */}
-          <div className="lg:col-span-2 space-y-8">
-            <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-              <div className="px-8 py-6 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-                    <FileText size={20} className="text-indigo-600" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900">Research Information</h2>
-                    <p className="text-slate-600 text-sm">Complete details and preview</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-8">
-                <h3 className="text-2xl font-bold text-slate-900 mb-6">{paper.title}</h3>
-
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                  <div className="text-center p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                    <div className="text-2xl font-black text-slate-900">{viewCount}</div>
-                    <div className="text-sm text-slate-600 font-medium">Views</div>
-                  </div>
-                  <div className="text-center p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                    <div className="text-2xl font-black text-indigo-600">{downloadCount}</div>
-                    <div className="text-sm text-slate-600 font-medium">Downloads</div>
-                  </div>
-                  <div className="text-center p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                    <div className="text-2xl font-black text-emerald-600">
-                      {paper.published_date ? getTimeAgo(paper.published_date) : 'N/A'}
-                    </div>
-                    <div className="text-sm text-slate-600 font-medium">Published</div>
-                  </div>
-                  <div className="text-center p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                    <div className="text-2xl font-black text-amber-600">
-                      {paper.keywords?.length || 0}
-                    </div>
-                    <div className="text-sm text-slate-600 font-medium">Keywords</div>
-                  </div>
-                </div>
-
-                {/* Abstract */}
-                <div className="mb-8">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Lightbulb size={18} className="text-indigo-600" />
-                    <h4 className="text-lg font-bold text-slate-900">Abstract</h4>
-                  </div>
-                  <div className="p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                    <p className="text-slate-700 whitespace-pre-line leading-relaxed">{paper.abstract}</p>
-                  </div>
-                </div>
-
-                {/* PDF PREVIEW SECTION - Secure Viewer with Watermark */}
-                <div className="mb-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Maximize2 size={18} className="text-indigo-600" />
-                      <h4 className="text-lg font-bold text-slate-900">Document Preview</h4>
-                    </div>
-                    <span className="text-xs font-medium text-slate-500 flex items-center gap-1">
-                      🔒 View Only
+                <div className="flex flex-wrap gap-2">
+                  {paper.keywords.map((keyword, index) => (
+                    <span
+                      key={index}
+                      className="px-3 py-1 rounded-full bg-[#3674B5]/10 text-[#3674B5] text-xs font-medium border border-[#3674B5]/20"
+                    >
+                      {keyword}
                     </span>
-                  </div>
-                  {paper.file_url ? (
-                    <SecurePDFViewer
-                      fileUrl={paper.file_url}
-                      watermarkText="NU"
-                      drawOverlays={drawOverlays}
-                    />
-                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-slate-400 rounded-2xl border-2 border-slate-200 bg-slate-100">
-                      Preview not available
-                    </div>
-                  )}
+                  ))}
                 </div>
+              </ReviewSection>
+            )}
 
-                {/* Author Info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                  <div className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center flex-shrink-0">
-                      <User size={20} className="text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 mb-1">Primary Author</p>
-                      <p className="text-lg font-bold text-slate-900">{formatFullName(paper.users) || 'Researcher'}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <GraduationCap size={14} className="text-slate-500" />
-                        <span className="text-sm text-slate-600">National University Dasmariñas</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-100 to-violet-100 flex items-center justify-center flex-shrink-0">
-                      <Calendar size={20} className="text-purple-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 mb-1">Publication Date</p>
-                      <p className="text-lg font-bold text-slate-900">{formatDate(paper.published_date || paper.created_at)}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Clock size={14} className="text-slate-500" />
-                        <span className="text-sm text-slate-600">Verified Submission</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Co-Authors */}
-                {displayedCoAuthors.length > 0 && (
-                  <div className="mb-8">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Users size={18} className="text-indigo-600" />
-                      <h4 className="text-lg font-bold text-slate-900">Co-Authors</h4>
-                    </div>
-                    <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 space-y-2">
-                      {displayedCoAuthors.map((authorName) => (
-                        <p key={authorName} className="text-slate-700">
-                          {authorName}
-                        </p>
-                      ))}
-                    </div>
+            <ReviewSection
+              id="manuscript"
+              icon={BookOpen}
+              title="Manuscript PDF"
+              description="Read-only preview with watermark"
+              action={(
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
+                  <Lock size={12} aria-hidden="true" />
+                  View only
+                </span>
+              )}
+            >
+              <div className="min-w-0 overflow-hidden rounded-lg border border-slate-100">
+                {previewPdfUrl ? (
+                  <SecurePDFViewer
+                    fileUrl={previewPdfUrl}
+                    watermarkText="NU"
+                    drawOverlays={drawOverlays}
+                  />
+                ) : (
+                  <div className="h-[min(50vh,28rem)] flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-50">
+                    <FileText size={32} aria-hidden="true" />
+                    <p className="text-sm">Preview not available</p>
                   </div>
                 )}
+              </div>
+            </ReviewSection>
 
-                {/* Keywords */}
-                {paper.keywords && paper.keywords.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <Tag size={18} className="text-indigo-600" />
-                      <h4 className="text-lg font-bold text-slate-900">Keywords</h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {paper.keywords.map((keyword, index) => (
-                        <span
-                          key={index}
-                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-100 to-blue-100 text-indigo-700 text-sm font-medium border border-indigo-200"
-                        >
-                          {keyword}
-                        </span>
-                      ))}
-                    </div>
+            <ReviewSection
+              id="citation"
+              icon={Copy}
+              title="Cite this paper"
+              description="Copy formatted citations"
+            >
+              {!isFormalPublished && (
+                <p className="mb-3 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {INTERNAL_CITE_NOTE}
+                </p>
+              )}
+              <div className="space-y-3">
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-sm font-semibold text-slate-700">APA</p>
+                    <button
+                      type="button"
+                      onClick={() => copyCitation(formatApaCitation())}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Copy size={12} aria-hidden="true" />
+                      Copy
+                    </button>
                   </div>
-                )}
+                  <p className="text-sm text-slate-700 leading-relaxed">{formatApaCitation()}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-sm font-semibold text-slate-700">IEEE</p>
+                    <button
+                      type="button"
+                      onClick={() => copyCitation(formatIeeeCitation())}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Copy size={12} aria-hidden="true" />
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-sm text-slate-700 leading-relaxed">{formatIeeeCitation()}</p>
+                </div>
+              </div>
+            </ReviewSection>
 
-                {/* Citation Generation */}
-                <div className="mt-8 p-4 rounded-xl bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200">
-                  <h4 className="text-lg font-bold text-slate-900 mb-3">Cite This Paper</h4>
-                  {!isFormalPublished && (
-                    <p className="mb-3 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      {INTERNAL_CITE_NOTE}
-                    </p>
-                  )}
-                  {isFormalPublished && paper.doi && (
-                    <p className="mb-3 text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                      DOI:{' '}
-                      <a
-                        href={`https://doi.org/${paper.doi}`}
-                        className="font-mono underline hover:no-underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {paper.doi}
-                      </a>
-                    </p>
-                  )}
+            {isAuthorOrCoAuthor && (
+              <ReviewSection
+                id="reviewer-notes"
+                icon={MessageSquare}
+                title="Reviewer targeted notes"
+                description="Feedback visible to authors and co-authors"
+              >
+                {annotations.length === 0 ? (
+                  <p className="text-sm text-slate-500">No targeted review notes have been added yet.</p>
+                ) : (
                   <div className="space-y-3">
-                    <div className="bg-white border border-slate-200 rounded-lg p-3">
-                      <div className="flex items-center justify-between gap-3 mb-2">
-                        <p className="text-sm font-semibold text-slate-700">APA</p>
-                        <button
-                          type="button"
-                          onClick={() => copyCitation(formatApaCitation())}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        >
-                          <Copy size={12} /> Copy
-                        </button>
-                      </div>
-                      <p className="text-sm text-slate-700">{formatApaCitation()}</p>
-                    </div>
+                    {annotations
+                      .filter((annotation) => !annotation.parentId)
+                      .map((annotation) => {
+                        const replies = annotations
+                          .filter((item) => item.parentId === annotation.id)
+                          .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-                    <div className="bg-white border border-slate-200 rounded-lg p-3">
-                      <div className="flex items-center justify-between gap-3 mb-2">
-                        <p className="text-sm font-semibold text-slate-700">IEEE</p>
-                        <button
-                          type="button"
-                          onClick={() => copyCitation(formatIeeeCitation())}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        >
-                          <Copy size={12} /> Copy
-                        </button>
-                      </div>
-                      <p className="text-sm text-slate-700">{formatIeeeCitation()}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {isAuthorOrCoAuthor && (
-                <div className="mt-8 p-4 rounded-xl bg-white border border-slate-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <MessageSquare size={18} className="text-indigo-600" />
-                    <h4 className="text-lg font-bold text-slate-900">Reviewer Targeted Notes</h4>
-                  </div>
-                  {annotations.length === 0 ? (
-                    <p className="text-sm text-slate-500">No targeted review notes have been added yet.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {annotations
-                        .filter((annotation) => !annotation.parentId)
-                        .map((annotation) => {
-                          const replies = annotations
-                            .filter((item) => item.parentId === annotation.id)
-                            .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
-                          return (
-                            <div key={annotation.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                              <p className="text-xs text-slate-500 mb-1">
-                                {annotation.reviewerName}
-                                {annotation.pageNumber ? ` • Page ${annotation.pageNumber}` : ''}
-                                {annotation.sectionLabel ? ` • ${annotation.sectionLabel}` : ''}
+                        return (
+                          <div key={annotation.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-xs text-slate-500 mb-1">
+                              {annotation.reviewerName}
+                              {annotation.pageNumber ? ` · Page ${annotation.pageNumber}` : ''}
+                              {annotation.sectionLabel ? ` · ${annotation.sectionLabel}` : ''}
+                            </p>
+                            {annotation.selectedText && (
+                              <p className="text-xs text-slate-600 mb-1 italic">
+                                &ldquo;{annotation.selectedText}&rdquo;
                               </p>
-                              {annotation.selectedText && (
-                                <p className="text-xs text-slate-600 mb-1">Selected: "{annotation.selectedText}"</p>
-                              )}
-                              {annotation.drawImageUrl && (
-                                <img
-                                  src={annotation.drawImageUrl}
-                                  alt="Reviewer drawing"
-                                  className="mb-2 max-h-52 w-full rounded-lg border border-slate-200 object-contain bg-white"
-                                />
-                              )}
-                              {annotation.note?.trim() ? (
-                                <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
-                              ) : null}
-
-                              {replies.length > 0 && (
-                                <div className="mt-3 border-l-2 border-slate-200 pl-3 space-y-2">
-                                  {replies.map((reply) => (
-                                    <div key={reply.id} className="rounded-md border border-slate-200 bg-white p-2.5">
-                                      <p className="text-xs text-slate-500 mb-1">
-                                        {reply.reviewerName}
-                                        {reply.pageNumber ? ` • Page ${reply.pageNumber}` : ''}
-                                      </p>
-                                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{reply.note}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
+                            )}
+                            {annotation.drawImageUrl && (
+                              <img
+                                src={annotation.drawImageUrl}
+                                alt="Reviewer drawing"
+                                className="mb-2 max-h-52 w-full rounded-lg border border-slate-200 object-contain bg-white"
+                              />
+                            )}
+                            {annotation.note?.trim() ? (
+                              <p className="text-sm text-slate-800 whitespace-pre-wrap">{annotation.note}</p>
+                            ) : null}
+                            {replies.length > 0 && (
+                              <div className="mt-3 border-l-2 border-slate-200 pl-3 space-y-2">
+                                {replies.map((reply) => (
+                                  <div key={reply.id} className="rounded-md border border-slate-200 bg-white p-2.5">
+                                    <p className="text-xs text-slate-500 mb-1">
+                                      {reply.reviewerName}
+                                      {reply.pageNumber ? ` · Page ${reply.pageNumber}` : ''}
+                                    </p>
+                                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{reply.note}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
                 )}
+              </ReviewSection>
+            )}
 
-                {isAuthorOrCoAuthor && (
-                <div className="mt-8 p-4 rounded-xl bg-white border border-slate-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Clock size={18} className="text-indigo-600" />
-                    <h4 className="text-lg font-bold text-slate-900">Revision and Workflow History</h4>
-                  </div>
-                  {workflowHistory.length === 0 ? (
-                    <p className="text-sm text-slate-500">No workflow actions recorded yet.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {workflowHistory.map((entry) => (
-                        <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-semibold text-slate-800">
-                              {formatWorkflowLabel(entry)}
-                              <span className="ml-2 text-xs text-slate-500">by {formatFullName(entry.reviewer) || entry.reviewer_role}</span>
-                            </p>
-                            <span className="text-xs text-slate-500">{formatDate(entry.reviewed_at || entry.created_at)}</span>
-                          </div>
-                          {entry.comments ? (
-                            <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{entry.comments}</p>
-                          ) : null}
-                          {(entry.previous_status || entry.new_status) ? (
-                            <p className="text-xs text-slate-500 mt-1">
-                              {entry.previous_status || 'n/a'} to {entry.new_status || entry.status || 'n/a'}
-                            </p>
-                          ) : null}
+            {isAuthorOrCoAuthor && (
+              <ReviewSection
+                id="workflow-history"
+                icon={Clock}
+                title="Revision and workflow history"
+                description="Status changes and reviewer actions"
+              >
+                {workflowHistory.length === 0 ? (
+                  <p className="text-sm text-slate-500">No workflow actions recorded yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {workflowHistory.map((entry) => (
+                      <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-800">
+                            {formatWorkflowLabel(entry)}
+                            <span className="ml-2 text-xs font-normal text-slate-500">
+                              by {formatFullName(entry.reviewer) || entry.reviewer_role}
+                            </span>
+                          </p>
+                          <span className="text-xs text-slate-500">{formatDate(entry.reviewed_at || entry.created_at)}</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column - Sidebar */}
-          <div className="space-y-8">
-            <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center">
-                    <Building size={20} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900">Institution</h3>
-                    <p className="text-slate-600 text-sm">NU Dasmariñas</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="p-6">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center">
-                      <Award size={20} className="text-indigo-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-slate-900">Verified Research</p>
-                      <p className="text-sm text-slate-600">Faculty Approved</p>
-                    </div>
-                  </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200">
-                    <p className="text-xs text-emerald-700 font-medium">
-                      This research has been peer-reviewed and approved for publication in the repository.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {relatedPapers.length > 0 && (
-              <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-                <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-violet-100 flex items-center justify-center">
-                      <TrendingUp size={20} className="text-purple-600" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-slate-900">Related Studies</h3>
-                      <p className="text-slate-600 text-sm">Similar topics</p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-6">
-                  <div className="space-y-4">
-                    {relatedPapers.map((relatedPaper) => (
-                      <div
-                        key={relatedPaper.id}
-                        onClick={() => navigate(`/research/${relatedPaper.id}`)}
-                        className="group p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200 hover:border-indigo-300 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center flex-shrink-0">
-                            <BookOpen size={16} className="text-amber-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-slate-900 group-hover:text-indigo-700 transition-colors truncate">
-                              {relatedPaper.title}
-                            </h4>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Eye size={12} className="text-slate-500" />
-                              <span className="text-xs text-slate-500">{relatedPaper.view_count || 0} views</span>
-                            </div>
-                          </div>
-                          <ChevronRight size={16} className="text-slate-400 group-hover:text-indigo-600 transition-colors" />
-                        </div>
+                        {entry.comments ? (
+                          <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{entry.comments}</p>
+                        ) : null}
+                        {(entry.previous_status || entry.new_status) ? (
+                          <p className="text-xs text-slate-500 mt-1">
+                            {entry.previous_status || 'n/a'} → {entry.new_status || entry.status || 'n/a'}
+                          </p>
+                        ) : null}
                       </div>
                     ))}
                   </div>
-                </div>
+                )}
+              </ReviewSection>
+            )}
+          </div>
+
+          <aside className="space-y-4 sm:space-y-5 xl:sticky xl:top-[3.75rem] xl:self-start xl:max-h-[calc(100dvh-4.5rem)] xl:overflow-y-auto">
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+                <h2 className="text-sm font-semibold text-slate-900">At a glance</h2>
               </div>
+              <dl className="divide-y divide-slate-100">
+                <div className="flex items-center justify-between px-4 py-3">
+                  <dt className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <Eye size={12} aria-hidden="true" />
+                    Views
+                  </dt>
+                  <dd className="text-sm font-semibold text-slate-900 tabular-nums">{viewCount}</dd>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <dt className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <Download size={12} aria-hidden="true" />
+                    Downloads
+                  </dt>
+                  <dd className="text-sm font-semibold text-slate-900 tabular-nums">{downloadCount}</dd>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <dt className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <Calendar size={12} aria-hidden="true" />
+                    Added
+                  </dt>
+                  <dd className="text-sm font-semibold text-slate-900">{getTimeAgo(paper.published_date || paper.created_at)}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
+                <ShieldCheck size={14} className="text-[#3674B5]" aria-hidden="true" />
+                <h2 className="text-sm font-semibold text-slate-900">Verified research</h2>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  This manuscript has completed peer review and is available in the NUCLEUS repository.
+                </p>
+              </div>
+            </section>
+
+            {relatedPapers.length > 0 && (
+              <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+                  <h2 className="text-sm font-semibold text-slate-900">Related studies</h2>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {relatedPapers.map((relatedPaper) => (
+                    <li key={relatedPaper.id}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/research/${relatedPaper.id}`, { state: { from: backTarget } })}
+                        className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-[#3674B5]/10 flex items-center justify-center shrink-0 mt-0.5">
+                            <BookOpen size={14} className="text-[#3674B5]" aria-hidden="true" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-900 line-clamp-2">{relatedPaper.title}</p>
+                            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                              <Eye size={11} aria-hidden="true" />
+                              {relatedPaper.view_count || 0} views
+                            </p>
+                          </div>
+                          <ChevronRight size={14} className="text-slate-300 shrink-0 mt-1" aria-hidden="true" />
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             )}
 
-            <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
-                    <Share2 size={20} className="text-amber-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900">Share & Save</h3>
-                    <p className="text-slate-600 text-sm">Spread the knowledge</p>
-                  </div>
-                </div>
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+                <h2 className="text-sm font-semibold text-slate-900">Share</h2>
               </div>
-              
-              <div className="p-6">
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setIsBookmarked(!isBookmarked)}
-                    className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border transition-colors ${
-                      isBookmarked
-                        ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200 text-amber-700'
-                        : 'bg-gradient-to-r from-slate-100 to-white border-slate-300 text-slate-700 hover:border-amber-300'
-                    }`}
-                  >
-                    <Bookmark size={16} fill={isBookmarked ? "currentColor" : "none"} />
-                    <span className="text-sm font-medium">{isBookmarked ? 'Saved' : 'Save'}</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(window.location.href);
-                      toast.success('Link copied to clipboard! 🔗', {
-                        duration: 2000,
-                      });
-                    }}
-                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors"
-                  >
-                    <Copy size={16} />
-                    <span className="text-sm font-medium">Link</span>
-                  </button>
-                  <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors">
-                    <Printer size={16} />
-                    <span className="text-sm font-medium">Print</span>
-                  </button>
-                  <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-indigo-300 transition-colors">
-                    <Heart size={16} />
-                    <span className="text-sm font-medium">Like</span>
-                  </button>
-                </div>
+              <div className="p-4">
+                <button
+                  type="button"
+                  onClick={copyPageLink}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <Copy size={15} aria-hidden="true" />
+                  Copy link
+                </button>
               </div>
-            </div>
-          </div>
+            </section>
+          </aside>
         </div>
       </div>
 
-      {/* AI Chat Component - Floats over the page */}
-      {paper && paper.file_url && (
-        <ResearchChat 
-          paperId={paper.id} 
-          fileUrl={paper.file_url} 
-        />
+      {paper && previewPdfUrl && (
+        <ResearchChat paperId={paper.id} fileUrl={previewPdfUrl} />
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const dotenv = require('dotenv');
 const multer = require('multer');
 const helmet = require('helmet');
@@ -55,6 +56,7 @@ app.use(cors({
   },
   credentials: true,
 }));
+app.use(compression());
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
 
 // Routes

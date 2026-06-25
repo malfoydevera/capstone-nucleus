@@ -12,6 +12,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+/** Same storage object even when presigned query params rotate. */
+function pathsMatch(a, b) {
+  if (!a || !b) return a === b;
+  try {
+    return new URL(a).pathname === new URL(b).pathname;
+  } catch {
+    return a.split('?')[0] === b.split('?')[0];
+  }
+}
+
 /**
  * Secure PDF viewer (read-only). Optional draw overlays show saved reviewer markup.
  * @param {string} fileUrl
@@ -52,9 +62,20 @@ const SecurePDFViewer = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [documentFile, setDocumentFile] = useState(fileUrl);
+  const resolvedFileRef = useRef(fileUrl);
 
   const containerRef = useRef(null);
   const pdfContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (pathsMatch(fileUrl, resolvedFileRef.current)) return;
+    resolvedFileRef.current = fileUrl;
+    setDocumentFile(fileUrl);
+    setLoading(true);
+    setError(null);
+    setNumPages(null);
+  }, [fileUrl]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -207,12 +228,15 @@ const SecurePDFViewer = ({
 
       <div
         ref={pdfContainerRef}
-        className="relative overflow-auto bg-slate-700"
-        style={{ height: isFullscreen ? 'calc(100vh - 120px)' : '520px' }}
+        className="relative overflow-y-auto overflow-x-hidden bg-slate-700"
+        style={{
+          height: isFullscreen ? 'calc(100vh - 120px)' : '520px',
+          scrollbarGutter: 'stable',
+        }}
         onCopy={(e) => e.preventDefault()}
         onDragStart={(e) => e.preventDefault()}
       >
-        <div className="absolute inset-0 z-10 pointer-events-none">
+        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
           <div
             className="absolute inset-0"
             style={{
@@ -224,7 +248,7 @@ const SecurePDFViewer = ({
         </div>
 
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-700 z-20">
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-700/95 z-30">
             <div className="text-center">
               <Loader2 size={40} className="text-indigo-400 animate-spin mx-auto" />
               <p className="text-white mt-3 font-medium">Loading document...</p>
@@ -232,8 +256,8 @@ const SecurePDFViewer = ({
           </div>
         )}
 
-        <div className="flex justify-center py-4">
-          <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess} onLoadError={onDocumentLoadError} loading={null} className="flex justify-center">
+        <div className="relative z-10 isolate flex justify-center py-4">
+          <Document file={documentFile} onLoadSuccess={onDocumentLoadSuccess} onLoadError={onDocumentLoadError} loading={null} className="flex justify-center">
             <div className="relative inline-block shadow-2xl">
               <Page pageNumber={pageNumber} scale={scale} renderTextLayer={false} renderAnnotationLayer={false} loading={null} />
               {pageOverlays.map((o) => (

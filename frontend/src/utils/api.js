@@ -90,6 +90,8 @@ export const authAPI = {
   forgotPassword: (data) => api.post('/auth/forgot-password', data),
   resetPassword: (data) => api.post('/auth/reset-password', data),
   getCurrentUser: () => api.get('/auth/me'),
+  updateProfile: (data) => api.patch('/auth/profile', data),
+  getProfileActivity: (params) => api.get('/auth/profile/activity', { params }),
   getAllUsers: (role) => api.get('/auth/users', { params: { role } }),
   createUser: (data) => api.post('/auth/users/create', data),
   updateUser: (id, data) => api.patch(`/auth/users/${id}`, data),
@@ -107,6 +109,8 @@ export const authAPI = {
   suspendUser: (id, reason) => api.patch(`/auth/users/${id}/suspend`, { reason }),
   reactivateUser: (id) => api.patch(`/auth/users/${id}/reactivate`),
   searchStudents: (query) => api.get('/auth/students/search', { params: { query } }),
+  exportStudentsCsv: () =>
+    api.get('/auth/admin/export/students', { responseType: 'blob' }),
 };
 
 export const notificationsAPI = {
@@ -115,6 +119,7 @@ export const notificationsAPI = {
   markRead: (id) => api.patch(`/auth/notifications/${id}/read`),
   markAllRead: () => api.patch('/auth/notifications/read-all'),
   deleteOne: (id) => api.delete(`/auth/notifications/${id}`),
+  deleteAll: () => api.delete('/auth/notifications'),
 };
 
 export const researchAPI = {
@@ -123,6 +128,7 @@ export const researchAPI = {
   getMyResearch: () => api.get('/research/my/papers'),
   getAllResearch: (status) => api.get('/research/all/papers', { params: { status } }),
   getResearchById: (id) => api.get(`/research/${id}`),
+  getResearchFile: (id) => api.get(`/research/${id}/file`),
   approveResearch: (id, comments, extra = {}) => api.post(`/research/${id}/approve`, { comments, ...extra }),
   rejectResearch: (id, reason, rejectionCategory) => api.post(`/research/${id}/reject`, { reason, rejectionCategory }),
   requestRevision: (id, notes) => api.post(`/research/${id}/revision`, { notes }),
@@ -183,13 +189,8 @@ export const researchAPI = {
   getAuditLogs: (params) => api.get('/research/dean/audit-logs', { params }),
   getAuditLogsPdf: (params) => api.get('/research/dean/audit-logs/pdf', { params, responseType: 'blob' }),
   getDepartmentComparison: (params) => api.get('/research/dean/department-comparison', { params }),
-};
-
-export const analyticsAPI = {
-  getSystemStats: () => api.get('/analytics/stats'),
-  getDownloadStats: (period) => api.get('/analytics/downloads', { params: { period } }),
-  getUserActivity: (period) => api.get('/analytics/activity', { params: { period } }),
-  getCategoryStats: () => api.get('/analytics/categories'),
+  exportPapersCsv: (params) =>
+    api.get('/research/admin/export/papers', { params, responseType: 'blob' }),
 };
 
 export const departmentsAPI = {
@@ -234,32 +235,6 @@ export const aiAPI = {
         error?.error?.message ||
         error?.message ||
         'Failed to chat with paper';
-      throw new Error(messageText);
-    }
-
-    return response.json();
-  },
-
-  extractPdfMetadata: async (file) => {
-    const token = getAccessToken();
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await fetch(`${API_BASE_URL}/ai/extract-pdf`, {
-      method: 'POST',
-      headers: {
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      const messageText =
-        (typeof error?.error === 'string' && error.error) ||
-        error?.error?.message ||
-        error?.message ||
-        'Failed to extract PDF metadata';
       throw new Error(messageText);
     }
 

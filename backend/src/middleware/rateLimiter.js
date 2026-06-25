@@ -63,8 +63,17 @@ const authRateLimiter = createRateLimiter({
   keyFn: normalizeIp,
 });
 
+const publishedRateLimiter = createRateLimiter({
+  windowMs: toPositiveNumber(process.env.PUBLISHED_RATE_LIMIT_WINDOW_MS, DEFAULT_WINDOW_MS),
+  maxRequests: toPositiveNumber(process.env.PUBLISHED_RATE_LIMIT_MAX, 120),
+  bucketPrefix: 'published',
+  message: 'Too many browse requests. Please try again shortly.',
+  keyFn: normalizeIp,
+});
+
 module.exports = {
   authRateLimiter,
+  publishedRateLimiter,
   createRateLimiter,
   normalizeIp,
 };

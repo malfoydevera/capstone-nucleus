@@ -16,16 +16,19 @@ import {
   Clock,
   FileCheck,
   ShieldCheck,
-  BarChart3,
   Eye,
   Maximize2,
   CornerDownRight,
-  Upload,
   Award,
+  MessageSquare,
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
 import AnnotationsSidePanel from '../../components/pdf/AnnotationsSidePanel';
+import ReviewDetailNav from '../../components/review/ReviewDetailNav';
+import ReviewSection from '../../components/review/ReviewSection';
+import ReviewAssignmentBanner, { ActiveReviewerNotes } from '../../components/review/ReviewAssignmentBanner';
+import ReviewProgressTracker, { shouldShowWorkflowProgress } from '../../components/review/ReviewProgressTracker';
 import { formatFullName } from '../../utils/names';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -70,13 +73,11 @@ const ReviewDetail = () => {
   const turnitinUrl = import.meta.env.VITE_TURNITIN_URL || 'https://www.turnitin.com/';
   const grammarlyUrl = import.meta.env.VITE_GRAMMARLY_URL || 'https://www.grammarly.com/';
   const [annotations, setAnnotations] = useState([]);
-  const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(true);
+  const [feedbackDrawerOpen, setFeedbackDrawerOpen] = useState(false);
   const [reviewPdfPage, setReviewPdfPage] = useState(1);
   const [reviewPdfNumPages, setReviewPdfNumPages] = useState(null);
   /** Keeps the same string when polling only rotates signed-query params (stops react-pdf reload flicker). */
   const [stablePreviewPdfUrl, setStablePreviewPdfUrl] = useState(null);
-  const [annotatedFile, setAnnotatedFile] = useState(null);
-  const [uploadingAnnotatedPDF, setUploadingAnnotatedPDF] = useState(false);
   const [showPublishDoiModal, setShowPublishDoiModal] = useState(false);
   const [publishDoiValue, setPublishDoiValue] = useState('');
 
@@ -150,10 +151,11 @@ const ReviewDetail = () => {
 
   const fetchPaperDetail = async () => {
     try {
-      const [paperResult, annotationResult, categoriesResult] = await Promise.allSettled([
+      const [paperResult, annotationResult, categoriesResult, fileResult] = await Promise.allSettled([
         researchAPI.getResearchById(id),
         researchAPI.getAnnotations(id),
         researchAPI.getCategories(),
+        researchAPI.getResearchFile(id),
       ]);
 
       if (paperResult.status !== 'fulfilled') {
@@ -161,8 +163,24 @@ const ReviewDetail = () => {
       }
 
       const response = paperResult.value;
-      const nextPaper = unwrapApiData(response).paper;
+      const payload = unwrapApiData(response);
+      const nextPaper = payload.paper;
       setPaper(nextPaper);
+
+      if (fileResult.status === 'fulfilled') {
+        const fileUrl = unwrapApiData(fileResult.value).fileUrl;
+        if (fileUrl) {
+          setStablePreviewPdfUrl((prev) => {
+            if (!prev) return fileUrl;
+            try {
+              if (new URL(prev).pathname === new URL(fileUrl).pathname) return prev;
+            } catch {
+              if (prev.split('?')[0] === fileUrl.split('?')[0]) return prev;
+            }
+            return fileUrl;
+          });
+        }
+      }
       setMetadataForm({
         title: nextPaper?.title || '',
         abstract: nextPaper?.abstract || '',
@@ -489,7 +507,7 @@ const ReviewDetail = () => {
         icon: Clock, label: 'Pending Review'
       },
       pending_faculty: {
-        badgeColor: 'bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
+        badgeColor: 'bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 text-[#3674B5] border-[#3674B5]/20',
         icon: Clock, label: 'With Adviser'
       },
       pending_dean: {
@@ -505,7 +523,7 @@ const ReviewDetail = () => {
         icon: Eye, label: 'Awaiting Editor Review'
       },
       pending_admin: {
-        badgeColor: 'bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] border-[#1C4D8D]/20',
+        badgeColor: 'bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 text-[#3674B5] border-[#3674B5]/20',
         icon: Shield, label: 'Awaiting Admin Review'
       },
       approved: {
@@ -532,8 +550,8 @@ const ReviewDetail = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-20 h-20 border-4 border-[#3674B5]/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin"></div>
         </div>
         <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading research details...</p>
       </div>
@@ -546,13 +564,13 @@ const ReviewDetail = () => {
                    : user?.role === 'admin' ? '/admin/papers' : '/staff/review';
     return (
       <div className="max-w-5xl mx-auto px-4 py-8">
-        <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors mb-8">
+        <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#3674B5]/30 transition-colors mb-8">
           <ArrowLeft size={18} /> Back to Review Queue
         </button>
         <div className="text-center py-16">
           <FileText size={40} className="text-slate-400 mx-auto mb-6" />
           <h2 className="text-2xl font-bold text-slate-900 mb-3">Research paper not found</h2>
-          <button onClick={() => navigate(backPath)} className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold">Return to Review Queue</button>
+          <button onClick={() => navigate(backPath)} className="px-6 py-3 bg-gradient-to-r from-[#3674B5] to-[#578FCA] text-white rounded-xl font-bold">Return to Review Queue</button>
         </div>
       </div>
     );
@@ -575,38 +593,6 @@ const ReviewDetail = () => {
         },
       ];
 
-  // Workflow progress tracker (approved = internal repository; published = formal DOI publication)
-  const getWorkflowStage = () => {
-    const stages = [
-      { key: 'adviser', label: 'Adviser Review', statuses: ['pending_faculty'] },
-      { key: 'dean_chair', label: 'Dean / Prog. Chair', statuses: ['pending_dean', 'pending_program_chair'] },
-      { key: 'editor', label: 'Research Editor', statuses: ['pending_editor'] },
-      { key: 'admin', label: 'Admin Review', statuses: ['pending_admin'] },
-      { key: 'approved_repo', label: 'Approved (internal)', statuses: ['approved'] },
-      { key: 'published', label: 'Published', statuses: ['published'] },
-    ].map((s) => ({ ...s, completed: false }));
-
-    const paperStatus = paper.status;
-    let currentStageIndex = -1;
-    if (paperStatus === 'pending_faculty') currentStageIndex = 0;
-    else if (paperStatus === 'pending_dean' || paperStatus === 'pending_program_chair') currentStageIndex = 1;
-    else if (paperStatus === 'pending_editor' || paperStatus === 'revision_required') currentStageIndex = 2;
-    else if (paperStatus === 'pending_admin') currentStageIndex = 3;
-    else if (paperStatus === 'approved') currentStageIndex = 4;
-    else if (paperStatus === 'published') currentStageIndex = 5;
-
-    for (let i = 0; i < stages.length; i++) {
-      if (paperStatus === 'published') {
-        stages[i].completed = true;
-      } else {
-        stages[i].completed = i < currentStageIndex;
-      }
-    }
-
-    return { stages, currentStageIndex };
-  };
-
-  const { stages, currentStageIndex } = getWorkflowStage();
   const structuredCoAuthorNames = getStructuredCoAuthorNames(paper);
 
   const drawOverlays = annotations
@@ -615,163 +601,92 @@ const ReviewDetail = () => {
 
   const previewPdfUrl = stablePreviewPdfUrl ?? paper.file_url;
 
-  return (
-    <div className={`max-w-6xl mx-auto px-4 py-8 ${canAnnotate && annotationsPanelOpen ? 'lg:pr-[26rem]' : ''}`}>
-      {/* Header */}
-      <div className="mb-8">
-        <button onClick={() => navigate(backPath)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors mb-6 group">
-          <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-          Back to Review Queue
-        </button>
+  const queueLabel = user?.role === 'faculty'
+    ? 'Adviser review queue'
+    : user?.role === 'admin'
+      ? 'Admin approval queue'
+      : user?.role === 'dean'
+        ? 'Dean review queue'
+        : user?.role === 'program_chair'
+          ? 'Program chair review queue'
+          : 'Editorial review queue';
 
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
-              <FileCheck size={28} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-black text-slate-900 mb-2">Review <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Submission</span></h1>
-              <div className="flex items-center gap-4">
-                <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold ${statusConfig.badgeColor} border`}>
-                  <StatusIcon size={14} /> {statusConfig.label}
-                </span>
-                <span className="text-sm text-slate-600 font-medium">Submitted {formatDate(paper.submission_date || paper.created_at)}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-            <Shield size={16} className="text-[#1C4D8D]" />
-            <span className="text-sm font-semibold text-slate-700">Academic Review</span>
-          </div>
-        </div>
+  const showWorkflow = shouldShowWorkflowProgress(paper);
+
+  const feedbackButton = canAnnotate ? (
+    <button
+      type="button"
+      onClick={() => setFeedbackDrawerOpen(true)}
+      className="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg border border-[#3674B5]/30 bg-[#3674B5]/10 px-2.5 sm:px-3 text-[11px] sm:text-xs font-semibold text-[#3674B5] hover:bg-[#3674B5]/15 transition-colors w-full sm:w-auto justify-center"
+    >
+      <MessageSquare size={14} aria-hidden="true" />
+      Author feedback
+      {annotations.length > 0 && (
+        <span className="rounded-full bg-[#3674B5] text-white px-1.5 py-0.5 text-[10px] font-bold leading-none">
+          {annotations.length}
+        </span>
+      )}
+    </button>
+  ) : null;
+
+  return (
+    <div className="review-screen flex flex-1 min-h-0 flex-col">
+      <ReviewDetailNav
+        backPath={backPath}
+        breadcrumbs={[
+          { label: 'Dashboard', path: '/dashboard' },
+          { label: queueLabel, path: backPath },
+        ]}
+        title={paper.title || 'Untitled manuscript'}
+        statusBadge={(
+          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold ${statusConfig.badgeColor}`}>
+            <StatusIcon size={10} aria-hidden="true" /> {statusConfig.label}
+          </span>
+        )}
+        trailing={feedbackButton}
+      />
+
+      <div className="review-screen__inner flex-1 py-4 sm:py-5 pb-24 lg:pb-8">
+        <div className="space-y-4 sm:space-y-5">
+
+      {showWorkflow && <ReviewProgressTracker status={paper.status} />}
+
+      <div className="xl:hidden space-y-4">
+        <ReviewAssignmentBanner role={user?.role} status={paper.status} />
+        <ActiveReviewerNotes
+          revisionNotes={paper.revision_notes}
+          rejectionReason={paper.rejection_reason}
+        />
       </div>
 
-      {/* Workflow Progress Indicator - Show for papers in sequential workflow */}
-      {(paper.faculty_id || 
-        paper.status.includes('pending_faculty') || 
-        paper.status.includes('pending_editor') || 
-        paper.status.includes('pending_admin') || 
-        paper.status === 'approved' ||
-        paper.status === 'published') && paper.status !== 'rejected' && (
-        <div className="mb-8 bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-            <h3 className="font-bold text-slate-900 flex items-center gap-2">
-              <BarChart3 size={20} className="text-[#1C4D8D]" />
-              Review Workflow Progress
-            </h3>
-          </div>
-          <div className="p-6">
-            <div className="relative">
-              {/* Progress Bar Background */}
-              <div className="absolute top-5 left-0 right-0 h-1 bg-slate-200 rounded-full" style={{ left: '24px', right: '24px' }}></div>
-              {/* Progress Bar Fill */}
-              <div 
-                className="absolute top-5 left-0 h-1 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] rounded-full transition-all duration-500" 
-                style={{ 
-                  left: '24px', 
-                  width: currentStageIndex >= 0 ? `calc(${(currentStageIndex / (stages.length - 1)) * 100}% - 24px)` : '0%'
-                }}
-              ></div>
-              
-              {/* Stages */}
-              <div className="relative flex justify-between">
-                {stages.map((stage, index) => {
-                  const isCompleted = stage.completed;
-                  const isCurrent = index === currentStageIndex;
-                  const isPending = index > currentStageIndex;
-                  
-                  return (
-                    <div key={stage.key} className="flex flex-col items-center">
-                      {/* Circle */}
-                      <div className={`
-                        w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm
-                        transition-all duration-300 shadow-lg z-10
-                        ${isCompleted ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white' : ''}
-                        ${isCurrent ? 'bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] text-white ring-4 ring-[#1C4D8D]/20 animate-pulse' : ''}
-                        ${isPending ? 'bg-white text-slate-400 border-2 border-slate-200' : ''}
-                      `}>
-                        {isCompleted ? <CheckCircle size={24} /> : 
-                         isCurrent ? <Clock size={24} className="animate-spin" style={{ animationDuration: '3s' }} /> : 
-                         index + 1}
-                      </div>
-                      
-                      {/* Label */}
-                      <div className="mt-3 text-center">
-                        <p className={`
-                          text-sm font-bold
-                          ${isCompleted ? 'text-green-700' : ''}
-                          ${isCurrent ? 'text-[#1C4D8D]' : ''}
-                          ${isPending ? 'text-slate-400' : ''}
-                        `}>
-                          {stage.label}
-                        </p>
-                        {isCurrent && (
-                          <p className="text-xs text-[#1C4D8D] mt-1 font-medium animate-pulse">
-                            In Progress
-                          </p>
-                        )}
-                        {isCompleted && (
-                          <p className="text-xs text-green-600 mt-1 font-medium">
-                            Completed ✓
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-            <div className="px-8 py-6 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex items-center gap-3">
-              <BookOpen size={20} className="text-[#1C4D8D]" />
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Research Details</h2>
-                <p className="text-slate-600 text-sm">Full submission and document preview</p>
-              </div>
-            </div>
-
-            <div className="p-8">
-              <h3 className="text-2xl font-bold text-slate-900 mb-6">{paper.title}</h3>
-
-              {/* Author and Timeline info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="flex items-start gap-4 p-4 rounded-xl bg-white border border-slate-200">
-                  <User size={20} className="text-blue-600 mt-1" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Primary Author</p>
-                    <p className="text-lg font-bold text-slate-900">{formatFullName(paper.users) || 'Researcher'}</p>
-                    <p className="text-sm text-slate-600">{paper.users?.email}</p>
-                  </div>
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,20rem)] 2xl:grid-cols-[minmax(0,1fr)_minmax(300px,22rem)] gap-4 sm:gap-5 xl:gap-6 items-start">
+        <div className="space-y-4 sm:space-y-5 min-w-0">
+          <ReviewSection
+            id="submission-details"
+            icon={FileText}
+            title="Submission details"
+            description="Author, abstract, and metadata"
+          >
+              <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-5">
+                <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Primary author</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900">{formatFullName(paper.users) || 'Researcher'}</dd>
+                  <dd className="text-xs text-slate-600">{paper.users?.email}</dd>
                 </div>
-                <div className="flex items-start gap-4 p-4 rounded-xl bg-white border border-slate-200">
-                  <Calendar size={20} className="text-[#1C4D8D] mt-1" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Submission Date</p>
-                    <p className="text-lg font-bold text-slate-900">{formatDate(paper.submission_date || paper.created_at)}</p>
-                    <p className="text-sm text-slate-600">Initial Submission</p>
-                  </div>
+                <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Submitted</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900">{formatDate(paper.submission_date || paper.created_at)}</dd>
                 </div>
-              </div>
-
-              {paper.category && (
-                <div className="mb-8 flex items-center gap-3 p-4 rounded-xl bg-white border border-slate-200">
-                  <BookOpen size={18} className="text-[#1C4D8D]" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Category</p>
-                    <p className="text-slate-600">{getCategoryName(paper.category)}</p>
+                {paper.category && (
+                  <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Category</dt>
+                    <dd className="mt-1 text-sm font-medium text-slate-800">{getCategoryName(paper.category)}</dd>
                   </div>
-                </div>
-              )}
+                )}
+              </dl>
 
               {(structuredCoAuthorNames.length > 0 || paper.external_author_notes) && (
-                <div className="mb-8 grid grid-cols-1 gap-4">
+                <div className="mb-5 grid grid-cols-1 gap-3">
                   {structuredCoAuthorNames.length > 0 && (
                     <div className="flex items-start gap-4 p-4 rounded-xl bg-white border border-slate-200">
                       <User size={20} className="text-indigo-600 mt-1" />
@@ -801,29 +716,42 @@ const ReviewDetail = () => {
               )}
 
               {/* Abstract */}
-              <div className="mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText size={18} className="text-[#1C4D8D]" />
-                  <h4 className="text-lg font-bold text-slate-900">Abstract</h4>
-                </div>
-                <div className="p-4 rounded-xl bg-white border border-slate-200">
-                  <p className="text-slate-700 whitespace-pre-line leading-relaxed">{paper.abstract}</p>
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-slate-900 mb-2">Abstract</h4>
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-100">
+                  <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{paper.abstract}</p>
                 </div>
               </div>
 
-              {/* PDF PREVIEW — protected; feedback lives in the right Feedback panel */}
-              <div className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Maximize2 size={18} className="text-[#1C4D8D]" />
-                    <h4 className="text-lg font-bold text-slate-900">Document Preview</h4>
-                    {canAnnotate ? (
-                      <span className="text-xs text-slate-500 font-medium">🔒 Read-only · Markup in Feedback panel (duplicate page), notes below</span>
-                    ) : (
-                      <span className="text-xs text-slate-500 font-medium">🔒 View only</span>
-                    )}
+              {paper.keywords?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900 mb-2">Keywords</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {paper.keywords.map((kw, i) => (
+                      <span key={i} className="px-3 py-1 rounded-full bg-[#3674B5]/10 text-[#3674B5] text-xs font-medium border border-[#3674B5]/20">{kw}</span>
+                    ))}
                   </div>
                 </div>
+              )}
+          </ReviewSection>
+
+          <ReviewSection
+            id="manuscript"
+            icon={BookOpen}
+            title="Manuscript PDF"
+            description="Read-only preview — open the feedback drawer to add page notes"
+            action={canAnnotate ? (
+              <button
+                type="button"
+                onClick={() => setFeedbackDrawerOpen(true)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#3674B5]/30 bg-[#3674B5]/10 px-2.5 text-[11px] sm:text-xs font-semibold text-[#3674B5] hover:bg-[#3674B5]/15 transition-colors"
+              >
+                <MessageSquare size={14} aria-hidden="true" />
+                Feedback
+              </button>
+            ) : null}
+          >
+              <div className="min-w-0 overflow-hidden rounded-lg border border-slate-100">
                 {previewPdfUrl ? (
                   <SecurePDFViewer
                     fileUrl={previewPdfUrl}
@@ -840,99 +768,21 @@ const ReviewDetail = () => {
                   </div>
                 )}
               </div>
-
-              {/* Upload Annotated PDF */}
-              {canAnnotate && (
-                <div className="mb-8 p-4 rounded-xl bg-amber-50 border border-amber-200">
-                  <div className="flex items-start gap-3 mb-3">
-                    <Upload size={18} className="text-amber-700 mt-0.5" />
-                    <div className="flex-1">
-                      <h4 className="text-sm font-bold text-slate-900 mb-1">Optional: upload a marked PDF</h4>
-                      <p className="text-xs text-slate-600 mb-3">
-                        If you edited the file in an external PDF app, attach that copy here. Written feedback in the Feedback panel is saved separately for the author.
-                      </p>
-                      <div className="flex gap-2">
-                        <label className="cursor-pointer">
-                          <input
-                            type="file"
-                            accept=".pdf,application/pdf"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file && file.type === 'application/pdf') {
-                                setAnnotatedFile(file);
-                              } else {
-                                toast.error('Please select a PDF file');
-                              }
-                            }}
-                            disabled={uploadingAnnotatedPDF}
-                          />
-                          <span className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-amber-300 text-amber-700 rounded-lg text-sm font-semibold hover:bg-amber-100 transition-colors">
-                            <Upload size={14} />
-                            Choose Annotated PDF
-                          </span>
-                        </label>
-                        {annotatedFile && (
-                          <button
-                            onClick={async () => {
-                              setUploadingAnnotatedPDF(true);
-                              const loadingToast = toast.loading('Uploading annotated PDF...');
-                              try {
-                                const formData = new FormData();
-                                formData.append('annotated_file', annotatedFile);
-                                await researchAPI.uploadAnnotatedPDF(id, formData);
-                                toast.success('Annotated PDF uploaded successfully', { id: loadingToast });
-                                setAnnotatedFile(null);
-                                fetchPaperDetail();
-                              } catch (error) {
-                                toast.error(getApiErrorMessage(error, 'Failed to upload annotated PDF'), { id: loadingToast });
-                              } finally {
-                                setUploadingAnnotatedPDF(false);
-                              }
-                            }}
-                            disabled={uploadingAnnotatedPDF}
-                            className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors"
-                          >
-                            {uploadingAnnotatedPDF ? 'Uploading...' : 'Upload'}
-                          </button>
-                        )}
-                      </div>
-                      {annotatedFile && (
-                        <p className="text-xs text-slate-600 mt-2">
-                          Selected: <span className="font-semibold">{annotatedFile.name}</span> ({(annotatedFile.size / 1024 / 1024).toFixed(2)} MB)
-                        </p>
-                      )}
-                      {paper.annotated_file_url && (
-                        <p className="text-xs text-green-700 font-semibold mt-2 flex items-center gap-1">
-                          <CheckCircle size={12} />
-                          Annotated PDF already uploaded and visible to student
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Keywords */}
-              {paper.keywords?.length > 0 && (
-                <div className="mb-8">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Tag size={18} className="text-[#1C4D8D]" />
-                    <h4 className="text-lg font-bold text-slate-900">Keywords</h4>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {paper.keywords.map((kw, i) => (
-                      <span key={i} className="px-4 py-2 rounded-xl bg-[#1C4D8D]/10 text-[#1C4D8D] text-sm font-medium border border-[#1C4D8D]/20">{kw}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          </ReviewSection>
         </div>
 
-        {/* Right Column */}
-        <div className="space-y-8">
+        <aside className="space-y-4 sm:space-y-5 xl:sticky xl:top-[3.75rem] xl:self-start xl:max-h-[calc(100dvh-4.5rem)] xl:overflow-y-auto">
+          <div className="hidden xl:block space-y-4">
+            <ReviewAssignmentBanner role={user?.role} status={paper.status} />
+            <ActiveReviewerNotes
+              revisionNotes={paper.revision_notes}
+              rejectionReason={paper.rejection_reason}
+            />
+          </div>
+
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 px-0.5">
+            Record decision
+          </p>
           {/* Action Buttons - Role-based visibility */}
           {(() => {
             const userRole = user?.role;
@@ -953,49 +803,49 @@ const ReviewDetail = () => {
             
             return false;
           })() && (
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
-                <FileCheck size={20} className="text-[#1C4D8D]" />
-                <h3 className="font-bold text-slate-900">Review Actions</h3>
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+              <div className="px-4 sm:px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+                <FileCheck size={18} className="text-[#3674B5]" aria-hidden="true" />
+                <h3 className="text-sm font-semibold text-slate-900">Review Actions</h3>
               </div>
-              <div className="p-6 space-y-4">
-                <button onClick={() => setShowApproveModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all font-bold shadow-lg">
-                  <CheckCircle size={20} /> Approve Research
+              <div className="p-4 sm:p-5 space-y-2.5">
+                <button onClick={() => setShowApproveModal(true)} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-semibold">
+                  <CheckCircle size={18} aria-hidden="true" /> Approve Research
                 </button>
-                <button onClick={() => setShowRevisionModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-all font-bold shadow-lg">
-                  <AlertCircle size={20} /> Request Revision
+                <button onClick={() => setShowRevisionModal(true)} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-semibold">
+                  <AlertCircle size={18} aria-hidden="true" /> Request Revision
                 </button>
 
                 {user?.role === 'staff' && ['pending_editor'].includes(paper.status) && (
                   <button
                     onClick={() => setShowMetadataModal(true)}
-                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#3674B5] text-white rounded-lg hover:bg-[#2d6299] transition-colors text-sm font-semibold"
                   >
-                    <FileText size={20} /> Correct Metadata
+                    <FileText size={18} aria-hidden="true" /> Correct Metadata
                   </button>
                 )}
 
                 {user?.role === 'staff' && ['pending_editor'].includes(paper.status) && (
                   <button
                     onClick={() => setShowReturnToAuthorModal(true)}
-                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-fuchsia-600 text-white rounded-xl hover:bg-fuchsia-700 transition-all font-bold shadow-lg"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-violet-200 bg-violet-50 text-violet-800 rounded-lg hover:bg-violet-100 transition-colors text-sm font-semibold"
                   >
-                    <CornerDownRight size={20} /> Return to Author
+                    <CornerDownRight size={18} aria-hidden="true" /> Return to Author
                   </button>
                 )}
 
                 {user?.role !== 'program_chair' && (
-                  <button onClick={() => setShowRejectModal(true)} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-bold shadow-lg">
-                    <XCircle size={20} /> Reject Paper
+                  <button onClick={() => setShowRejectModal(true)} className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-red-200 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-sm font-semibold">
+                    <XCircle size={18} aria-hidden="true" /> Reject Paper
                   </button>
                 )}
 
                 {['dean', 'program_chair'].includes(user?.role) && ['pending_dean', 'pending_program_chair', 'revision_required'].includes(paper.status) && (
                   <button
                     onClick={() => setShowAssignFacultyModal(true)}
-                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-bold shadow-lg"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#578FCA] text-white rounded-lg hover:bg-[#3674B5] transition-colors text-sm font-semibold"
                   >
-                    <User size={20} /> Assign to Faculty Reviewer
+                    <User size={18} aria-hidden="true" /> Assign to Faculty Reviewer
                   </button>
                 )}
 
@@ -1033,7 +883,7 @@ const ReviewDetail = () => {
           {/* Timeline & Stats */}
           <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 space-y-6">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-              <Clock size={20} className="text-[#1C4D8D]" />
+              <Clock size={20} className="text-[#3674B5]" />
               <h3 className="font-bold text-slate-900">Submission Info</h3>
             </div>
             <div className="space-y-4">
@@ -1167,8 +1017,26 @@ const ReviewDetail = () => {
               </p>
             </div>
           )}
+        </aside>
+      </div>
+
         </div>
       </div>
+
+      {canAnnotate && (
+        <AnnotationsSidePanel
+          drawerOnly
+          annotations={annotations}
+          isOpen={feedbackDrawerOpen}
+          onToggle={() => setFeedbackDrawerOpen((open) => !open)}
+          canEdit={canAnnotate}
+          onReply={handleSubmitReply}
+          onDelete={handleDeleteAnnotation}
+          onAddAnnotation={handleAddAnnotationFromPanel}
+          currentUserId={user?.id}
+          userRole={user?.role}
+        />
+      )}
 
       {/* Admin publish / DOI */}
       {showPublishDoiModal && user?.role === 'admin' && (
@@ -1666,25 +1534,6 @@ const ReviewDetail = () => {
         </div>
       )}
 
-      {/* Annotations Side Panel */}
-      {canAnnotate && (
-        <AnnotationsSidePanel
-          annotations={annotations}
-          isOpen={annotationsPanelOpen}
-          onToggle={() => setAnnotationsPanelOpen(!annotationsPanelOpen)}
-          canEdit={canAnnotate}
-          onReply={handleSubmitReply}
-          onDelete={handleDeleteAnnotation}
-          onAddAnnotation={handleAddAnnotationFromPanel}
-          currentUserId={user?.id}
-          userRole={user?.role}
-          pdfFileUrl={previewPdfUrl}
-          pdfPageNumber={reviewPdfPage}
-          pdfNumPages={reviewPdfNumPages}
-          onPdfPageChange={setReviewPdfPage}
-          onSaveDrawing={handleDrawingSaved}
-        />
-      )}
     </div>
   );
 };

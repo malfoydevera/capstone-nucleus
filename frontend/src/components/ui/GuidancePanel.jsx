@@ -21,7 +21,7 @@ const GuidancePanel = ({
     <section className={`guide-panel ${toneClassMap[tone] || toneClassMap.blue}`}>
       <div>
         <h2 className="guide-panel__title">
-          <HelpCircle size={18} className="text-[#1C4D8D]" />
+          <HelpCircle size={18} className="text-[#3674B5]" />
           {title}
         </h2>
         {description ? <p className="guide-panel__description mt-2">{description}</p> : null}

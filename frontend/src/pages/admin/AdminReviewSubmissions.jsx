@@ -1,603 +1,292 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  FileText, 
-  Clock, 
-  Eye, 
-  User, 
-  Calendar, 
-  Filter, 
-  CheckCircle, 
-  XCircle, 
-  AlertCircle, 
-  TrendingUp,
-  BarChart3,
+import {
+  Eye,
+  CheckCircle,
+  AlertCircle,
   BookOpen,
   ChevronRight,
-  RefreshCw,
-  Download,
   ShieldCheck,
-  FileCheck,
-  Users,
-  Tag,
-  Sparkles,
-  Award,
-  Lightbulb
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
-import GuidancePanel from '../../components/ui/GuidancePanel';
-import useAutoLoadMore from '../../hooks/useAutoLoadMore';
+import UserGuideLink from '../../components/ui/UserGuideLink';
+import ReviewWorkspaceLayout from '../../components/review/ReviewWorkspaceLayout';
+import { PriorityBanner } from '../../components/review/ReviewListShell';
 
-const PAGE_SIZE = 4;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PAGE_SIZE = 10;
 
 const AdminReviewSubmissions = () => {
   const navigate = useNavigate();
   const [papers, setPapers] = useState([]);
-  const [filteredPapers, setFilteredPapers] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('needs_action');
-  const [stats, setStats] = useState({
-    pendingStaff: 0,
-    pendingAdmin: 0,
-    approved: 0,
-    published: 0,
-    rejected: 0,
-    revisionRequired: 0,
-    total: 0,
-  });
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [lastRefreshed, setLastRefreshed] = useState(null);
 
   useEffect(() => {
     fetchPapers();
-
-    // Auto-refresh every 30 seconds instead of 5 seconds for better performance
-    const interval = setInterval(() => {
-      fetchPapers();
-    }, 30000);
-
+    const interval = setInterval(() => fetchPapers(true), 30000);
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    filterPapers();
-  }, [papers, statusFilter]);
-
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [statusFilter, filteredPapers.length]);
-
-  const fetchPapers = async () => {
+  const fetchPapers = async (silent = false) => {
+    if (!silent) setRefreshing(true);
     try {
-      const response = await researchAPI.adminGetAllResearch();
+      const [response, categoriesResponse] = await Promise.all([
+        researchAPI.adminGetAllResearch(),
+        researchAPI.getCategories(),
+      ]);
       const allPapers = unwrapApiData(response).papers || [];
-      const activePapers = allPapers.filter((p) => !p.deleted_at);
-
-      setPapers(activePapers);
-
-      // Calculate stats (active papers only)
-      setStats({
-        pendingStaff: activePapers.filter(p => ['pending_faculty', 'pending_editor'].includes(p.status)).length,
-        pendingAdmin: activePapers.filter(p => p.status === 'pending_admin').length,
-        approved: activePapers.filter(p => p.status === 'approved').length,
-        published: activePapers.filter(p => p.status === 'published').length,
-        rejected: activePapers.filter(p => p.status === 'rejected').length,
-        revisionRequired: activePapers.filter(p => p.status === 'revision_required').length,
-        total: activePapers.length,
-      });
+      setCategories(unwrapApiData(categoriesResponse).categories || []);
+      setPapers(allPapers.filter((paper) => !paper.deleted_at));
+      setLastRefreshed(new Date());
     } catch (error) {
       console.error('Failed to fetch papers:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const filterPapers = () => {
-    let filtered = papers;
-    
-    if (statusFilter === 'all') {
-      filtered = filtered;
-    } else if (statusFilter === 'needs_action') {
-      filtered = filtered.filter(p => ['pending_admin', 'pending_faculty', 'pending_editor'].includes(p.status));
-    } else if (statusFilter === 'pending_admin') {
-      filtered = filtered.filter(p => p.status === 'pending_admin');
+  const stats = useMemo(() => ({
+    pendingStaff: papers.filter((p) => ['pending_faculty', 'pending_editor'].includes(p.status)).length,
+    pendingAdmin: papers.filter((p) => p.status === 'pending_admin').length,
+    approved: papers.filter((p) => p.status === 'approved').length,
+    published: papers.filter((p) => p.status === 'published').length,
+    rejected: papers.filter((p) => p.status === 'rejected').length,
+    revisionRequired: papers.filter((p) => p.status === 'revision_required').length,
+    total: papers.length,
+  }), [papers]);
+
+  const filteredPapers = useMemo(() => {
+    let filtered = [...papers];
+
+    if (statusFilter === 'needs_action') {
+      filtered = filtered.filter((p) =>
+        ['pending_admin', 'pending_faculty', 'pending_editor'].includes(p.status),
+      );
     } else if (statusFilter === 'pending_faculty') {
-      filtered = filtered.filter(p => ['pending_faculty', 'pending_editor'].includes(p.status));
-    } else {
-      filtered = filtered.filter(p => p.status === statusFilter);
+      filtered = filtered.filter((p) => ['pending_faculty', 'pending_editor'].includes(p.status));
+    } else if (statusFilter !== 'all') {
+      filtered = filtered.filter((p) => p.status === statusFilter);
     }
 
-    // Sort by submission date (newest first)
-    filtered.sort((a, b) => new Date(b.submission_date) - new Date(a.submission_date));
-    
-    setFilteredPapers(filtered);
+    if (searchTerm) {
+      const needle = searchTerm.toLowerCase();
+      filtered = filtered.filter((paper) =>
+        [
+          paper.title,
+          paper.abstract,
+          paper.file_name,
+          formatFullName(paper.users),
+          ...(paper.keywords || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(needle),
+      );
+    }
+
+    if (dateFilter !== 'all') {
+      const now = Date.now();
+      const windowDays = dateFilter === '7d' ? 7 : dateFilter === '30d' ? 30 : 90;
+      filtered = filtered.filter((paper) => {
+        const submitted = new Date(paper.submission_date || paper.created_at).getTime();
+        if (Number.isNaN(submitted)) return false;
+        return now - submitted <= windowDays * 24 * 60 * 60 * 1000;
+      });
+    }
+
+    filtered.sort((a, b) => {
+      if (sortBy === 'oldest') {
+        return new Date(a.submission_date || a.created_at) - new Date(b.submission_date || b.created_at);
+      }
+      if (sortBy === 'title') return (a.title || '').localeCompare(b.title || '');
+      if (sortBy === 'author') return formatFullName(a.users).localeCompare(formatFullName(b.users));
+      return new Date(b.submission_date || b.created_at) - new Date(a.submission_date || a.created_at);
+    });
+
+    return filtered;
+  }, [papers, statusFilter, searchTerm, dateFilter, sortBy]);
+
+  const priorityPaper = useMemo(() => (
+    papers.find((p) => p.status === 'pending_admin') ||
+    papers.find((p) => p.status === 'revision_required') ||
+    null
+  ), [papers]);
+
+  const getCategoryName = (categoryValue) => {
+    if (!categoryValue) return 'General';
+    const category = categories.find((entry) => entry.id === categoryValue);
+    if (category) return category.name;
+    if (typeof categoryValue === 'string' && !UUID_PATTERN.test(categoryValue)) return categoryValue;
+    return 'General';
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return '—';
     const date = new Date(dateString);
     const now = new Date();
-    const diffTime = Math.abs(now - date);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+    const diffDays = Math.max(0, Math.floor(Math.abs(now - date) / (1000 * 60 * 60 * 24)));
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    if (diffDays < 30) return `${diffDays}d ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const getStatusConfig = (status) => {
-    const configs = {
-      pending_admin: {
-        color: 'from-[#1C4D8D] to-[#2563eb]',
-        bgColor: 'bg-gradient-to-r from-blue-100 to-indigo-100',
-        textColor: 'text-indigo-900',
-        borderColor: 'border-indigo-200',
-        icon: Eye,
-        label: 'Awaiting Admin Approval'
-      },
-      pending_editor: {
-        color: 'from-yellow-500 to-amber-500',
-        bgColor: 'bg-gradient-to-r from-yellow-100 to-amber-100',
-        textColor: 'text-yellow-800',
-        borderColor: 'border-yellow-200',
-        icon: Clock,
-        label: 'Pending Staff Review'
-      },
-      pending_faculty: {
-        color: 'from-yellow-500 to-amber-500',
-        bgColor: 'bg-gradient-to-r from-yellow-100 to-amber-100',
-        textColor: 'text-yellow-800',
-        borderColor: 'border-yellow-200',
-        icon: Clock,
-        label: 'Pending Faculty Review'
-      },
-      pending: {
-        color: 'from-yellow-500 to-amber-500',
-        bgColor: 'bg-gradient-to-r from-yellow-100 to-amber-100',
-        textColor: 'text-yellow-800',
-        borderColor: 'border-yellow-200',
-        icon: Clock,
-        label: 'Pending Staff Review'
-      },
-      approved: {
-        color: 'from-green-500 to-emerald-500',
-        bgColor: 'bg-gradient-to-r from-green-100 to-emerald-100',
-        textColor: 'text-green-800',
-        borderColor: 'border-green-200',
-        icon: CheckCircle,
-        label: 'Approved (internal)'
-      },
-      published: {
-        color: 'from-emerald-500 to-teal-500',
-        bgColor: 'bg-gradient-to-r from-emerald-100 to-teal-100',
-        textColor: 'text-emerald-800',
-        borderColor: 'border-emerald-200',
-        icon: Award,
-        label: 'Published'
-      },
-      rejected: {
-        color: 'from-red-500 to-pink-500',
-        bgColor: 'bg-gradient-to-r from-red-100 to-pink-100',
-        textColor: 'text-red-800',
-        borderColor: 'border-red-200',
-        icon: XCircle,
-        label: 'Rejected'
-      },
-      revision_required: {
-        color: 'from-orange-500 to-amber-500',
-        bgColor: 'bg-gradient-to-r from-orange-100 to-amber-100',
-        textColor: 'text-orange-800',
-        borderColor: 'border-orange-200',
-        icon: AlertCircle,
-        label: 'Revision Required'
-      },
-    };
-    return configs[status] || configs.pending;
-  };
+  const queueItems = [
+    {
+      key: 'pending_admin',
+      label: 'Awaiting admin approval',
+      description: 'Ready for final sign-off and publication',
+      count: stats.pendingAdmin,
+    },
+    {
+      key: 'needs_action',
+      label: 'All open items',
+      description: 'Anything still moving through review',
+      count: stats.pendingStaff + stats.pendingAdmin,
+    },
+    {
+      key: 'pending_faculty',
+      label: 'Still in peer review',
+      description: 'With faculty adviser or research editor',
+      count: stats.pendingStaff,
+    },
+    {
+      key: 'revision_required',
+      label: 'Revision requested',
+      description: 'Authors must resubmit changes',
+      count: stats.revisionRequired,
+    },
+    {
+      key: 'approved',
+      label: 'Approved (internal)',
+      description: 'In repository, not yet published',
+      count: stats.approved,
+    },
+    {
+      key: 'published',
+      label: 'Published',
+      description: 'Formally published with DOI',
+      count: stats.published,
+    },
+    {
+      key: 'rejected',
+      label: 'Rejected',
+      description: 'Declined submissions',
+      count: stats.rejected,
+    },
+    {
+      key: 'all',
+      label: 'All manuscripts',
+      description: 'Complete institutional record',
+      count: stats.total,
+    },
+  ];
 
-  const getStatusBadge = (status) => {
-    const config = getStatusConfig(status);
-    const Icon = config.icon;
-
-    return (
-      <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold ${config.bgColor} ${config.textColor} border ${config.borderColor}`}>
-        <Icon size={14} />
-        {config.label}
-      </div>
-    );
-  };
-
-  const visiblePapers = filteredPapers.slice(0, visibleCount);
-  const canLoadMore = visibleCount < filteredPapers.length;
-  const loadMoreRef = useAutoLoadMore({ canLoadMore, setVisibleCount, step: PAGE_SIZE });
+  const advancedFilters = [
+    {
+      id: 'date-filter',
+      label: 'Submission date',
+      value: dateFilter,
+      onChange: setDateFilter,
+      options: [
+        { value: 'all', label: 'Any time' },
+        { value: '7d', label: 'Last 7 days' },
+        { value: '30d', label: 'Last 30 days' },
+        { value: '90d', label: 'Last 90 days' },
+      ],
+    },
+    {
+      id: 'sort-filter',
+      label: 'Sort order',
+      value: sortBy,
+      onChange: setSortBy,
+      options: [
+        { value: 'newest', label: 'Newest first' },
+        { value: 'oldest', label: 'Oldest first' },
+        { value: 'title', label: 'Title A–Z' },
+        { value: 'author', label: 'Author A–Z' },
+      ],
+    },
+  ];
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-[#1C4D8D]/20 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#1C4D8D] border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
         </div>
-        <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading research submissions...</p>
+        <p className="mt-5 text-sm font-medium text-slate-500">Loading research submissions…</p>
       </div>
     );
   }
 
+  const submissions = filteredPapers.map((paper) => ({
+    id: paper.id,
+    title: paper.title,
+    authorName: formatFullName(paper.users),
+    categoryName: getCategoryName(paper.category),
+    formattedDate: formatDate(paper.submission_date || paper.created_at),
+    status: paper.status,
+    onOpen: () => navigate(`/admin/review/${paper.id}`),
+  }));
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-[#2563eb] flex items-center justify-center shadow-lg">
-                <ShieldCheck size={28} className="text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">
-                  Final <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1C4D8D] to-[#2563eb]">Approval</span>
-                </h1>
-                <p className="text-slate-600 font-medium">
-                  Review and publish research submissions requiring final administrative approval
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button
-              onClick={fetchPapers}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30 transition-colors"
-            >
-              <RefreshCw size={16} />
-              Refresh
-            </button>
-            {/* <button className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-blue-700 transition-all duration-300">
-              <Download size={16} />
-              Export Data
-            </button> */}
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <GuidancePanel
-            title="Final Approval Guidance"
-            description="This queue is for final administrative decisions after earlier reviewers have already completed their part of the workflow."
-            items={[
-              'Prioritize papers marked Awaiting Admin Approval before reviewing historical or already-published records.',
-              'Use status filters carefully because staff-review items and final-approval items imply different next actions.',
-              'When rejecting a paper, make sure the audit trail and workflow implications are clear.',
-            ]}
-            tone="violet"
-          />
-        </div>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-8">
-        {[
-          { 
-            label: 'Total Papers', 
-            value: stats.total, 
-            icon: FileText, 
-            color: 'from-slate-500 to-gray-500',
-            change: null 
-          },
-          { 
-            label: 'Awaiting Admin Approval', 
-            value: stats.pendingAdmin, 
-            icon: Eye, 
-            color: 'from-[#1C4D8D] to-[#2563eb]',
-            change: null 
-          },
-          { 
-            label: 'Faculty / Staff review', 
-            value: stats.pendingStaff, 
-            icon: Clock, 
-            color: 'from-amber-500 to-orange-500',
-            change: null 
-          },
-          { 
-            label: 'Approved (internal)', 
-            value: stats.approved, 
-            icon: CheckCircle, 
-            color: 'from-green-500 to-emerald-500',
-            change: null 
-          },
-          { 
-            label: 'Published', 
-            value: stats.published, 
-            icon: Award, 
-            color: 'from-emerald-600 to-teal-600',
-            change: null 
-          },
-          { 
-            label: 'Rejected', 
-            value: stats.rejected, 
-            icon: XCircle, 
-            color: 'from-red-500 to-pink-500',
-            change: null 
-          },
-        ].map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <div 
-              key={index} 
-              className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg`}>
-                  <Icon size={22} className="text-white" />
-                </div>
-                {stat.change && (
-                  <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                    stat.change.startsWith('+') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {stat.change}
-                  </span>
-                )}
-              </div>
-              <h3 className="text-3xl font-black text-slate-900 mb-1">{stat.value}</h3>
-              <p className="text-slate-600 font-medium">{stat.label}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Filter Section */}
-      <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 mb-8">
-        <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-              <Filter size={20} className="text-[#1C4D8D]" />
-            </div>
-            <div>
-              <h3 className="text-xl font-bold text-slate-900">Filter Submissions</h3>
-              <p className="text-slate-600 text-sm">View papers by status</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="p-6">
-          <div className="flex flex-wrap gap-3">
-            {[
-              { key: 'pending_admin', label: 'Awaiting Admin Approval', count: stats.pendingAdmin, color: '[#1C4D8D]' },
-              { key: 'needs_action', label: 'Needs Action', count: stats.pendingStaff + stats.pendingAdmin, color: '[#1C4D8D]' },
-              { key: 'pending_faculty', label: 'Pending Faculty', count: stats.pendingStaff, color: 'amber' },
-              { key: 'approved', label: 'Approved (internal)', count: stats.approved, color: 'emerald' },
-              { key: 'published', label: 'Published', count: stats.published, color: 'teal' },
-              { key: 'rejected', label: 'Rejected', count: stats.rejected, color: 'red' },
-              { key: 'all', label: 'All Papers', count: stats.total, color: 'slate' },
-            ].map((filter) => (
-              <button
-                key={filter.key}
-                onClick={() => setStatusFilter(filter.key)}
-                className={`group px-5 py-3 rounded-xl font-medium transition-all duration-300 ${
-                  statusFilter === filter.key
-                    ? `bg-gradient-to-r from-${filter.color}-600 to-${filter.color === 'emerald' ? 'green' : filter.color === 'amber' ? 'orange' : filter.color}-600 text-white shadow-lg`
-                    : 'bg-gradient-to-r from-slate-100 to-white border border-slate-300 text-slate-700 hover:border-[#1C4D8D]/30'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span>{filter.label}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                    statusFilter === filter.key
-                      ? 'bg-white/20'
-                      : `bg-${filter.color}-100 text-${filter.color}-700`
-                  }`}>
-                    {filter.count}
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Papers List */}
-      {filteredPapers.length === 0 ? (
-        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-          <div className="text-center py-16">
-            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-slate-100 to-white flex items-center justify-center mx-auto mb-6">
-              <BookOpen size={40} className="text-slate-400" />
-            </div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-3">
-              {statusFilter === 'pending_admin' 
-                ? 'No papers awaiting final approval'
-                : `No papers found with status: ${statusFilter.replace('_', ' ')}`
-              }
-            </h3>
-            <p className="text-slate-600 mb-8 max-w-md mx-auto">
-              {statusFilter === 'pending_admin'
-                ? 'All papers that reached final admin review have been processed.'
-                : 'Try selecting a different filter to view more papers.'
-              }
-            </p>
-            {statusFilter !== 'all' && (
-              <button
-                onClick={() => setStatusFilter('all')}
-                className="px-6 py-3 bg-gradient-to-r from-[#1C4D8D] to-[#2563eb] text-white rounded-xl font-bold hover:from-[#1C4D8D]/90 hover:to-[#2563eb]/90 transition-all duration-300"
-              >
-                View All Papers
-              </button>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center">
-                <FileCheck size={20} className="text-[#1C4D8D]" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-slate-900">Research Submissions</h3>
-                <p className="text-slate-600 text-sm">
-                  Showing {visiblePapers.length} of {filteredPapers.length}{' '}
-                  {filteredPapers.length === 1 ? 'paper' : 'papers'}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-              <Lightbulb size={16} className="text-[#1C4D8D]" />
-              <span className="text-sm font-medium text-slate-700">
-                Click on any paper to review and make final decisions
-              </span>
-            </div>
-          </div>
-
-          {visiblePapers.map((paper) => {
-            const statusConfig = getStatusConfig(paper.status);
-            const StatusIcon = statusConfig.icon;
-
-            return (
-              <div
-                key={paper.id}
-                onClick={() => navigate(`/admin/review/${paper.id}`)}
-                className="group bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 hover:shadow-xl hover:border-[#1C4D8D]/30 transition-all duration-300 cursor-pointer hover:-translate-y-1"
-              >
-                <div className="p-8">
-                  <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-6">
-                    <div className="flex-1">
-                      <div className="flex items-start gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1C4D8D]/10 to-[#2563eb]/10 flex items-center justify-center flex-shrink-0 mt-1">
-                          <BookOpen size={24} className="text-[#1C4D8D]" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h3 className="text-2xl font-bold text-slate-900 group-hover:text-[#1C4D8D] transition-colors">
-                              {paper.title}
-                            </h3>
-                            <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold ${statusConfig.bgColor} ${statusConfig.textColor} border ${statusConfig.borderColor}`}>
-                              <StatusIcon size={14} />
-                              {statusConfig.label}
-                            </div>
-                          </div>
-                          <p className="text-slate-600 leading-relaxed line-clamp-2">
-                            {paper.abstract}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Metadata */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center flex-shrink-0">
-                        <User size={18} className="text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Author</p>
-                        <p className="text-slate-600 text-sm truncate">{formatFullName(paper.users) || 'Unknown Author'}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-violet-100 flex items-center justify-center flex-shrink-0">
-                        <Calendar size={18} className="text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Submitted</p>
-                        <p className="text-slate-600 text-sm">{formatDate(paper.submission_date)}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-200">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center flex-shrink-0">
-                        <FileText size={18} className="text-amber-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Document</p>
-                        <p className="text-slate-600 text-sm truncate">{paper.file_name}</p>
-                      </div>
-                    </div>
-
-                    {paper.published_date && (
-                      <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-100 to-green-100 flex items-center justify-center flex-shrink-0">
-                          <TrendingUp size={18} className="text-emerald-600" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-emerald-900">Published</p>
-                          <p className="text-emerald-700 text-sm">{formatDate(paper.published_date)}</p>
-                        </div>
-                      </div>
-                    )}
-
-                  </div>
-
-                  {/* Keywords */}
-                  {paper.keywords && paper.keywords.length > 0 && (
-                    <div className="mb-6">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Tag size={16} className="text-[#1C4D8D]" />
-                        <span className="text-sm font-semibold text-slate-900">Keywords</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {paper.keywords.slice(0, 6).map((keyword, index) => (
-                          <span
-                            key={index}
-                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#1C4D8D]/10 to-[#2563eb]/10 text-[#1C4D8D] text-sm font-medium border border-[#1C4D8D]/20"
-                          >
-                            {keyword}
-                          </span>
-                        ))}
-                        {paper.keywords.length > 6 && (
-                          <span className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-slate-100 to-white text-slate-600 text-sm font-medium border border-slate-300">
-                            +{paper.keywords.length - 6} more
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Action Button */}
-                  <div className="pt-6 border-t border-slate-200">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/admin/review/${paper.id}`);
-                      }}
-                      className="inline-flex items-center gap-2 text-[#1C4D8D] hover:text-[#1C4D8D]/80 font-bold group/btn transition-colors"
-                    >
-                      {paper.status === 'pending_admin' 
-                        ? 'Final Approval Required'
-                        : paper.status === 'pending'
-                          ? 'View Staff Review Progress'
-                          : 'Review Details'
-                      }
-                      <ChevronRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {filteredPapers.length > PAGE_SIZE ? (
-            <div ref={loadMoreRef} className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-center">
-              {canLoadMore ? (
-                <button
-                  onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
-                  className="h-10 px-4 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Load more papers
-                </button>
-              ) : (
-                <p className="text-sm text-slate-600">All matching papers are visible.</p>
-              )}
-            </div>
-          ) : null}
-        </div>
+    <ReviewWorkspaceLayout
+      breadcrumbs={[
+        { label: 'Dashboard', path: '/dashboard' },
+        { label: 'Admin approval queue' },
+      ]}
+      roleLabel="System Administrator"
+      title="Final Approval Queue"
+      subtitle="Approve manuscripts for the internal repository, assign DOIs, and publish completed research."
+      badge={(
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3674B5]/10 border border-[#3674B5]/20 text-[#3674B5] text-[11px] font-semibold">
+          <ShieldCheck size={11} aria-hidden="true" /> Administrator
+        </span>
       )}
-    </div>
+      headerExtra={<UserGuideLink />}
+      lastRefreshed={lastRefreshed}
+      refreshing={refreshing}
+      onRefresh={() => fetchPapers()}
+      queueItems={queueItems}
+      activeQueue={statusFilter}
+      onQueueChange={setStatusFilter}
+      searchTerm={searchTerm}
+      onSearchChange={setSearchTerm}
+      advancedFilters={advancedFilters}
+      priorityBanner={priorityPaper && ['needs_action', 'pending_admin'].includes(statusFilter) ? (
+        <PriorityBanner
+          label="Manuscript awaiting admin approval"
+          title={priorityPaper.title}
+          action={(
+            <button
+              type="button"
+              onClick={() => navigate(`/admin/review/${priorityPaper.id}`)}
+              className="shrink-0 h-9 px-3 rounded-lg bg-[#3674B5] text-white text-xs font-semibold hover:bg-[#2d6299] inline-flex items-center gap-1.5 transition-colors"
+            >
+              Open manuscript
+              <ChevronRight size={13} aria-hidden="true" />
+            </button>
+          )}
+        />
+      ) : null}
+      isEmpty={filteredPapers.length === 0}
+      emptyTitle="No manuscripts in this queue"
+      emptyDescription="Select another queue from the left panel to view different workflow stages."
+      submissions={submissions}
+      pageSize={PAGE_SIZE}
+    />
   );
 };
 

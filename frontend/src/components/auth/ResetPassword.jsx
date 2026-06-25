@@ -75,7 +75,7 @@ const ResetPassword = () => {
               required
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full pl-10 pr-11 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1C4D8D]"
+              className="w-full pl-10 pr-11 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3674B5]"
               placeholder="At least 8 characters"
             />
             <button
@@ -98,7 +98,7 @@ const ResetPassword = () => {
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full pl-10 pr-11 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1C4D8D]"
+              className="w-full pl-10 pr-11 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3674B5]"
               placeholder="Re-enter password"
             />
             <button
@@ -113,7 +113,7 @@ const ResetPassword = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-[#1C4D8D] text-white rounded-lg font-semibold hover:bg-[#163a6b] disabled:opacity-50"
+            className="w-full py-3 bg-[#3674B5] text-white rounded-lg font-semibold hover:bg-[#2d6299] disabled:opacity-50"
           >
             {loading ? 'Resetting password...' : 'Reset password'}
           </button>
