@@ -12,6 +12,7 @@ import {
   Edit3,
   FileText,
   GraduationCap,
+  KeyRound,
   Mail,
   RefreshCw,
   Shield,
@@ -29,6 +30,9 @@ import {
 import { getStudentStatusLabel, getStudentStatusTone } from '../../utils/studentStatus';
 import { reviewStatusLabel } from '../../components/review/reviewStatus';
 import LoadMoreFooter from '../../components/ui/LoadMoreFooter';
+import ChangePasswordModal from '../../components/profile/ChangePasswordModal';
+import ChangeEmailModal from '../../components/profile/ChangeEmailModal';
+import ChangeRecoveryEmailModal from '../../components/profile/ChangeRecoveryEmailModal';
 import nuBuildingImg from '../../assets/dasma.png.jpeg';
 
 const PAGE_SIZE = 6;
@@ -230,7 +234,7 @@ const ImpactTimeline = ({ items, onItemClick, role }) => (
 );
 
 const ProfileDashboard = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, reloadUser } = useAuth();
   const navigate = useNavigate();
   const role = user?.role || 'student';
 
@@ -244,6 +248,9 @@ const ProfileDashboard = () => {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState(emptyEditForm);
   const [departments, setDepartments] = useState([]);
@@ -483,6 +490,30 @@ const ProfileDashboard = () => {
             </button>
             <button
               type="button"
+              onClick={() => setShowPasswordModal(true)}
+              className="h-9 px-3 rounded-lg bg-black/35 backdrop-blur-md text-white text-xs font-medium hover:bg-black/45 inline-flex items-center gap-1.5 transition-colors border border-white/25 shadow-sm"
+            >
+              <KeyRound size={13} />
+              Change password
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRecoveryModal(true)}
+              className="h-9 px-3 rounded-lg bg-black/35 backdrop-blur-md text-white text-xs font-medium hover:bg-black/45 inline-flex items-center gap-1.5 transition-colors border border-white/25 shadow-sm"
+            >
+              <Shield size={13} />
+              {user?.hasRecoveryEmail ? 'Recovery email' : 'Set recovery email'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowEmailModal(true)}
+              className="h-9 px-3 rounded-lg bg-black/35 backdrop-blur-md text-white text-xs font-medium hover:bg-black/45 inline-flex items-center gap-1.5 transition-colors border border-white/25 shadow-sm"
+            >
+              <Mail size={13} />
+              Change email
+            </button>
+            <button
+              type="button"
               onClick={openEditModal}
               className="h-9 px-3 rounded-lg bg-white text-[#3674B5] text-xs font-semibold hover:bg-blue-50 inline-flex items-center gap-1.5 transition-colors shadow-md"
             >
@@ -521,7 +552,18 @@ const ProfileDashboard = () => {
                   {user?.email && (
                     <span className="inline-flex items-center gap-1 max-w-full">
                       <Mail size={12} className="shrink-0" />
-                      <span className="truncate">{user.email}</span>
+                      <span className="truncate">Login: {user.email}</span>
+                    </span>
+                  )}
+                  {user?.hasRecoveryEmail ? (
+                    <span className="inline-flex items-center gap-1 max-w-full">
+                      <Shield size={12} className="shrink-0" />
+                      <span className="truncate">Recovery: {user.recoveryEmail}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-amber-100">
+                      <AlertCircle size={12} className="shrink-0" />
+                      No recovery email — password reset unavailable
                     </span>
                   )}
                   {user?.department && (
@@ -559,6 +601,29 @@ const ProfileDashboard = () => {
 
       {/* Main showcase sections */}
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-8 sm:py-10 lg:py-12 space-y-10 flex-1">
+
+        {!user?.hasRecoveryEmail && (
+          <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="h-11 w-11 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                <Shield size={20} className="text-amber-700" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-amber-900">Add a recovery email to enable password reset</p>
+                <p className="text-xs text-amber-800/80 mt-0.5">
+                  Your institutional email may not receive mail. Add a personal inbox in Profile so reset codes reach you.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowRecoveryModal(true)}
+              className="h-10 px-4 rounded-xl bg-amber-700 text-white text-sm font-semibold hover:bg-amber-800 shrink-0"
+            >
+              Set recovery email
+            </button>
+          </div>
+        )}
 
         {/* Student portfolio */}
         {role === 'student' && (
@@ -724,6 +789,29 @@ const ProfileDashboard = () => {
           </section>
         )}
       </div>
+
+      {/* Change password modal */}
+      {showPasswordModal && (
+        <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
+      )}
+
+      {/* Change email modal */}
+      {showEmailModal && (
+        <ChangeEmailModal
+          user={user}
+          onClose={() => setShowEmailModal(false)}
+          onUpdated={reloadUser}
+        />
+      )}
+
+      {/* Recovery email modal */}
+      {showRecoveryModal && (
+        <ChangeRecoveryEmailModal
+          user={user}
+          onClose={() => setShowRecoveryModal(false)}
+          onUpdated={reloadUser}
+        />
+      )}
 
       {/* Edit profile modal */}
       {showEditModal && (

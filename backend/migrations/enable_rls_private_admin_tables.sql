@@ -19,7 +19,7 @@ ALTER TABLE public.author_invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.co_author_invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faculty_conflict_declarations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faculty_reviews ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.password_reset_tokens ENABLE ROW LEVEL SECURITY;
+-- password_reset_tokens dropped: password reset is now handled by Supabase Auth
 ALTER TABLE public.refresh_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.submission_drafts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_policies ENABLE ROW LEVEL SECURITY;

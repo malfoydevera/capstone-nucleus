@@ -71,9 +71,20 @@ const publishedRateLimiter = createRateLimiter({
   keyFn: normalizeIp,
 });
 
+// Semantic search hits the Gemini embedding API per request, so it is throttled
+// more tightly than plain browsing and keyed per authenticated user.
+const semanticSearchRateLimiter = createRateLimiter({
+  windowMs: toPositiveNumber(process.env.SEMANTIC_SEARCH_RATE_LIMIT_WINDOW_MS, DEFAULT_WINDOW_MS),
+  maxRequests: toPositiveNumber(process.env.SEMANTIC_SEARCH_RATE_LIMIT_MAX, 30),
+  bucketPrefix: 'semantic-search',
+  message: 'Too many search requests. Please try again shortly.',
+  keyFn: (req) => `${req.user?.id || 'anonymous'}:${normalizeIp(req)}`,
+});
+
 module.exports = {
   authRateLimiter,
   publishedRateLimiter,
+  semanticSearchRateLimiter,
   createRateLimiter,
   normalizeIp,
 };

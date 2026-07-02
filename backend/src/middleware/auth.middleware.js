@@ -15,6 +15,7 @@ const resolveTokenIdentity = async (token) => {
     return {
       userId: decoded.id || null,
       email: decoded.email || null,
+      authUserId: null,
       tokenClaims: decoded,
       authSource: 'legacy_jwt',
     };
@@ -26,8 +27,9 @@ const resolveTokenIdentity = async (token) => {
       }
 
       return {
-        userId: data.user.id,
+        userId: null,
         email: data.user.email || null,
+        authUserId: data.user.id,
         tokenClaims: data.user,
         authSource: 'supabase_auth',
       };
@@ -40,7 +42,7 @@ const resolveTokenIdentity = async (token) => {
 const fetchUserBy = async (column, value) => {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, first_name, middle_name, last_name, role, department, department_id, program, program_id, is_active, suspended_at, suspended_reason, created_at')
+    .select('id, email, recovery_email, first_name, middle_name, last_name, role, department, department_id, program, program_id, is_active, suspended_at, suspended_reason, created_at, auth_user_id')
     .eq(column, value)
     .maybeSingle();
 
@@ -73,7 +75,16 @@ const getOrganizationLookups = async () => {
   }
 };
 
-const loadCurrentUser = async ({ userId, email }) => {
+const loadCurrentUser = async ({ userId, authUserId, email }) => {
+  // Prefer the stable auth.users id link for Supabase-issued tokens.
+  if (authUserId) {
+    const byAuthId = await fetchUserBy('auth_user_id', authUserId);
+    if (byAuthId) {
+      return byAuthId;
+    }
+  }
+
+  // Legacy JWTs carry the public.users id directly.
   if (userId) {
     const userById = await fetchUserBy('id', userId);
     if (userById) {
@@ -82,7 +93,13 @@ const loadCurrentUser = async ({ userId, email }) => {
   }
 
   if (email) {
-    return fetchUserBy('email', String(email).toLowerCase().trim());
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const byLoginEmail = await fetchUserBy('email', normalizedEmail);
+    if (byLoginEmail) {
+      return byLoginEmail;
+    }
+
+    return fetchUserBy('recovery_email', normalizedEmail);
   }
 
   return null;
@@ -126,6 +143,8 @@ exports.authenticate = async (req, res, next) => {
     req.user = {
       id: user.id,
       email: user.email,
+      recovery_email: user.recovery_email || null,
+      auth_user_id: user.auth_user_id || null,
       role: user.role,
       department: departmentLabel,
       department_id: user.department_id || null,

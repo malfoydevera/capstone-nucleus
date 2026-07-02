@@ -18,6 +18,12 @@ const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/wo
 const { getSystemPolicy, isFileAllowedByPolicy } = require('../utils/systemPolicy');
 const { notifyUser, notifyUsers, notifyCoAuthors } = require('../utils/notify');
 const { parseListPagination } = require('../utils/pagination');
+const {
+  buildEmbeddingInput,
+  contentHash,
+  embedDocument,
+  embedQuery,
+} = require('../utils/embeddings');
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -82,6 +88,50 @@ const normalizeCoAuthorIds = (coAuthorIds = [], primaryAuthorId) =>
         .filter(Boolean)
     )
   ).filter((authorId) => authorId !== String(primaryAuthorId));
+
+/**
+ * Generate and persist the semantic-search embedding for a paper.
+ * Best-effort: never throws (embedding is an enhancement, not a hard dependency
+ * of submission). Skips the Gemini call when the embeddable content is unchanged.
+ * @param {{ id: string, title?: string, abstract?: string, keywords?: string[], embedding_source_hash?: string }} paper
+ */
+const persistPaperEmbedding = async (paper) => {
+  try {
+    if (!paper?.id) return;
+
+    const input = buildEmbeddingInput({
+      title: paper.title,
+      abstract: paper.abstract,
+      keywords: paper.keywords,
+    });
+    const nextHash = contentHash(input);
+    if (!nextHash) return;
+
+    // Content unchanged since last embedding — nothing to do.
+    if (paper.embedding_source_hash && paper.embedding_source_hash === nextHash) return;
+
+    const vector = await embedDocument(input);
+    if (!vector) return;
+
+    // pgvector accepts its text literal form: "[v1,v2,...]".
+    const { error } = await supabase
+      .from('research_papers')
+      .update({
+        embedding: JSON.stringify(vector),
+        embedding_model: 'gemini-embedding-001',
+        embedding_source_hash: nextHash,
+        embedding_generated_at: new Date().toISOString(),
+      })
+      .eq('id', paper.id);
+
+    if (error && !String(error.message || '').includes('embedding')) {
+      console.warn('[embeddings] Failed to persist paper embedding:', error.message);
+    }
+  } catch (error) {
+    // Migration not yet applied or transient failure — log and move on.
+    console.warn('[embeddings] persistPaperEmbedding skipped:', error?.message || error);
+  }
+};
 
 const getCategoryLookup = async () => {
   const categories = await getOrSet('categories:all', TTL.CATEGORIES, async () => {
@@ -345,6 +395,11 @@ exports.submitResearch = async (req, res) => {
     if (dbError) {
       return sendError(res, { status: 500, code: 'SAVE_RESEARCH_FAILED', message: 'Failed to save research data' });
     }
+
+    // Generate the thematic-search embedding from Title + Abstract + Keywords.
+    // Best-effort and awaited so the vector is ready by the time the paper is
+    // searchable; failures are swallowed inside the helper.
+    await persistPaperEmbedding(research);
 
     // Co-authors
     let coAuthorIds = [];
@@ -941,6 +996,119 @@ exports.getPublishedResearch = async (req, res) => {
   } catch (error) {
     console.error('Get published research error:', error);
     return sendError(res, { status: 500, code: 'GET_PUBLISHED_RESEARCH_FAILED', message: 'Server error' });
+  }
+};
+
+// Max candidate pool the hybrid RPC returns for a query. The pool is cached and
+// sliced for pagination so we embed the query (and hit pgvector) only once per
+// unique query+filters, regardless of how many pages the user loads.
+const SEMANTIC_CANDIDATE_LIMIT = 100;
+const SEMANTIC_SIMILARITY_THRESHOLD = Number(process.env.SEMANTIC_SIMILARITY_THRESHOLD || 0.3);
+const SEMANTIC_WEIGHT = Number(process.env.SEMANTIC_WEIGHT || 0.6);
+const KEYWORD_WEIGHT = Number(process.env.KEYWORD_WEIGHT || 0.4);
+
+const roundScore = (value) =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.round(value * 1000) / 1000 : 0;
+
+/**
+ * GET /api/research/semantic-search
+ * AI-powered hybrid (semantic + keyword) thematic search over published papers.
+ * Query params: q (required), page, limit, department, year, author.
+ */
+exports.getSemanticSearch = async (req, res) => {
+  try {
+    const { q, department, year, author } = req.query;
+    const { page, limit, from, to } = parsePublishedPagination(req.query);
+    const queryText = sanitizeSearchTerm(q);
+
+    if (!queryText || queryText.length < 2) {
+      return sendError(res, {
+        status: 400,
+        code: 'SEARCH_QUERY_REQUIRED',
+        message: 'A search query of at least 2 characters is required.',
+      });
+    }
+
+    const filterDepartment = UUID_PATTERN.test(String(department || '')) ? department : null;
+    const filterYear = /^\d{4}$/.test(String(year || '')) ? Number(year) : null;
+    const filterAuthor = sanitizeSearchTerm(author) || null;
+
+    // Cache the ranked candidate pool by query + filters (not page) so paging is free.
+    const cacheKey = `semantic:${JSON.stringify({ queryText, filterDepartment, filterYear, filterAuthor })}`;
+
+    const ranked = await getOrSet(cacheKey, TTL.PUBLISHED, async () => {
+      // 1. Embed the query (asymmetric RETRIEVAL_QUERY task type).
+      const queryEmbedding = await embedQuery(queryText);
+
+      // 2. Hybrid rank in Postgres (pgvector cosine + tsvector keyword).
+      const { data: matches, error } = await supabase.rpc('match_research_papers', {
+        query_embedding: queryEmbedding ? JSON.stringify(queryEmbedding) : null,
+        query_text: queryText,
+        match_count: SEMANTIC_CANDIDATE_LIMIT,
+        similarity_threshold: SEMANTIC_SIMILARITY_THRESHOLD,
+        semantic_weight: SEMANTIC_WEIGHT,
+        keyword_weight: KEYWORD_WEIGHT,
+        filter_department: filterDepartment,
+        filter_year: filterYear,
+        filter_author: filterAuthor,
+      });
+
+      if (error) throw error;
+      if (!matches || matches.length === 0) return [];
+
+      // 3. Hydrate full paper rows in one query, preserving the RPC ranking.
+      const orderedIds = matches.map((row) => row.id);
+      const scoreById = new Map(matches.map((row) => [row.id, row]));
+
+      const { data: papers, error: hydrateError } = await supabase
+        .from('research_papers')
+        .select(PUBLISHED_PAPER_SELECT)
+        .in('id', orderedIds);
+
+      if (hydrateError) throw hydrateError;
+
+      const paperById = new Map((papers || []).map((paper) => [paper.id, paper]));
+
+      return orderedIds
+        .map((id) => {
+          const paper = paperById.get(id);
+          if (!paper) return null;
+          const scores = scoreById.get(id) || {};
+          return {
+            ...paper,
+            users: attachFullName(paper.author),
+            structured_authors: normalizeResearchAuthors(paper.research_authors),
+            external_author_notes: resolveExternalAuthorNotes(paper.external_author_notes),
+            file_url: null,
+            similarityScore: roundScore(scores.semantic_score),
+            keywordScore: roundScore(scores.keyword_score),
+            hybridScore: roundScore(scores.hybrid_score),
+          };
+        })
+        .filter(Boolean);
+    });
+
+    const paged = ranked.slice(from, to + 1);
+
+    return sendSuccess(res, {
+      data: {
+        papers: paged,
+        total: ranked.length,
+        page,
+        limit,
+        query: queryText,
+      },
+    });
+  } catch (error) {
+    console.error('Semantic search error:', error);
+    if (String(error?.message || '').includes('match_research_papers')) {
+      return sendError(res, {
+        status: 503,
+        code: 'SEMANTIC_SEARCH_UNAVAILABLE',
+        message: 'Semantic search is not available yet. Apply add_semantic_search.sql.',
+      });
+    }
+    return sendError(res, { status: 500, code: 'SEMANTIC_SEARCH_FAILED', message: 'Server error' });
   }
 };
 

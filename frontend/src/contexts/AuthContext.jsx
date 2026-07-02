@@ -34,6 +34,11 @@ export const AuthProvider = ({ children }) => {
     return fallback;
   };
 
+  const getApiErrorCode = (err) => {
+    const payload = err?.response?.data;
+    return payload?.error?.code || payload?.code || null;
+  };
+
   const checkAuth = async () => {
     const token = getAccessToken();
     const refreshToken = getRefreshToken();
@@ -63,7 +68,7 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       const message = getApiErrorMessage(err, 'Login failed');
       setError(message);
-      return { success: false, error: message };
+      return { success: false, error: message, code: getApiErrorCode(err) };
     }
   };
 
@@ -84,9 +89,19 @@ export const AuthProvider = ({ children }) => {
         department,
         departmentId,
       });
-      const { token, refreshToken, user } = unwrapApiData(response);
-      setAuthTokens(token, refreshToken, false);
-      setUser(user);
+      const data = unwrapApiData(response);
+
+      // New flow: signup requires email confirmation, so no session is issued.
+      if (data?.confirmationRequired) {
+        return { success: true, confirmationRequired: true, email: data.email || email };
+      }
+
+      // Backward compatibility: if a session is ever returned, log in directly.
+      const { token, refreshToken, user } = data;
+      if (token) {
+        setAuthTokens(token, refreshToken, false);
+        setUser(user);
+      }
       return { success: true };
     } catch (err) {
       const message = getApiErrorMessage(err, 'Registration failed');
@@ -117,6 +132,17 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const reloadUser = async () => {
+    try {
+      const response = await authAPI.getCurrentUser();
+      const loadedUser = unwrapApiData(response).user || null;
+      setUser(loadedUser);
+      return loadedUser;
+    } catch (err) {
+      return null;
+    }
+  };
+
   const value = {
     user,
     loading,
@@ -125,6 +151,7 @@ export const AuthProvider = ({ children }) => {
     register,
     logout,
     updateProfile,
+    reloadUser,
     isAuthenticated: !!user,
   };
 

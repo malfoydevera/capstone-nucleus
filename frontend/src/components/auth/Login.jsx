@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { authAPI } from '../../utils/api';
 import NucleusLogoMark from '../branding/NucleusLogoMark';
 import {
   Lock,
@@ -23,6 +24,8 @@ const Login = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
+  const [resending, setResending] = useState(false);
   const [isFocused, setIsFocused] = useState({
     email: false,
     password: false
@@ -41,6 +44,7 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setNeedsConfirmation(false);
     setLoading(true);
 
     const loadingToast = toast.loading('Signing in...');
@@ -61,11 +65,27 @@ const Login = () => {
       });
       navigate('/dashboard');
     } else {
+      if (result.code === 'EMAIL_NOT_CONFIRMED') {
+        setNeedsConfirmation(true);
+      }
       toast.error(result.error || 'Failed to sign in', {
         id: loadingToast,
         duration: 4000,
       });
       setError(result.error);
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email) return;
+    setResending(true);
+    try {
+      await authAPI.resendConfirmation(email);
+      toast.success('Confirmation email sent. Please check your inbox.');
+    } catch (resendError) {
+      toast.error('Could not resend the confirmation email. Please try again shortly.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -203,6 +223,20 @@ const Login = () => {
                   <div className="bg-red-50 border border-red-200 text-red-700 px-5 py-3.5 rounded-xl text-sm font-medium flex items-center gap-2 animate-shake">
                     <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                     {error}
+                  </div>
+                )}
+
+                {needsConfirmation && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 px-5 py-3.5 rounded-xl text-sm">
+                    <p className="font-medium mb-2">Your email hasn't been confirmed yet.</p>
+                    <button
+                      type="button"
+                      onClick={handleResendConfirmation}
+                      disabled={resending}
+                      className="font-semibold text-amber-900 underline hover:text-amber-700 disabled:opacity-50"
+                    >
+                      {resending ? 'Sending…' : 'Resend confirmation email'}
+                    </button>
                   </div>
                 )}
 

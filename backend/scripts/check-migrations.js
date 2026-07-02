@@ -91,6 +91,8 @@ async function runChecks() {
     () => checkTable('faculty_conflict_declarations', 'add_conflict_of_interest.sql'),
     () => checkColumn('research_papers', 'plagiarism_status', 'add_plagiarism_checks.sql'),
     () => checkColumn('research_papers', 'plagiarism_score', 'add_plagiarism_checks.sql'),
+    () => checkColumn('research_papers', 'embedding', 'add_semantic_search.sql'),
+    () => checkColumn('research_papers', 'embedding_source_hash', 'add_semantic_search.sql'),
   ];
 
   const results = [];

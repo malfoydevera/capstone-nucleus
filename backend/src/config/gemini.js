@@ -25,4 +25,12 @@ const getModel = () => {
   });
 };
 
-module.exports = { getModel };
+// Embedding model for semantic/thematic search.
+// `gemini-embedding-001` is available on the Generative Language API; we request
+// 768 dimensions to match the pgvector column (default output is 3072).
+const EMBEDDING_MODEL = 'gemini-embedding-001';
+const EMBEDDING_DIMENSIONS = 768;
+
+const getEmbeddingModel = () => genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
+
+module.exports = { getModel, getEmbeddingModel, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS };

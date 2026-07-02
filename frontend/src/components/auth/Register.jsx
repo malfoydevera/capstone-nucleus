@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { departmentAPI, unwrapApiData } from '../../utils/api';
+import { authAPI, departmentAPI, unwrapApiData } from '../../utils/api';
+import { validatePasswordStrength } from '../../utils/passwordPolicy';
+import { validateEmailDomainForRole, getPrimaryDomainForRole } from '../../utils/emailDomain';
 import NucleusLogoMark from '../branding/NucleusLogoMark';
 import { 
   UserPlus, 
@@ -45,8 +47,11 @@ const Register = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [nameWarnings, setNameWarnings] = useState({ firstName: '', middleName: '', lastName: '' });
+  const [confirmationEmail, setConfirmationEmail] = useState('');
+  const [resending, setResending] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
+  const studentDomain = getPrimaryDomainForRole('student');
 
   useEffect(() => {
     const fetchDepartments = async () => {
@@ -141,15 +146,23 @@ const Register = () => {
       return;
     }
 
+    const domainCheck = validateEmailDomainForRole(formData.email, formData.role);
+    if (!domainCheck.valid) {
+      toast.error(domainCheck.message);
+      setError(domainCheck.message);
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       toast.error('Passwords do not match');
       setError('Passwords do not match');
       return;
     }
 
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      setError('Password must be at least 6 characters');
+    const passwordStrength = validatePasswordStrength(formData.password);
+    if (!passwordStrength.valid) {
+      toast.error(passwordStrength.message);
+      setError(passwordStrength.message);
       return;
     }
 
@@ -172,6 +185,15 @@ const Register = () => {
     setLoading(false);
 
     if (result.success) {
+      if (result.confirmationRequired) {
+        toast.success('Account created. Check your email to confirm.', {
+          id: loadingToast,
+          duration: 4000,
+        });
+        setConfirmationEmail(result.email || formData.email);
+        return;
+      }
+
       toast.success('Account created successfully.', {
         id: loadingToast,
         duration: 3000,
@@ -186,12 +208,64 @@ const Register = () => {
     }
   };
 
+  const handleResendConfirmation = async () => {
+    if (!confirmationEmail) return;
+    setResending(true);
+    try {
+      await authAPI.resendConfirmation(confirmationEmail);
+      toast.success('Confirmation email sent again.');
+    } catch (resendError) {
+      toast.error('Could not resend the confirmation email. Please try again shortly.');
+    } finally {
+      setResending(false);
+    }
+  };
+
   const roleOptions = [
     { value: 'student', label: 'Student Researcher', icon: <GraduationCap size={16} /> },
   ];
 
   const passwordStrength = formData.password.length > 0 ? 
     Math.min(Math.floor(formData.password.length / 2) * 20, 100) : 0;
+
+  if (confirmationEmail) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 font-sans flex items-center justify-center px-4">
+        <div className="fixed inset-0 z-0">
+          <img src={nuBuildingImg} alt="NU Building Background" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#1C4D8D]/70 via-[#1C4D8D]/50 to-[#1C4D8D]/40" />
+        </div>
+        <div className="relative z-10 w-full max-w-md">
+          <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/20 text-center">
+            <div className="w-16 h-16 bg-gradient-to-br from-indigo-600 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+              <Mail size={28} className="text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Confirm your email</h2>
+            <p className="text-slate-600 font-medium mb-1">We sent a confirmation link to</p>
+            <p className="text-slate-900 font-semibold mb-6 break-all">{confirmationEmail}</p>
+            <p className="text-sm text-slate-500 mb-6">
+              Click the link in that email to activate your account, then sign in. The link opens NUCLEUS and finishes setup automatically.
+            </p>
+            <button
+              type="button"
+              onClick={handleResendConfirmation}
+              disabled={resending}
+              className="w-full py-3 px-6 bg-white border-2 border-indigo-200 text-indigo-700 rounded-xl font-bold text-base hover:bg-indigo-50 transition-all duration-300 shadow-sm disabled:opacity-50 mb-3"
+            >
+              {resending ? 'Sending…' : 'Resend confirmation email'}
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              className="w-full py-3 px-6 bg-[#1C4D8D] hover:bg-[#163a6b] text-white rounded-xl font-bold text-base transition-all duration-300 shadow-lg"
+            >
+              Go to Sign In
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 font-sans overflow-y-auto scrollbar-hide">
@@ -408,10 +482,10 @@ const Register = () => {
                     value={formData.email}
                     onChange={handleChange}
                     className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium shadow-sm hover:border-slate-300"
-                    placeholder="student@national-u.edu.ph"
+                    placeholder={`yourname@${studentDomain}`}
                   />
                   <p className="text-xs text-slate-500 transition-all duration-300">
-                    Use your institutional email address for verification
+                    Use your institutional student email (@{studentDomain}). We'll send a confirmation link.
                   </p>
                 </div>
 

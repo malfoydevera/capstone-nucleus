@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search,
-  Filter,
   Download,
   Eye,
   Calendar,
@@ -14,10 +13,11 @@ import {
   X,
   SortAsc,
   RefreshCw,
-  BookOpen,
+  Sparkles,
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
+import RepositoryFilterBar from '../../components/repository/RepositoryFilterBar';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -60,6 +60,27 @@ const getPrimaryAuthor = (paper) => {
 const getAdditionalAuthors = (paper) =>
   getPaperAuthors(paper).filter((entry) => !entry?.is_primary);
 
+// Visual treatment for the AI semantic similarity score (0..1 -> percentage).
+const SimilarityBadge = ({ score }) => {
+  if (score == null) return null;
+  const pct = Math.round((Number(score) || 0) * 100);
+  const tone =
+    pct >= 75
+      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+      : pct >= 50
+        ? 'bg-[#3674B5]/10 text-[#3674B5] border-[#3674B5]/20'
+        : 'bg-slate-100 text-slate-600 border-slate-200';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${tone}`}
+      title="AI semantic similarity to your search"
+    >
+      <Sparkles size={12} />
+      {pct}% match
+    </span>
+  );
+};
+
 /** Repository listing includes approved (internal) and published papers */
 const getRepositoryListingBadge = (paper) => {
   if (paper?.status === 'published') {
@@ -91,14 +112,13 @@ const BrowseRepository = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [aiMode, setAiMode] = useState(true);
+  const [searchError, setSearchError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedThemes, setSelectedThemes] = useState([]);
   const [selectedYear, setSelectedYear] = useState('');
-  const [authorSearch, setAuthorSearch] = useState('');
-  const [debouncedAuthor, setDebouncedAuthor] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('grid');
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [expandedPaper, setExpandedPaper] = useState(null);
   const [availableYears, setAvailableYears] = useState([]);
 
@@ -110,22 +130,23 @@ const BrowseRepository = () => {
   });
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    // Slightly longer debounce: AI mode issues an embedding call per distinct query.
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 450);
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedAuthor(authorSearch.trim()), 300);
-    return () => clearTimeout(timer);
-  }, [authorSearch]);
-
-  useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, selectedCategory, selectedThemes, selectedYear, debouncedAuthor, sortBy]);
+  }, [debouncedSearch, selectedCategory, selectedThemes, selectedYear, sortBy, aiMode]);
+
+  // AI hybrid search is used when the toggle is on AND there is a usable query.
+  const isAiSearch = aiMode && debouncedSearch.length >= 2;
 
   const fetchPapers = useCallback(async ({ pageNum = 1, append = false } = {}) => {
     if (append) setLoadingMore(true);
     else setLoading(true);
+    setSearchError('');
+    const useAi = aiMode && debouncedSearch.length >= 2;
     try {
       const sortParam = SORT_API_MAP[sortBy] || 'newest';
       const params = {
@@ -136,20 +157,43 @@ const BrowseRepository = () => {
         ...(selectedCategory && { category: selectedCategory }),
         ...(selectedThemes.length > 0 && { themes: selectedThemes.join(',') }),
         ...(selectedYear && { year: selectedYear }),
-        ...(debouncedAuthor && { author: debouncedAuthor }),
       };
 
-      const [papersRes, categoriesRes] = await Promise.all([
-        researchAPI.getPublishedResearch(params),
-        categories.length ? Promise.resolve(null) : researchAPI.getCategories(),
-      ]);
+      // In AI mode the search bar runs the semantic + keyword hybrid endpoint.
+      // Falls back to keyword search if AI is unavailable (503/500).
+      let papersRes;
+      let usedAi = useAi;
+      if (useAi) {
+        try {
+          papersRes = await researchAPI.semanticSearch({
+            page: pageNum,
+            limit: 20,
+            q: debouncedSearch,
+            ...(selectedYear && { year: selectedYear }),
+          });
+        } catch (aiError) {
+          const status = aiError?.response?.status;
+          if (status === 429) throw aiError;
+          // Graceful degradation: show keyword results while AI is unavailable.
+          console.warn('AI search unavailable, falling back to keyword search:', aiError?.message);
+          setSearchError('AI search is temporarily unavailable — showing keyword results.');
+          papersRes = await researchAPI.getPublishedResearch(params);
+          usedAi = false;
+        }
+      } else {
+        papersRes = await researchAPI.getPublishedResearch(params);
+      }
+
+      const categoriesRes = categories.length
+        ? null
+        : await researchAPI.getCategories().catch(() => null);
 
       const payload = unwrapApiData(papersRes);
       const nextPapers = payload.papers || [];
       setPapers((prev) => (append ? [...prev, ...nextPapers] : nextPapers));
       setTotal(payload.total ?? nextPapers.length);
       setPage(pageNum);
-      setFacets(payload.facets || { categories: [] });
+      setFacets(usedAi ? { categories: [] } : (payload.facets || { categories: [] }));
 
       if (categoriesRes) {
         const categoryPayload = unwrapApiData(categoriesRes);
@@ -179,6 +223,16 @@ const BrowseRepository = () => {
       });
     } catch (error) {
       console.error('Failed to fetch repository data:', error);
+      const status = error?.response?.status;
+      if (useAi && status === 429) {
+        setSearchError('Too many AI searches right now. Please wait a moment and try again.');
+      } else if (useAi) {
+        setSearchError('AI search failed. Try again or switch off AI search for keyword results.');
+      }
+      if (!append) {
+        setPapers([]);
+        setTotal(0);
+      }
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -188,9 +242,9 @@ const BrowseRepository = () => {
     selectedCategory,
     selectedThemes,
     selectedYear,
-    debouncedAuthor,
     sortBy,
     categories.length,
+    aiMode,
   ]);
 
   useEffect(() => {
@@ -203,11 +257,13 @@ const BrowseRepository = () => {
     fetchPapers({ pageNum: page + 1, append: true });
   };
 
-  const filteredPapers = [...papers].sort((a, b) => {
-    if (sortBy === 'most_viewed') return (b.view_count || 0) - (a.view_count || 0);
-    if (sortBy === 'most_downloaded') return (b.download_count || 0) - (a.download_count || 0);
-    return 0;
-  });
+  const filteredPapers = isAiSearch
+    ? papers // preserve AI relevance ranking
+    : [...papers].sort((a, b) => {
+        if (sortBy === 'most_viewed') return (b.view_count || 0) - (a.view_count || 0);
+        if (sortBy === 'most_downloaded') return (b.download_count || 0) - (a.download_count || 0);
+        return 0;
+      });
 
   const toggleTheme = (categoryId) => {
     setSelectedThemes((prev) =>
@@ -267,7 +323,6 @@ const BrowseRepository = () => {
     setSelectedCategory('');
     setSelectedThemes([]);
     setSelectedYear('');
-    setAuthorSearch('');
     setSortBy('newest');
   };
 
@@ -275,11 +330,16 @@ const BrowseRepository = () => {
     let count = 0;
     if (searchTerm) count++;
     if (selectedCategory) count++;
-    if (selectedThemes.length) count++;
+    if (selectedThemes.length) count += selectedThemes.length;
     if (selectedYear) count++;
-    if (authorSearch) count++;
     return count;
   };
+
+  const yearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    const generated = Array.from({ length: 15 }, (_, i) => current - i);
+    return [...new Set([...availableYears, ...generated])].sort((a, b) => b - a);
+  }, [availableYears]);
 
   const togglePaperExpand = (paperId, e) => {
     e.stopPropagation();
@@ -298,12 +358,19 @@ const BrowseRepository = () => {
     ? facets.categories
     : categories.map((category) => ({ id: category.id, name: category.name, count: null }));
 
-  const handleCategorySelect = (categoryId) => {
-    setSelectedCategory(categoryId);
-  };
-
-  const handleSortSelect = (sortValue) => {
-    setSortBy(sortValue);
+  const filterBarProps = {
+    selectedCategory,
+    onCategoryChange: setSelectedCategory,
+    categories,
+    selectedYear,
+    onYearChange: setSelectedYear,
+    yearOptions,
+    sortBy,
+    onSortChange: setSortBy,
+    sortOptions,
+    sortDisabled: isAiSearch,
+    onClear: clearFilters,
+    hasActiveFilters: activeFilterCount() > 0,
   };
 
   if (loading) {
@@ -323,343 +390,114 @@ const BrowseRepository = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8 text-center md:text-left">
-          <p className="text-sm font-semibold text-[#3674B5] mb-2">National University Dasmariñas</p>
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">Research Repository</h1>
-          <p className="text-base text-slate-600 max-w-2xl mx-auto md:mx-0">
-            Browse and view approved research from the NU community. PDFs are view-only in the app; downloads are restricted to administrators.
-          </p>
-          <p className="mt-3 text-sm text-slate-500">{total} paper{total === 1 ? '' : 's'} found</p>
-        </div>
-
-        {/* Main Search and Filter Bar */}
-        <div className="mb-10">
-          {/* Search Bar */}
-          <div className="relative mb-6 max-w-3xl mx-auto">
-            <div className="relative">
-              <Search className="absolute left-5 top-1/2 transform -translate-y-1/2 text-slate-400" size={24} />
-              <input
-                type="text"
-                placeholder="Search research papers, authors, or keywords..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-14 pr-32 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#3674B5] focus:ring-4 focus:ring-[#3674B5]/10 text-lg shadow-lg"
-              />
-              <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
-                {(searchTerm || selectedCategory) && (
-                  <button
-                    onClick={clearFilters}
-                    className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {thematicCategories.length > 0 && (
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                {thematicCategories.map((category) => (
-                  <button
-                    key={category.id}
-                    type="button"
-                    onClick={() => toggleTheme(category.id)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                      selectedThemes.includes(category.id)
-                        ? 'bg-[#3674B5] text-white border-[#3674B5]'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#578FCA]'
-                    }`}
-                  >
-                    {category.name}
-                    {category.count != null ? ` (${category.count})` : ''}
-                  </button>
-                ))}
-              </div>
-            )}
+        {/* Centered search + filters */}
+        <div className="max-w-3xl mx-auto mb-10 text-center">
+          <div className="mb-8">
+            <p className="text-sm font-semibold text-[#3674B5] mb-2">National University Dasmariñas</p>
+            <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">Research Repository</h1>
+            <p className="text-base text-slate-600">
+              Browse approved research from the NU community.
+            </p>
           </div>
 
-          <div className="flex md:hidden justify-center mb-4">
+          {/* Search */}
+          <div className="relative mb-4">
+            <label htmlFor="repository-search" className="sr-only">Search research papers</label>
+            {aiMode ? (
+              <Sparkles className="absolute left-4 top-1/2 -translate-y-1/2 text-[#3674B5]" size={20} aria-hidden="true" />
+            ) : (
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} aria-hidden="true" />
+            )}
+            <input
+              id="repository-search"
+              type="search"
+              placeholder={aiMode ? 'Search by topic or meaning...' : 'Search papers, authors, keywords...'}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full min-h-[3rem] pl-11 pr-28 py-3 bg-white border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:border-[#3674B5] focus:ring-4 focus:ring-[#3674B5]/10 text-base"
+            />
             <button
               type="button"
-              onClick={() => setShowMobileFilters(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-medium"
+              onClick={() => setAiMode((prev) => !prev)}
+              aria-pressed={aiMode}
+              aria-label={aiMode ? 'Disable AI search' : 'Enable AI search'}
+              className={`absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 min-h-[2.5rem] px-3 rounded-xl text-sm font-semibold border transition-colors ${
+                aiMode
+                  ? 'bg-[#3674B5] text-white border-[#3674B5] hover:bg-[#2d6299]'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-[#578FCA]'
+              }`}
             >
-              <Filter size={18} />
-              Filters ({activeFilterCount()})
+              <Sparkles size={15} aria-hidden="true" />
+              AI
             </button>
           </div>
 
-          <div className="hidden md:block bg-white rounded-2xl shadow-lg border border-slate-200 p-6 mb-6">
-            <div className="flex flex-col lg:flex-row gap-4">
-              {/* Author Search */}
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  <User size={16} className="inline mr-1" />
-                  Search by Author
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter author name..."
-                  value={authorSearch}
-                  onChange={(e) => setAuthorSearch(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#3674B5] focus:ring-2 focus:ring-[#3674B5]/10 text-sm"
-                />
-              </div>
-
-              {/* Category Filter */}
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  <BookOpen size={16} className="inline mr-1" />
-                  Category
-                </label>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#3674B5] focus:ring-2 focus:ring-[#3674B5]/10 text-sm cursor-pointer"
-                >
-                  <option value="">All Categories</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Year Filter */}
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  <Calendar size={16} className="inline mr-1" />
-                  Publication Year
-                </label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#3674B5] focus:ring-2 focus:ring-[#3674B5]/10 text-sm cursor-pointer"
-                >
-                  <option value="">All Years</option>
-                  {availableYears.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sort By */}
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  <SortAsc size={16} className="inline mr-1" />
-                  Sort By
-                </label>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-[#3674B5] focus:ring-2 focus:ring-[#3674B5]/10 text-sm cursor-pointer"
-                >
-                  {sortOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {searchError && (
+            <div className="mb-4 flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              <span>{searchError}</span>
+              <button type="button" onClick={() => setSearchError('')} className="p-1 hover:bg-amber-100 rounded-md" aria-label="Dismiss">
+                <X size={14} />
+              </button>
             </div>
+          )}
 
-            {/* Active Filters Summary & Clear Button */}
-            <div className="mt-4 flex items-center justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                {activeFilterCount() > 0 && (
-                  <>
-                    <span className="text-sm font-medium text-slate-600">Active filters:</span>
-                    {searchTerm && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#3674B5]/10 text-[#3674B5] text-xs font-semibold rounded-full">
-                        Search: "{searchTerm}"
-                        <button onClick={() => setSearchTerm('')} className="hover:bg-[#3674B5]/20 rounded-full p-0.5">
-                          <X size={12} />
-                        </button>
-                      </span>
-                    )}
-                    {authorSearch && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full">
-                        Author: "{authorSearch}"
-                        <button onClick={() => setAuthorSearch('')} className="hover:bg-blue-100 rounded-full p-0.5">
-                          <X size={12} />
-                        </button>
-                      </span>
-                    )}
-                    {selectedCategory && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-full">
-                        Category: {getCategoryName(selectedCategory)}
-                        <button onClick={() => setSelectedCategory('')} className="hover:bg-green-100 rounded-full p-0.5">
-                          <X size={12} />
-                        </button>
-                      </span>
-                    )}
-                    {selectedYear && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#578FCA]/10 text-[#578FCA] text-xs font-semibold rounded-full">
-                        Year: {selectedYear}
-                        <button onClick={() => setSelectedYear('')} className="hover:bg-[#578FCA]/20 rounded-full p-0.5">
-                          <X size={12} />
-                        </button>
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
+          {/* Compact filter row */}
+          <RepositoryFilterBar {...filterBarProps} idPrefix="repo-filter" />
 
-              <div className="flex items-center gap-3">
-                {/* View Mode Toggle */}
-                <div className="flex bg-slate-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`p-2 rounded-md transition-all ${viewMode === 'grid'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    title="Grid view"
-                  >
-                    <Grid size={18} />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-2 rounded-md transition-all ${viewMode === 'list'
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    title="List view"
-                  >
-                    <List size={18} />
-                  </button>
-                </div>
-
-                {/* Clear All Filters Button */}
-                {activeFilterCount() > 0 && (
-                  <button
-                    onClick={clearFilters}
-                    className="px-4 py-2 bg-gradient-to-r from-slate-100 to-slate-50 text-slate-700 text-sm font-semibold rounded-lg hover:from-slate-200 hover:to-slate-100 transition-all flex items-center gap-2 border border-slate-300"
-                  >
-                    <RefreshCw size={16} />
-                    Clear All
-                  </button>
-                )}
-              </div>
+          {/* Theme chips */}
+          {thematicCategories.length > 0 && (
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {thematicCategories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => toggleTheme(category.id)}
+                  aria-pressed={selectedThemes.includes(category.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    selectedThemes.includes(category.id)
+                      ? 'bg-[#3674B5] text-white border-[#3674B5]'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-[#578FCA]'
+                  }`}
+                >
+                  {category.name}
+                  {category.count != null ? ` (${category.count})` : ''}
+                </button>
+              ))}
             </div>
+          )}
 
-            {/* Results Count */}
-            <div className="mt-4 pt-4 border-t border-slate-200">
-              <p className="text-sm text-slate-600">
-                Showing <span className="font-bold text-slate-900">{filteredPapers.length}</span> of{' '}
-                <span className="font-bold text-slate-900">{total}</span> research papers
-              </p>
+          {/* Results summary + view toggle */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm text-slate-600">
+            <span>
+              <span className="font-semibold text-slate-900">{total}</span> paper{total === 1 ? '' : 's'}
+              {isAiSearch ? ' · ranked by relevance' : ''}
+            </span>
+            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5" role="group" aria-label="View mode">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                aria-pressed={viewMode === 'grid'}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-all ${
+                  viewMode === 'grid' ? 'bg-[#3674B5]/10 text-[#3674B5]' : 'text-slate-400 hover:text-slate-600'
+                }`}
+                title="Grid view"
+              >
+                <Grid size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                aria-pressed={viewMode === 'list'}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-all ${
+                  viewMode === 'list' ? 'bg-[#3674B5]/10 text-[#3674B5]' : 'text-slate-400 hover:text-slate-600'
+                }`}
+                title="List view"
+              >
+                <List size={16} />
+              </button>
             </div>
           </div>
         </div>
-
-        {/* Mobile Filters Modal */}
-        {showMobileFilters && (
-          <div className="md:hidden mb-8">
-            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-slate-900">Filters</h3>
-                <button onClick={() => setShowMobileFilters(false)} className="p-2 hover:bg-slate-100 rounded-lg">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Categories */}
-                <div>
-                  <label className="block text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                    <BookOpen size={16} />
-                    Categories
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handleCategorySelect('')}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedCategory === ''
-                          ? 'bg-[#3674B5] text-white'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                    >
-                      All
-                    </button>
-                    {categories.slice(0, 6).map((category) => (
-                      <button
-                        key={category.id}
-                        onClick={() => handleCategorySelect(category.id)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedCategory === category.id
-                            ? 'bg-[#3674B5] text-white'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                          }`}
-                      >
-                        {category.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Sort */}
-                <div>
-                  <label className="block text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                    <SortAsc size={16} />
-                    Sort By
-                  </label>
-                  <div className="space-y-2">
-                    {sortOptions.map((option) => {
-                      const Icon = option.icon;
-                      return (
-                        <button
-                          key={option.value}
-                          onClick={() => handleSortSelect(option.value)}
-                          className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${sortBy === option.value
-                              ? 'border-[#3674B5] bg-[#3674B5]/10 text-[#3674B5]'
-                              : 'border-slate-200 hover:border-slate-300'
-                            }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Icon size={18} />
-                            <span>{option.label}</span>
-                          </div>
-                          {sortBy === option.value && (
-                            <div className="w-2 h-2 bg-[#3674B5] rounded-full"></div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* View Mode */}
-                <div>
-                  <label className="block text-sm font-semibold text-slate-900 mb-3">View Mode</label>
-                  <div className="flex bg-slate-100 rounded-xl p-1">
-                    <button
-                      onClick={() => setViewMode('grid')}
-                      className={`flex-1 p-3 rounded-lg text-center transition-all ${viewMode === 'grid'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                    >
-                      <Grid size={20} className="mx-auto mb-1" />
-                      <span className="text-xs">Grid</span>
-                    </button>
-                    <button
-                      onClick={() => setViewMode('list')}
-                      className={`flex-1 p-3 rounded-lg text-center transition-all ${viewMode === 'list'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                    >
-                      <List size={20} className="mx-auto mb-1" />
-                      <span className="text-xs">List</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Papers Grid/List */}
         {filteredPapers.length === 0 ? (
@@ -714,6 +552,7 @@ const BrowseRepository = () => {
                           </span>
                         );
                       })()}
+                      <SimilarityBadge score={paper.similarityScore} />
                     </div>
                     <div className="flex gap-3 text-slate-500 text-xs">
                       <span className="flex items-center gap-1">
@@ -829,6 +668,7 @@ const BrowseRepository = () => {
                                 </span>
                               );
                             })()}
+                            <SimilarityBadge score={paper.similarityScore} />
                             <div className="flex gap-4 text-sm text-slate-500">
                               <span className="flex items-center gap-1">
                                 <Eye size={14} />

@@ -47,6 +47,38 @@ async function refreshAuthSession(refreshToken) {
   return getPublicAuthClient().auth.refreshSession({ refresh_token: refreshToken });
 }
 
+// Public signup that makes Supabase send its built-in confirmation email.
+// With "Confirm email" enabled, the returned session is null until confirmed.
+async function signUpWithConfirmation({ email, password, emailRedirectTo, userMetadata = {} }) {
+  return getPublicAuthClient().auth.signUp({
+    email: String(email || '').trim().toLowerCase(),
+    password,
+    options: {
+      emailRedirectTo,
+      data: userMetadata,
+    },
+  });
+}
+
+// Resend the signup confirmation email via Supabase's built-in service.
+async function resendSignupConfirmation({ email, emailRedirectTo }) {
+  return getPublicAuthClient().auth.resend({
+    type: 'signup',
+    email: String(email || '').trim().toLowerCase(),
+    options: emailRedirectTo ? { emailRedirectTo } : undefined,
+  });
+}
+
+async function getAuthUserById(authUserId) {
+  if (!authUserId) return null;
+  const adminClient = getAdminAuthClient();
+  const { data, error } = await adminClient.auth.admin.getUserById(authUserId);
+  if (error) {
+    throw error;
+  }
+  return data?.user || null;
+}
+
 async function findAuthUserByEmail(email) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!normalizedEmail) return null;
@@ -135,6 +167,23 @@ async function ensureAuthUser({
   };
 }
 
+async function updateAuthUserPasswordById(userId, password) {
+  if (!userId) {
+    throw new Error('A Supabase auth user id is required to update the password');
+  }
+
+  const adminClient = getAdminAuthClient();
+  const { data, error } = await adminClient.auth.admin.updateUserById(userId, {
+    password,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.user || null;
+}
+
 async function deleteAuthUserById(userId) {
   if (!userId) return;
   const adminClient = getAdminAuthClient();
@@ -151,11 +200,57 @@ async function deleteAuthUserByEmail(email) {
   return true;
 }
 
+async function resetPasswordForEmail(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) {
+    throw new Error('Email is required');
+  }
+
+  return getPublicAuthClient().auth.resetPasswordForEmail(normalizedEmail);
+}
+
+async function verifyRecoveryOtp({ email, token }) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedToken = String(token || '').trim();
+
+  return getPublicAuthClient().auth.verifyOtp({
+    email: normalizedEmail,
+    token: normalizedToken,
+    type: 'recovery',
+  });
+}
+
+async function updateAuthUserEmailById(authUserId, email) {
+  if (!authUserId) {
+    throw new Error('A Supabase auth user id is required to update the email');
+  }
+
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const adminClient = getAdminAuthClient();
+  const { data, error } = await adminClient.auth.admin.updateUserById(authUserId, {
+    email: normalizedEmail,
+    email_confirm: true,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.user || null;
+}
+
 module.exports = {
   signInWithPassword,
   refreshAuthSession,
+  signUpWithConfirmation,
+  resendSignupConfirmation,
   findAuthUserByEmail,
+  getAuthUserById,
   ensureAuthUser,
+  updateAuthUserPasswordById,
+  updateAuthUserEmailById,
+  resetPasswordForEmail,
+  verifyRecoveryOtp,
   deleteAuthUserById,
   deleteAuthUserByEmail,
 };

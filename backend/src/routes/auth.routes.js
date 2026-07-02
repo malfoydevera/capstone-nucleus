@@ -17,11 +17,17 @@ const upload = multer({
 router.post('/register', authRateLimiter, authController.register);
 router.post('/login', authRateLimiter, authController.login);
 router.post('/refresh', authRateLimiter, authController.refreshSession);
-router.post('/forgot-password', authRateLimiter, authController.forgotPassword);
-router.post('/reset-password', authRateLimiter, authController.resetPassword);
+router.post('/resend-confirmation', authRateLimiter, authController.resendConfirmation);
+router.post('/forgot-password/request', authRateLimiter, authController.requestPasswordReset);
+router.post('/forgot-password/confirm', authRateLimiter, authController.confirmPasswordReset);
 
 // Protected routes
 router.get('/me', authenticate, authController.getCurrentUser);
+router.post('/change-password', authenticate, authRateLimiter, authController.changePassword);
+router.post('/change-email', authenticate, authRateLimiter, authController.changeEmail);
+router.post('/recovery-email/validate', authenticate, authRateLimiter, authController.validateRecoveryEmail);
+router.post('/recovery-email/confirm', authenticate, authRateLimiter, authController.confirmRecoveryEmail);
+router.post('/confirm-institutional-email', authenticate, authRateLimiter, authController.confirmInstitutionalEmail);
 router.patch('/profile', authenticate, authController.updateOwnProfile);
 router.get('/profile/activity', authenticate, authController.getProfileActivity);
 router.get('/notifications', authenticate, notificationController.getMyNotifications);

@@ -5,6 +5,7 @@ import Login from './components/auth/Login';
 import Register from './components/auth/Register';
 import ForgotPassword from './components/auth/ForgotPassword';
 import ResetPassword from './components/auth/ResetPassword';
+import AuthCallback from './components/auth/AuthCallback';
 import CoAuthorInvitations from './pages/student/CoAuthorInvitations';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import Sidebar from './components/layout/Sidebar';
@@ -124,6 +125,7 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
           <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>

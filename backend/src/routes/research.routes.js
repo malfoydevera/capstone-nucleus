@@ -8,7 +8,7 @@ const adminController      = require('../controllers/admin.controller');
 const annotationController = require('../controllers/annotation.controller');
 const coauthorInvitationController = require('../controllers/coauthorInvitation.controller');
 const { authenticate, authorize, isFaculty, isStaffOrAdmin, isDean } = require('../middleware/auth.middleware');
-const { publishedRateLimiter } = require('../middleware/rateLimiter');
+const { publishedRateLimiter, semanticSearchRateLimiter } = require('../middleware/rateLimiter');
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
@@ -43,6 +43,7 @@ const uploadDrawing = multer({
 
 // ========== PUBLIC ROUTES ==========
 router.get('/published', publishedRateLimiter, submissionController.getPublishedResearch);
+router.get('/semantic-search', authenticate, semanticSearchRateLimiter, submissionController.getSemanticSearch);
 router.get('/categories', submissionController.getCategories);
 
 // Get Dean/Program Chair members (for adviser to pick target when approving)
