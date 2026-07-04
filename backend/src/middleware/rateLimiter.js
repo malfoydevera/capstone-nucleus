@@ -81,10 +81,20 @@ const semanticSearchRateLimiter = createRateLimiter({
   keyFn: (req) => `${req.user?.id || 'anonymous'}:${normalizeIp(req)}`,
 });
 
+// TODO: move to Redis (Upstash) when running multiple backend instances.
+const apiRateLimiter = createRateLimiter({
+  windowMs: toPositiveNumber(process.env.API_RATE_LIMIT_WINDOW_MS, DEFAULT_WINDOW_MS),
+  maxRequests: toPositiveNumber(process.env.API_RATE_LIMIT_MAX, 300),
+  bucketPrefix: 'api',
+  message: 'Too many requests. Please slow down.',
+  keyFn: (req) => `${req.user?.id || 'anonymous'}:${normalizeIp(req)}`,
+});
+
 module.exports = {
   authRateLimiter,
   publishedRateLimiter,
   semanticSearchRateLimiter,
+  apiRateLimiter,
   createRateLimiter,
   normalizeIp,
 };

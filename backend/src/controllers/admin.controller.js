@@ -9,6 +9,7 @@ const { attachFullName, buildFullName } = require('../utils/name');
 const { logAuditEvent } = require('../utils/audit');
 const { validateWorkflowStages } = require('../utils/workflowEngine');
 const { notifyUser, notifyCoAuthors } = require('../utils/notify');
+const { invalidateBrowseCaches } = require('../utils/cache');
 const { parseListPagination } = require('../utils/pagination');
 
 const RECYCLE_BIN_RETENTION_DAYS = Number.parseInt(process.env.RECYCLE_BIN_RETENTION_DAYS || '30', 10);
@@ -347,6 +348,8 @@ exports.adminPublishResearch = async (req, res) => {
   } catch (error) {
     console.error('Publish error:', error);
     return sendError(res, { status: 500, code: 'ADMIN_PUBLISH_RESEARCH_FAILED', message: 'Failed to publish research' });
+  } finally {
+    invalidateBrowseCaches();
   }
 };
 
@@ -361,6 +364,8 @@ exports.adminUnpublishResearch = async (req, res) => {
   } catch (error) {
     console.error('Unpublish error:', error);
     return sendError(res, { status: 500, code: 'ADMIN_UNPUBLISH_RESEARCH_FAILED', message: 'Failed to unpublish research' });
+  } finally {
+    invalidateBrowseCaches();
   }
 };
 

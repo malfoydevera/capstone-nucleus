@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@sentry/react": "^10.63.0",
     "@supabase/supabase-js": "^2.110.0",
     "@tailwindcss/vite": "^4.1.18",
     "axios": "^1.13.2",

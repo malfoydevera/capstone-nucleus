@@ -12,7 +12,9 @@ const {
   resolvePaperFileUrl,
 } = require('../utils/fileAccess');
 const { sendSuccess, sendError } = require('../utils/response');
-const { getOrSet, TTL, invalidatePrefix } = require('../utils/cache'); // P-001
+const { getOrSet, TTL, invalidateBrowseCaches } = require('../utils/cache'); // P-001
+const logger = require('../utils/logger');
+const { validateResearchFileBuffer } = require('../config/upload');
 const { attachFullName, buildFullName } = require('../utils/name');
 const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/workflowEmail');
 const { getSystemPolicy, isFileAllowedByPolicy } = require('../utils/systemPolicy');
@@ -125,11 +127,11 @@ const persistPaperEmbedding = async (paper) => {
       .eq('id', paper.id);
 
     if (error && !String(error.message || '').includes('embedding')) {
-      console.warn('[embeddings] Failed to persist paper embedding:', error.message);
+      logger.warn('[embeddings] Failed to persist paper embedding:', error.message);
     }
   } catch (error) {
     // Migration not yet applied or transient failure — log and move on.
-    console.warn('[embeddings] persistPaperEmbedding skipped:', error?.message || error);
+    logger.warn('[embeddings] persistPaperEmbedding skipped:', error?.message || error);
   }
 };
 
@@ -239,6 +241,13 @@ exports.submitResearch = async (req, res) => {
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'Research file is required' });
     }
 
+    if (file) {
+      const fileCheck = validateResearchFileBuffer(file.buffer, file.mimetype);
+      if (!fileCheck.valid) {
+        return sendError(res, { status: 400, code: 'INVALID_FILE', message: fileCheck.message });
+      }
+    }
+
     if (!title || !abstract || !category) {
       return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'All required fields must be filled' });
     }
@@ -273,7 +282,7 @@ exports.submitResearch = async (req, res) => {
         .upload(fileName, file.buffer, { contentType: file.mimetype, upsert: true });
 
       if (uploadError) {
-        console.error('Upload error:', uploadError);
+        logger.error('Upload error:', uploadError);
         return sendError(res, { status: 500, code: 'FILE_UPLOAD_FAILED', message: 'Failed to upload file' });
       }
 
@@ -477,7 +486,7 @@ exports.submitResearch = async (req, res) => {
         title: 'Paper Uploaded Successfully',
         message: `Your paper "${title}" has been uploaded and is now pending review.`,
       }).catch((notifyErr) => {
-        console.error('[submitResearch] author self-notification failed:', notifyErr.message);
+        logger.error('[submitResearch] author self-notification failed:', notifyErr.message);
       });
     } else {
       void notifyUser({
@@ -487,7 +496,7 @@ exports.submitResearch = async (req, res) => {
         title: 'Revision Submitted Successfully',
         message: `Your revision for "${title}" has been submitted and routed to the next reviewer.`,
       }).catch((notifyErr) => {
-        console.error('[submitResearch] author self-notification failed:', notifyErr.message);
+        logger.error('[submitResearch] author self-notification failed:', notifyErr.message);
       });
     }
 
@@ -503,10 +512,10 @@ exports.submitResearch = async (req, res) => {
           sender_user_id: userId,
         }));
         void notifyUsers(coAuthorNotifications).catch((notifyErr) => {
-          console.error('[submitResearch] co-author notification failed:', notifyErr.message);
+          logger.error('[submitResearch] co-author notification failed:', notifyErr.message);
         });
       } catch (notifyErr) {
-        console.error('[submitResearch] co-author notification failed:', notifyErr.message);
+        logger.error('[submitResearch] co-author notification failed:', notifyErr.message);
       }
     }
 
@@ -521,10 +530,10 @@ exports.submitResearch = async (req, res) => {
           senderUserId: userId,
           excludeUserId: userId,
         }).catch((notifyErr) => {
-          console.error('[submitResearch] co-author resubmit notification failed:', notifyErr.message);
+          logger.error('[submitResearch] co-author resubmit notification failed:', notifyErr.message);
         });
       } catch (notifyErr) {
-        console.error('[submitResearch] co-author resubmit notification failed:', notifyErr.message);
+        logger.error('[submitResearch] co-author resubmit notification failed:', notifyErr.message);
       }
     }
 
@@ -537,7 +546,7 @@ exports.submitResearch = async (req, res) => {
         message: `${authorName} submitted "${title}" for your review`,
         senderUserId: userId,
       }).catch((notifyErr) => {
-        console.error('[submitResearch] faculty notification failed:', notifyErr.message);
+        logger.error('[submitResearch] faculty notification failed:', notifyErr.message);
       });
 
       try {
@@ -547,10 +556,10 @@ exports.submitResearch = async (req, res) => {
           .eq('id', facultyId)
           .single();
         void sendReviewAssignmentEmail({ user: facultyUser, paperTitle: title }).catch((emailErr) => {
-          console.error('Faculty assignment email error:', emailErr.message);
+          logger.error('Faculty assignment email error:', emailErr.message);
         });
       } catch (emailErr) {
-        console.error('Faculty assignment email error:', emailErr.message);
+        logger.error('Faculty assignment email error:', emailErr.message);
       }
     }
 
@@ -567,7 +576,7 @@ exports.submitResearch = async (req, res) => {
             sender_user_id: userId,
           }))
         ).catch((notifyErr) => {
-          console.error('[submitResearch] staff notification failed:', notifyErr.message);
+          logger.error('[submitResearch] staff notification failed:', notifyErr.message);
         });
 
         try {
@@ -581,13 +590,13 @@ exports.submitResearch = async (req, res) => {
             ).then((results) => {
               results.forEach((result) => {
                 if (result.status === 'rejected') {
-                  console.error('Staff assignment email error:', result.reason?.message || result.reason);
+                  logger.error('Staff assignment email error:', result.reason?.message || result.reason);
                 }
               });
             });
           }
         } catch (emailErr) {
-          console.error('Staff assignment email error:', emailErr.message);
+          logger.error('Staff assignment email error:', emailErr.message);
         }
       }
     }
@@ -600,7 +609,7 @@ exports.submitResearch = async (req, res) => {
         ? 'Your revision has been submitted successfully and routed to the next reviewer.'
         : 'Your submission has been received and entered the review workflow.',
     }).catch((emailErr) => {
-      console.error('[submitResearch] status email failed:', emailErr.message);
+      logger.error('[submitResearch] status email failed:', emailErr.message);
     });
 
     return sendSuccess(res, {
@@ -615,7 +624,7 @@ exports.submitResearch = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Submit research error:', error);
+    logger.error('Submit research error:', error);
     return sendError(res, { status: 500, code: 'SUBMIT_RESEARCH_FAILED', message: 'Server error' });
   }
 };
@@ -667,7 +676,7 @@ exports.getMyResearch = async (req, res) => {
       }
     } catch (coAuthorErr) {
       // research_authors table may not exist yet — silently skip
-      console.warn('[getMyResearch] co-author lookup skipped:', coAuthorErr.message);
+      logger.warn('[getMyResearch] co-author lookup skipped:', coAuthorErr.message);
     }
 
     // Merge, mark co-authored papers, and resolve URLs
@@ -691,7 +700,7 @@ exports.getMyResearch = async (req, res) => {
 
     return sendSuccess(res, { data: { papers: papersWithUrls, total, page, limit } });
   } catch (error) {
-    console.error('Get my research error:', error);
+    logger.error('Get my research error:', error);
     return sendError(res, { status: 500, code: 'GET_MY_RESEARCH_FAILED', message: 'Server error' });
   }
 };
@@ -792,7 +801,7 @@ exports.getProfileResearchData = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get profile research data error:', error);
+    logger.error('Get profile research data error:', error);
     return sendError(res, { status: 500, code: 'GET_PROFILE_DATA_FAILED', message: 'Failed to fetch profile data' });
   }
 };
@@ -994,7 +1003,7 @@ exports.getPublishedResearch = async (req, res) => {
 
     return sendSuccess(res, { data: cachedPayload });
   } catch (error) {
-    console.error('Get published research error:', error);
+    logger.error('Get published research error:', error);
     return sendError(res, { status: 500, code: 'GET_PUBLISHED_RESEARCH_FAILED', message: 'Server error' });
   }
 };
@@ -1100,7 +1109,7 @@ exports.getSemanticSearch = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Semantic search error:', error);
+    logger.error('Semantic search error:', error);
     if (String(error?.message || '').includes('match_research_papers')) {
       return sendError(res, {
         status: 503,
@@ -1154,7 +1163,7 @@ exports.getFacultyMembers = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get faculty members error:', error);
+    logger.error('Get faculty members error:', error);
     return sendError(res, { status: 500, code: 'GET_FACULTY_MEMBERS_FAILED', message: 'Server error' });
   }
 };
@@ -1186,7 +1195,7 @@ exports.getDeanChairMembers = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get dean/chair members error:', error);
+    logger.error('Get dean/chair members error:', error);
     return sendError(res, { status: 500, code: 'GET_DEAN_CHAIR_MEMBERS_FAILED', message: 'Server error' });
   }
 };
@@ -1226,7 +1235,7 @@ exports.getResearchById = async (req, res) => {
         reviewer: attachFullName(item.reviewer),
       }));
     } catch (historyErr) {
-      console.error('Get workflow history error:', historyErr);
+      logger.error('Get workflow history error:', historyErr);
     }
 
     return sendSuccess(res, {
@@ -1242,7 +1251,7 @@ exports.getResearchById = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get research error:', error);
+    logger.error('Get research error:', error);
     return sendError(res, { status: 500, code: 'GET_RESEARCH_BY_ID_FAILED', message: 'Server error' });
   }
 };
@@ -1269,7 +1278,7 @@ exports.getResearchFile = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get research file error:', error);
+    logger.error('Get research file error:', error);
     return sendError(res, { status: 500, code: 'GET_RESEARCH_FILE_FAILED', message: 'Server error' });
   }
 };
@@ -1289,7 +1298,7 @@ exports.trackView = async (req, res) => {
     await supabase.from('paper_views').insert({ paper_id: id, user_id: req.user.id, viewed_at: new Date().toISOString() });
     return sendSuccess(res, { message: 'View tracked successfully', data: {} });
   } catch (error) {
-    console.error('Error tracking view:', error);
+    logger.error('Error tracking view:', error);
     return sendError(res, { status: 500, code: 'TRACK_VIEW_FAILED', message: 'Failed to track view' });
   }
 };
@@ -1331,12 +1340,12 @@ exports.trackDownload = async (req, res) => {
         alreadyNotifiedIds: [],
       });
     } catch (e) {
-      console.warn('[trackDownload] co-author notify failed', e.message);
+      logger.warn('[trackDownload] co-author notify failed', e.message);
     }
 
     return sendSuccess(res, { message: 'Download tracked successfully', data: {} });
   } catch (error) {
-    console.error('Error tracking download:', error);
+    logger.error('Error tracking download:', error);
     return sendError(res, { status: 500, code: 'TRACK_DOWNLOAD_FAILED', message: 'Failed to track download' });
   }
 };
@@ -1362,7 +1371,7 @@ exports.getMyDraft = async (req, res) => {
 
     return sendSuccess(res, { data: { draft: data || null } });
   } catch (error) {
-    console.error('Get draft error:', error);
+    logger.error('Get draft error:', error);
     return sendError(res, { status: 500, code: 'GET_DRAFT_FAILED', message: 'Failed to get draft' });
   }
 };
@@ -1418,7 +1427,7 @@ exports.upsertMyDraft = async (req, res) => {
       data: { draft: result.data },
     });
   } catch (error) {
-    console.error('Save draft error:', error);
+    logger.error('Save draft error:', error);
     return sendError(res, { status: 500, code: 'SAVE_DRAFT_FAILED', message: 'Failed to save draft' });
   }
 };
@@ -1439,7 +1448,7 @@ exports.deleteMyDraft = async (req, res) => {
 
     return sendSuccess(res, { message: 'Draft deleted', data: {} });
   } catch (error) {
-    console.error('Delete draft error:', error);
+    logger.error('Delete draft error:', error);
     return sendError(res, { status: 500, code: 'DELETE_DRAFT_FAILED', message: 'Failed to delete draft' });
   }
 };

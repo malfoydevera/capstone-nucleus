@@ -140,27 +140,22 @@ describe('submission submitResearch', () => {
           };
         }
 
-        if (researchPapersCallCount === 2) {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: async () => ({
-                  data: {
-                    status: 'revision_required',
-                    last_reviewer_role: 'faculty',
-                    previous_status: null,
-                    faculty_id: 'faculty-1',
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-
         return {
           update: () => ({
             eq: async () => ({ error: null }),
+          }),
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  status: 'revision_required',
+                  last_reviewer_role: 'faculty',
+                  previous_status: null,
+                  faculty_id: 'faculty-1',
+                },
+                error: null,
+              }),
+            }),
           }),
         };
       }

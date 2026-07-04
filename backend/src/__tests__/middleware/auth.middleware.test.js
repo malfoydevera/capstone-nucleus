@@ -7,6 +7,7 @@ jest.mock('../../config/supabase', () => ({
 
 const jwt = require('jsonwebtoken');
 const supabase = require('../../config/supabase');
+const { invalidate } = require('../../utils/cache');
 const {
   authenticate,
   authorize,
@@ -30,6 +31,7 @@ describe('auth.middleware', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    invalidate('org:lookups');
   });
 
   test('authenticate sets req.user for valid legacy token and current DB user', async () => {

@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
+const logger = require('../utils/logger');
 const supabase = require('../config/supabase');
 const { buildFullName } = require('../utils/name');
+const { getOrSet, TTL } = require('../utils/cache');
 
 const getBearerToken = (authHeader) => {
   if (!authHeader || typeof authHeader !== 'string') return null;
@@ -53,7 +55,7 @@ const fetchUserBy = async (column, value) => {
   return data || null;
 };
 
-const getOrganizationLookups = async () => {
+const getOrganizationLookups = async () => getOrSet('org:lookups', TTL.ORG_LOOKUPS, async () => {
   try {
     const [departmentsResult, programsResult] = await Promise.all([
       supabase.from('departments').select('id, name'),
@@ -73,7 +75,7 @@ const getOrganizationLookups = async () => {
       programById: new Map(),
     };
   }
-};
+});
 
 const loadCurrentUser = async ({ userId, authUserId, email }) => {
   // Prefer the stable auth.users id link for Supabase-issued tokens.
@@ -156,7 +158,7 @@ exports.authenticate = async (req, res, next) => {
     };
     next();
   } catch (error) {
-    console.error('Authenticate middleware error:', error.message || error);
+    logger.error('Authenticate middleware error:', error.message || error);
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 };

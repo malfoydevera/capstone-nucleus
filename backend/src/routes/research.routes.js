@@ -9,22 +9,17 @@ const annotationController = require('../controllers/annotation.controller');
 const coauthorInvitationController = require('../controllers/coauthorInvitation.controller');
 const { authenticate, authorize, isFaculty, isStaffOrAdmin, isDean } = require('../middleware/auth.middleware');
 const { publishedRateLimiter, semanticSearchRateLimiter } = require('../middleware/rateLimiter');
+const { MAX_BYTES, ALLOWED_MIMES, validateResearchFileBuffer } = require('../config/upload');
 
-// Configure multer for memory storage
+// Configure multer for memory storage (validated before upload completes)
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 100 * 1024 * 1024,
+    fileSize: MAX_BYTES,
   },
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-
-    if (allowedMimeTypes.includes(file.mimetype)) {
+    if (ALLOWED_MIMES.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error('Unsupported file type'), false);
@@ -41,8 +36,14 @@ const uploadDrawing = multer({
   },
 });
 
+// Public cache headers for browse endpoints
+const publicCache = (req, res, next) => {
+  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  next();
+};
+
 // ========== PUBLIC ROUTES ==========
-router.get('/published', publishedRateLimiter, submissionController.getPublishedResearch);
+router.get('/published', publishedRateLimiter, publicCache, submissionController.getPublishedResearch);
 router.get('/semantic-search', authenticate, semanticSearchRateLimiter, submissionController.getSemanticSearch);
 router.get('/categories', submissionController.getCategories);
 

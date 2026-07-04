@@ -18,7 +18,9 @@ function sendError(res, {
   code = 'SERVER_ERROR',
   message = 'Server error',
   details,
+  requestId,
 }) {
+  const resolvedRequestId = requestId || res.locals?.requestId || res.getHeader?.('x-request-id');
   return res.status(status).json({
     success: false,
     error: {
@@ -26,6 +28,7 @@ function sendError(res, {
       message,
     },
     message,
+    ...(resolvedRequestId ? { requestId: resolvedRequestId } : {}),
     ...(details ? { details } : {}),
   });
 }

@@ -4,6 +4,9 @@ import App from './App.jsx'
 import './index.css'
 import { Toaster } from 'react-hot-toast'
 import ErrorBoundary from './components/ErrorBoundary'
+import { initSentry } from './utils/sentry'
+
+initSentry()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

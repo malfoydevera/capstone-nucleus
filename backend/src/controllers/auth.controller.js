@@ -20,6 +20,8 @@ const {
   deleteAuthUserById,
   deleteAuthUserByEmail,
 } = require('../utils/supabaseAuth');
+const { getOrSet, TTL } = require('../utils/cache');
+const logger = require('../utils/logger');
 
 function getConfirmationRedirectUrl() {
   const base = (process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -54,7 +56,7 @@ async function resolveAuthLoginEmail(user) {
         return String(authUser.email).trim().toLowerCase();
       }
     } catch (lookupError) {
-      console.warn('[login] auth user lookup failed:', lookupError?.message || lookupError);
+      logger.warn('[login] auth user lookup failed:', lookupError?.message || lookupError);
     }
   }
   return String(user.email || '').trim().toLowerCase();
@@ -488,7 +490,7 @@ exports.register = async (req, res) => {
       data: { confirmationRequired: true, email: normalizedEmail },
     });
   } catch (error) {
-    console.error('Register error:', error);
+    logger.error('Register error:', error);
     return sendError(res, { status: 500, code: 'REGISTER_FAILED', message: 'Server error' });
   }
 };
@@ -511,7 +513,7 @@ exports.resendConfirmation = async (req, res) => {
       message: 'If an unconfirmed account exists for that email, a new confirmation link has been sent.',
     });
   } catch (error) {
-    console.error('Resend confirmation error:', error);
+    logger.error('Resend confirmation error:', error);
     return sendSuccess(res, {
       message: 'If an unconfirmed account exists for that email, a new confirmation link has been sent.',
     });
@@ -635,7 +637,7 @@ exports.login = async (req, res) => {
       data: buildAuthSuccessData(user, migratedAuthSession.session, organizationLookups),
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error:', error);
     return sendError(res, { status: 500, code: 'LOGIN_FAILED', message: 'Server error' });
   }
 };
@@ -691,7 +693,7 @@ exports.refreshSession = async (req, res) => {
       data: buildAuthSuccessData(user, data.session, organizationLookups),
     });
   } catch (error) {
-    console.error('Refresh session error:', error);
+    logger.error('Refresh session error:', error);
     return sendError(res, {
       status: 500,
       code: 'REFRESH_SESSION_FAILED',
@@ -758,7 +760,7 @@ exports.changePassword = async (req, res) => {
       message: 'Password changed successfully',
     });
   } catch (error) {
-    console.error('Change password error:', error);
+    logger.error('Change password error:', error);
     return sendError(res, { status: 500, code: 'CHANGE_PASSWORD_FAILED', message: 'Server error' });
   }
 };
@@ -841,7 +843,7 @@ exports.changeEmail = async (req, res) => {
       data: { email: normalizedNewEmail },
     });
   } catch (error) {
-    console.error('Change email error:', error);
+    logger.error('Change email error:', error);
     return sendError(res, { status: 500, code: 'CHANGE_EMAIL_FAILED', message: 'Server error' });
   }
 };
@@ -918,7 +920,7 @@ exports.validateRecoveryEmail = async (req, res) => {
       data: { recoveryEmail: normalizedRecoveryEmail },
     });
   } catch (error) {
-    console.error('Validate recovery email error:', error);
+    logger.error('Validate recovery email error:', error);
     return sendError(res, { status: 500, code: 'RECOVERY_EMAIL_FAILED', message: 'Server error' });
   }
 };
@@ -987,7 +989,7 @@ exports.confirmRecoveryEmail = async (req, res) => {
       data: { user: formatUserResponse(updatedUser, organizationLookups) },
     });
   } catch (error) {
-    console.error('Confirm recovery email error:', error);
+    logger.error('Confirm recovery email error:', error);
     return sendError(res, { status: 500, code: 'RECOVERY_EMAIL_FAILED', message: 'Server error' });
   }
 };
@@ -1057,7 +1059,7 @@ exports.confirmInstitutionalEmail = async (req, res) => {
       data: { user: formatUserResponse(updatedUser, organizationLookups) },
     });
   } catch (error) {
-    console.error('Confirm institutional email error:', error);
+    logger.error('Confirm institutional email error:', error);
     return sendError(res, { status: 500, code: 'CONFIRM_EMAIL_FAILED', message: 'Server error' });
   }
 };
@@ -1102,7 +1104,7 @@ exports.requestPasswordReset = async (req, res) => {
       message: 'If an account exists, a reset code was sent to the recovery email on file.',
     });
   } catch (error) {
-    console.error('Request password reset error:', error);
+    logger.error('Request password reset error:', error);
     return sendError(res, { status: 500, code: 'PASSWORD_RESET_FAILED', message: 'Server error' });
   }
 };
@@ -1182,7 +1184,7 @@ exports.confirmPasswordReset = async (req, res) => {
       message: 'Password updated successfully. You can sign in now.',
     });
   } catch (error) {
-    console.error('Confirm password reset error:', error);
+    logger.error('Confirm password reset error:', error);
     return sendError(res, { status: 500, code: 'PASSWORD_RESET_FAILED', message: 'Server error' });
   }
 };
@@ -1215,7 +1217,7 @@ exports.getCurrentUser = async (req, res) => {
       user: formatUserResponse(user, organizationLookups),
     });
   } catch (error) {
-    console.error('Get user error:', error);
+    logger.error('Get user error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -1345,7 +1347,7 @@ exports.updateOwnProfile = async (req, res) => {
       data: { user: formatUserResponse(updatedUser, organizationLookups) },
     });
   } catch (error) {
-    console.error('Update own profile error:', error);
+    logger.error('Update own profile error:', error);
     return sendError(res, { status: 500, code: 'UPDATE_PROFILE_FAILED', message: 'Failed to update profile' });
   }
 };
@@ -1386,7 +1388,7 @@ exports.getProfileActivity = async (req, res) => {
           coAuthoredPapers = (coAuthored || []).map((paper) => ({ ...paper, is_coauthored: true }));
         }
       } catch (coAuthorErr) {
-        console.warn('[getProfileActivity] co-author lookup skipped:', coAuthorErr.message);
+        logger.warn('[getProfileActivity] co-author lookup skipped:', coAuthorErr.message);
       }
 
       let pendingInvites = 0;
@@ -1398,7 +1400,7 @@ exports.getProfileActivity = async (req, res) => {
           .eq('status', 'pending');
         pendingInvites = (invites || []).filter((inv) => !inv.expires_at || new Date(inv.expires_at) >= new Date()).length;
       } catch (inviteErr) {
-        console.warn('[getProfileActivity] invitation lookup skipped:', inviteErr.message);
+        logger.warn('[getProfileActivity] invitation lookup skipped:', inviteErr.message);
       }
 
       const authored = authoredPapers || [];
@@ -1559,7 +1561,7 @@ exports.getProfileActivity = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get profile activity error:', error);
+    logger.error('Get profile activity error:', error);
     return sendError(res, { status: 500, code: 'GET_PROFILE_ACTIVITY_FAILED', message: 'Failed to fetch profile activity' });
   }
 };
@@ -1590,7 +1592,7 @@ exports.getAllUsers = async (req, res) => {
       users: (users || []).map((user) => attachFullName(attachOrganizationLabels(user, organizationLookups))),
     });
   } catch (error) {
-    console.error('Get all users error:', error);
+    logger.error('Get all users error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -1690,7 +1692,7 @@ exports.updateUser = async (req, res) => {
       data: { user: attachFullName(attachOrganizationLabels(updatedUser, organizationLookups)) },
     });
   } catch (error) {
-    console.error('Update user error:', error);
+    logger.error('Update user error:', error);
     return sendError(res, { status: 500, code: 'UPDATE_USER_FAILED', message: 'Failed to update user' });
   }
 };
@@ -1715,7 +1717,7 @@ exports.searchStudents = async (req, res) => {
 
     res.json({ students: (students || []).map(attachFullName) });
   } catch (error) {
-    console.error('Search students error:', error);
+    logger.error('Search students error:', error);
     res.status(500).json({ error: 'Failed to search students' });
   }
 };
@@ -1849,7 +1851,7 @@ exports.createPrivilegedUser = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Create privileged user error:', error);
+    logger.error('Create privileged user error:', error);
     res.status(500).json({ error: 'Failed to create user account.' });
   }
 };
@@ -2046,7 +2048,7 @@ exports.bulkImportUsersCsv = async (req, res) => {
       data: summary,
     });
   } catch (error) {
-    console.error('Bulk import users CSV error:', error);
+    logger.error('Bulk import users CSV error:', error);
     return sendError(res, {
       status: 500,
       code: 'BULK_IMPORT_FAILED',
@@ -2056,6 +2058,20 @@ exports.bulkImportUsersCsv = async (req, res) => {
 };
 
 exports.getSystemHealth = async (req, res) => {
+  try {
+    const data = await getOrSet('admin:system-health', TTL.SYSTEM_HEALTH, () => buildSystemHealthPayload());
+    return sendSuccess(res, { data });
+  } catch (error) {
+    logger.error('Get system health error:', error);
+    return sendError(res, {
+      status: 500,
+      code: 'GET_SYSTEM_HEALTH_FAILED',
+      message: 'Failed to fetch system health metrics',
+    });
+  }
+};
+
+async function buildSystemHealthPayload() {
   try {
     const now = new Date();
     const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
@@ -2138,7 +2154,7 @@ exports.getSystemHealth = async (req, res) => {
         ? Math.round((errors24h / requests24h) * 10000) / 100
         : 0;
     } catch (err) {
-      console.error('System health API metrics error:', err.message);
+      logger.error('System health API metrics error:', err.message);
     }
 
     try {
@@ -2165,7 +2181,7 @@ exports.getSystemHealth = async (req, res) => {
       response.workflow.pendingEditor = rows.filter((p) => p.status === 'pending_editor').length;
       response.workflow.pendingAdmin = rows.filter((p) => p.status === 'pending_admin').length;
     } catch (err) {
-      console.error('System health storage/workflow metrics error:', err.message);
+      logger.error('System health storage/workflow metrics error:', err.message);
     }
 
     try {
@@ -2196,7 +2212,7 @@ exports.getSystemHealth = async (req, res) => {
         );
       }
     } catch (err) {
-      console.error('System health AI metrics error:', err.message);
+      logger.error('System health AI metrics error:', err.message);
     }
 
     try {
@@ -2315,26 +2331,21 @@ exports.getSystemHealth = async (req, res) => {
       response.cleanup.legacyTableRows.authorInvitations = authorInvitationsCount;
       response.cleanup.legacyTableRows.systemPolicies = systemPoliciesCount;
     } catch (err) {
-      console.error('System health cleanup metrics error:', err.message);
+      logger.error('System health cleanup metrics error:', err.message);
     }
 
-    return sendSuccess(res, { data: response });
-  } catch (error) {
-    console.error('Get system health error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'GET_SYSTEM_HEALTH_FAILED',
-      message: 'Failed to fetch system health metrics',
-    });
+    return response;
+  } catch (innerError) {
+    throw innerError;
   }
-};
+}
 
 exports.getSubmissionPolicy = async (req, res) => {
   try {
     const policy = await getSystemPolicy();
     return sendSuccess(res, { data: policy });
   } catch (error) {
-    console.error('Get submission policy error:', error);
+    logger.error('Get submission policy error:', error);
     return sendError(res, {
       status: 500,
       code: 'GET_SUBMISSION_POLICY_FAILED',
@@ -2353,7 +2364,7 @@ exports.getSystemPolicySettings = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get system policy settings error:', error);
+    logger.error('Get system policy settings error:', error);
     return sendError(res, {
       status: 500,
       code: 'GET_SYSTEM_POLICY_SETTINGS_FAILED',
@@ -2387,7 +2398,7 @@ exports.updateSystemPolicySettings = async (req, res) => {
       });
     }
 
-    console.error('Update system policy settings error:', error);
+    logger.error('Update system policy settings error:', error);
     return sendError(res, {
       status: 500,
       code: 'UPDATE_SYSTEM_POLICY_SETTINGS_FAILED',
@@ -2408,7 +2419,7 @@ exports.deleteUser = async (req, res) => {
 
     const { data: existingUser, error: existingUserError } = await supabase
       .from('users')
-      .select('id, email')
+      .select('id, email, auth_user_id, recovery_email')
       .eq('id', id)
       .maybeSingle();
 
@@ -2425,14 +2436,19 @@ exports.deleteUser = async (req, res) => {
     if (error) throw error;
 
     try {
-      await deleteAuthUserByEmail(existingUser.email);
+      if (existingUser.auth_user_id) {
+        await supabase.from('profiles').delete().eq('id', existingUser.auth_user_id);
+        await deleteAuthUserById(existingUser.auth_user_id);
+      } else {
+        await deleteAuthUserByEmail(existingUser.recovery_email || existingUser.email);
+      }
     } catch (authDeleteError) {
-      console.error('Delete auth user warning:', authDeleteError.message);
+      logger.error('Delete auth user warning:', authDeleteError.message);
     }
 
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
-    console.error('Delete user error:', error);
+    logger.error('Delete user error:', error);
     res.status(500).json({ error: 'Failed to delete user' });
   }
 };
@@ -2467,7 +2483,7 @@ exports.suspendUser = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Suspend user error:', error);
+    logger.error('Suspend user error:', error);
     return res.status(500).json({ error: 'Failed to suspend user' });
   }
 };
@@ -2497,7 +2513,7 @@ exports.reactivateUser = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Reactivate user error:', error);
+    logger.error('Reactivate user error:', error);
     return res.status(500).json({ error: 'Failed to reactivate user' });
   }
 };

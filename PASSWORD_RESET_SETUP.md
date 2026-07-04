@@ -279,6 +279,26 @@ resolves the linked recovery address for Supabase `signInWithPassword`.
 
 ---
 
+## 11. Production email (custom SMTP)
+
+For production with many users, **enable custom SMTP** in Supabase:
+
+Dashboard: **Authentication → Emails → SMTP Settings**
+
+1. Enable **Custom SMTP**
+2. Use your Resend SMTP credentials (or institutional mail server):
+   - Host: `smtp.resend.com`
+   - Port: `465` (SSL) or `587` (TLS)
+   - Username: `resend`
+   - Password: your Resend API key
+3. Set sender to a verified domain (not `onboarding@resend.dev`)
+4. Verify SPF/DKIM records on your domain
+
+Built-in Supabase email is rate-limited (~few per hour) and unsuitable for
+mass student onboarding. Custom SMTP is required before launch to a large cohort.
+
+---
+
 ## 8. Note: Resend and non-auth emails
 
 Supabase Auth's built-in email service only sends **auth** emails (password

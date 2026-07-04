@@ -17,12 +17,20 @@ const {
 const { sendSuccess, sendError } = require('../utils/response');
 const { attachFullName, buildFullName } = require('../utils/name');
 const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/workflowEmail');
+const { invalidateBrowseCaches } = require('../utils/cache');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const crypto = require('crypto');
 
 const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'research-papers';
 const FINAL_STATUSES = ['approved', 'published', 'rejected'];
+const BROWSE_VISIBLE_STATUSES = new Set(['approved', 'published']);
+
+const maybeInvalidateBrowseCache = (previousStatus, newStatus) => {
+  if (BROWSE_VISIBLE_STATUSES.has(previousStatus) || BROWSE_VISIBLE_STATUSES.has(newStatus)) {
+    invalidateBrowseCaches();
+  }
+};
 const WORKFLOW_EVENT_STATUS_BY_ACTION = {
   approve: 'approved',
   reject: 'rejected',
@@ -461,6 +469,8 @@ exports.approveResearch = async (req, res) => {
 
     if (updateError) return sendError(res, { status: 500, code: 'UPDATE_PAPER_STATUS_FAILED', message: 'Failed to update paper status' });
 
+    maybeInvalidateBrowseCache(paper.status, newStatus);
+
     await insertApprovalWorkflowEvent({
       researchId: id,
       reviewerId,
@@ -558,6 +568,8 @@ exports.rejectResearch = async (req, res) => {
       .update({ status: rejectedStatus, rejection_reason: reason.trim() })
       .eq('id', id);
     if (updateError) return sendError(res, { status: 500, code: 'REJECT_RESEARCH_FAILED', message: 'Failed to reject paper' });
+
+    maybeInvalidateBrowseCache(paper.status, rejectedStatus);
 
     await notifyUser({
       userId: paper.author_id,
@@ -676,6 +688,8 @@ exports.requestRevision = async (req, res) => {
       .update({ status: newStatus, revision_notes: notes, last_reviewer_role: reviewerRole, previous_status: paper.status, updated_at: new Date().toISOString() })
       .eq('id', id).select().single();
     if (updateError) return sendError(res, { status: 500, code: 'UPDATE_PAPER_STATUS_FAILED', message: 'Failed to update paper status' });
+
+    maybeInvalidateBrowseCache(paper.status, newStatus);
 
     if (notificationUserId) {
       await notifyUser({
@@ -1063,6 +1077,8 @@ exports.deanBypassApprove = async (req, res) => {
       .update({ status: target, bypass_reason: reason, bypassed_by: deanId, bypassed_at: new Date().toISOString(), ...(target === 'approved' ? { published_date: new Date().toISOString() } : {}) })
       .eq('id', id).select().single();
     if (updateError) return sendError(res, { status: 500, code: 'DEAN_BYPASS_FAILED', message: 'Failed to bypass approve paper' });
+
+    maybeInvalidateBrowseCache(previousStatus, target);
 
     await insertApprovalWorkflowEvent({
       researchId: id,

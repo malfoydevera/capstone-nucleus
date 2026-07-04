@@ -1,0 +1,27 @@
+name: NUCLEUS Backend
+services:
+  - type: web
+    name: nucleus-api
+    env: node
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_INLINE_SCHEDULERS
+        value: false
+      - key: TRUST_PROXY
+        value: "1"
+
+  - type: cron
+    name: nucleus-jobs
+    env: node
+    rootDir: backend
+    buildCommand: npm ci
+    schedule: "0 * * * *"
+    startCommand: node scripts/run-jobs.js --job=all
+    envVars:
+      - key: NODE_ENV
+        value: production

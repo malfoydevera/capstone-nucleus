@@ -68,6 +68,8 @@ const TTL = {
   DEAN_CHAIR:   300,  //  5 min
   DEPARTMENTS:  600,  // 10 min
   PUBLISHED:     90,  // 90 sec — browse/search listings
+  ORG_LOOKUPS:  600,  // 10 min — departments/programs
+  SYSTEM_HEALTH:  30,  // 30 sec — admin health dashboard
 };
 
 /**
@@ -96,4 +98,10 @@ function invalidatePrefix(prefix) {
   if (keys.length) cache.del(keys);
 }
 
-module.exports = { cache, TTL, getOrSet, invalidate, invalidatePrefix };
+/** Invalidate browse/search caches after paper visibility changes. */
+function invalidateBrowseCaches() {
+  invalidatePrefix('published:');
+  invalidatePrefix('semantic:');
+}
+
+module.exports = { cache, TTL, getOrSet, invalidate, invalidatePrefix, invalidateBrowseCaches };

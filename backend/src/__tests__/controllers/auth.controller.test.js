@@ -19,7 +19,14 @@ jest.mock('../../utils/supabaseAuth', () => ({
   refreshAuthSession: jest.fn(),
   ensureAuthUser: jest.fn(),
   deleteAuthUserById: jest.fn().mockResolvedValue(undefined),
+  signUpWithConfirmation: jest.fn(),
+  getAuthUserById: jest.fn(),
 }));
+
+const STUDENT_EMAIL_DOMAIN = 'students.nu-dasma.edu.ph';
+const STAFF_EMAIL_DOMAIN = 'nu-dasma.edu.ph';
+const studentEmail = (local) => `${local}@${STUDENT_EMAIL_DOMAIN}`;
+const staffEmail = (local) => `${local}@${STAFF_EMAIL_DOMAIN}`;
 
 const supabase = require('../../config/supabase');
 const authController = require('../../controllers/auth.controller');
@@ -29,6 +36,8 @@ const {
   refreshAuthSession,
   ensureAuthUser,
   deleteAuthUserById,
+  signUpWithConfirmation,
+  getAuthUserById,
 } = require('../../utils/supabaseAuth');
 
 beforeAll(() => {
@@ -48,8 +57,18 @@ function createRes() {
 describe('authController.register', () => {
   beforeEach(() => {
     ensureAuthUser.mockResolvedValue({
-      user: { id: 'auth-user-1', email: 'user@test.com' },
+      user: { id: 'auth-user-1', email: studentEmail('user') },
       created: false,
+    });
+    signUpWithConfirmation.mockResolvedValue({
+      data: {
+        user: { id: 'auth-user-1', email: studentEmail('user') },
+        session: {
+          access_token: 'supabase-access-token',
+          refresh_token: 'supabase-refresh-token',
+        },
+      },
+      error: null,
     });
     signInWithPassword.mockResolvedValue({
       data: {
@@ -57,10 +76,11 @@ describe('authController.register', () => {
           access_token: 'supabase-access-token',
           refresh_token: 'supabase-refresh-token',
         },
-        user: { id: 'auth-user-1', email: 'user@test.com' },
+        user: { id: 'auth-user-1', email: studentEmail('user') },
       },
       error: null,
     });
+    getAuthUserById.mockResolvedValue(null);
   });
 
   test('TC-AUTH-001: rejects when email already exists (returns 400 USER_EXISTS)', async () => {
@@ -71,7 +91,7 @@ describe('authController.register', () => {
         return {
           select: () => ({
             eq: () => ({
-              single: async () => ({ data: { id: 'u1', email: 'taken@test.com' }, error: null }),
+              maybeSingle: async () => ({ data: { id: 'u1', email: studentEmail('taken') }, error: null }),
             }),
           }),
           insert: () => ({
@@ -82,7 +102,7 @@ describe('authController.register', () => {
       return { insert: async () => ({ error: null }) };
     });
 
-    const req = { body: { email: 'taken@test.com', password: 'SecurePass1', fullName: 'Test User', role: 'student' } };
+    const req = { body: { email: studentEmail('taken'), password: 'SecurePass1', fullName: 'Test User', role: 'student' } };
     const res = createRes();
 
     await authController.register(req, res);
@@ -94,7 +114,7 @@ describe('authController.register', () => {
   });
 
   test('TC-AUTH-002: rejects password shorter than 8 characters', async () => {
-    const req = { body: { email: 'new@test.com', password: 'short', fullName: 'Test User', role: 'student' } };
+    const req = { body: { email: studentEmail('new'), password: 'short', fullName: 'Test User', role: 'student' } };
     const res = createRes();
 
     await authController.register(req, res);
@@ -118,7 +138,7 @@ describe('authController.register', () => {
   });
 
   test('TC-AUTH-002c: rejects non-student role on public registration (returns 403)', async () => {
-    const req = { body: { email: 'hacker@test.com', password: 'SecurePass1', fullName: 'Attacker Admin', role: 'admin' } };
+    const req = { body: { email: staffEmail('hacker'), password: 'SecurePass1', fullName: 'Attacker Admin', role: 'admin' } };
     const res = createRes();
 
     await authController.register(req, res);
@@ -136,7 +156,7 @@ describe('authController.register', () => {
         return {
           select: () => ({
             eq: () => ({
-              single: async () => ({ data: null, error: null }),
+              maybeSingle: async () => ({ data: null, error: null }),
             }),
           }),
           insert: (rows) => {
@@ -165,32 +185,46 @@ describe('authController.register', () => {
       }
 
       if (table === 'programs') {
+        const programRows = [
+          {
+            id: 'prog-1',
+            name: 'BS Information Technology - Mobile and Web Applications',
+            code: 'BSIT-MWA',
+            department_id: 'dept-1',
+            departments: { name: 'School of Engineering, Computing, and Architecture' },
+          },
+        ];
         return {
-          select: async () => ({
-            data: [
-              {
-                id: 'prog-1',
-                name: 'BS Information Technology - Mobile and Web Applications',
-                code: 'BSIT-MWA',
-                department_id: 'dept-1',
-                departments: { name: 'School of Engineering, Computing, and Architecture' },
-              },
-            ],
-            error: null,
-          }),
+          select: () => {
+            const chain = {
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: programRows[0],
+                  error: null,
+                }),
+              }),
+            };
+            chain.then = (resolve) => resolve({ data: programRows, error: null });
+            return chain;
+          },
         };
       }
 
       if (table === 'departments') {
+        const departmentRows = [{ id: 'dept-1', name: 'School of Engineering, Computing, and Architecture' }];
         return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: { id: 'dept-1', name: 'School of Engineering, Computing, and Architecture' },
-                error: null,
+          select: () => {
+            const chain = {
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: departmentRows[0],
+                  error: null,
+                }),
               }),
-            }),
-          }),
+            };
+            chain.then = (resolve) => resolve({ data: departmentRows, error: null });
+            return chain;
+          },
         };
       }
 
@@ -199,7 +233,7 @@ describe('authController.register', () => {
 
     const req = {
       body: {
-        email: 'student@test.com',
+        email: studentEmail('student'),
         password: 'SecurePass1',
         firstName: 'Test',
         lastName: 'Student',
@@ -243,7 +277,7 @@ describe('authController.login', () => {
           select: () => ({
             eq: () => ({
               single: async () => ({
-                data: { id: 'u1', email: 'user@test.com', password: hashedPassword, role: 'student', first_name: 'Test', middle_name: null, last_name: 'User', department: null, program: null },
+                data: { id: 'u1', email: studentEmail('user'), password: hashedPassword, role: 'student', first_name: 'Test', middle_name: null, last_name: 'User', department: null, program: null },
                 error: null,
               }),
             }),
@@ -253,7 +287,7 @@ describe('authController.login', () => {
       return { insert: async () => ({ error: null }) };
     });
 
-    const req = { body: { email: 'user@test.com', password: 'WrongPassword' } };
+    const req = { body: { email: studentEmail('user'), password: 'WrongPassword' } };
     const res = createRes();
 
     await authController.login(req, res);
@@ -282,7 +316,7 @@ describe('authController.login', () => {
       return { insert: async () => ({ error: null }) };
     });
 
-    const req = { body: { email: 'ghost@test.com', password: 'AnyPass123' } };
+    const req = { body: { email: studentEmail('ghost'), password: 'AnyPass123' } };
     const res = createRes();
 
     await authController.login(req, res);
@@ -297,7 +331,7 @@ describe('authController.login', () => {
           access_token: 'supabase-access-token',
           refresh_token: 'supabase-refresh-token',
         },
-        user: { id: 'auth-1', email: 'mixed@test.com' },
+        user: { id: 'auth-1', email: studentEmail('mixed') },
       },
       error: null,
     });
@@ -308,21 +342,23 @@ describe('authController.login', () => {
           select: () => ({
             eq: (col, val) => ({
               single: async () => {
-                // Verify the controller lowercased the email before querying
-                expect(val).toBe('mixed@test.com');
+                expect(val).toBe(studentEmail('mixed'));
                 return {
-                  data: { id: 'u2', email: 'mixed@test.com', password: 'unused-under-supabase-auth', role: 'student', first_name: 'Mixed', middle_name: null, last_name: 'Case', department: null, program: null },
+                  data: { id: 'u2', email: studentEmail('mixed'), password: 'unused-under-supabase-auth', role: 'student', first_name: 'Mixed', middle_name: null, last_name: 'Case', department: null, program: null },
                   error: null,
                 };
               },
             }),
+          }),
+          update: () => ({
+            eq: async () => ({ error: null }),
           }),
         };
       }
       return { insert: async () => ({ error: null }) };
     });
 
-    const req = { body: { email: 'MiXeD@Test.COM', password: 'SecurePass1' } };
+    const req = { body: { email: 'MiXeD@STUDENTS.NU-DASMA.EDU.PH', password: 'SecurePass1' } };
     const res = createRes();
 
     await authController.login(req, res);
@@ -340,7 +376,7 @@ describe('authController.login', () => {
           access_token: 'supabase-access-token',
           refresh_token: 'supabase-refresh-token',
         },
-        user: { id: 'auth-1', email: 'suspended@test.com' },
+        user: { id: 'auth-1', email: studentEmail('suspended') },
       },
       error: null,
     });
@@ -353,7 +389,7 @@ describe('authController.login', () => {
               single: async () => ({
                 data: {
                   id: 'u3',
-                  email: 'suspended@test.com',
+                  email: studentEmail('suspended'),
                   password: 'unused-under-supabase-auth',
                   role: 'student',
                   is_active: false,
@@ -369,7 +405,7 @@ describe('authController.login', () => {
       return { insert: async () => ({ error: null }) };
     });
 
-    const req = { body: { email: 'suspended@test.com', password: 'SecurePass1' } };
+    const req = { body: { email: studentEmail('suspended'), password: 'SecurePass1' } };
     const res = createRes();
 
     await authController.login(req, res);
@@ -387,7 +423,7 @@ describe('authController.login', () => {
           refresh_token: 'new-refresh-token',
         },
         user: {
-          email: 'student@test.com',
+          email: studentEmail('student'),
         },
       },
       error: null,
@@ -401,7 +437,7 @@ describe('authController.login', () => {
               maybeSingle: async () => ({
                 data: {
                   id: 'student-1',
-                  email: 'student@test.com',
+                  email: studentEmail('student'),
                   first_name: 'Test',
                   middle_name: null,
                   last_name: 'Student',
@@ -433,7 +469,7 @@ describe('authController.login', () => {
     expect(payload.success).toBe(true);
     expect(payload.data.token).toBe('new-access-token');
     expect(payload.data.refreshToken).toBe('new-refresh-token');
-    expect(payload.data.user.email).toBe('student@test.com');
+    expect(payload.data.user.email).toBe(studentEmail('student'));
   });
 });
 
@@ -495,7 +531,7 @@ describe('authController suspension management', () => {
 describe('authController.createPrivilegedUser', () => {
   test('creates a program chair with canonical program and department assignment', async () => {
     ensureAuthUser.mockResolvedValue({
-      user: { id: 'auth-user-2', email: 'chair@test.com' },
+      user: { id: 'auth-user-2', email: staffEmail('chair') },
       created: true,
     });
 
@@ -571,7 +607,7 @@ describe('authController.createPrivilegedUser', () => {
 
     const req = {
       body: {
-        email: 'chair@test.com',
+        email: staffEmail('chair'),
         password: 'SecurePass1',
         firstName: 'Program',
         lastName: 'Chair',
@@ -606,7 +642,7 @@ describe('authController.updateUser', () => {
               maybeSingle: async () => ({
                 data: {
                   id: 'chair-1',
-                  email: 'chair@test.com',
+                  email: staffEmail('chair'),
                   role: 'program_chair',
                   first_name: 'Program',
                   middle_name: null,
@@ -632,7 +668,7 @@ describe('authController.updateUser', () => {
                   maybeSingle: async () => ({
                     data: {
                       id: 'chair-1',
-                      email: 'chair@test.com',
+                      email: staffEmail('chair'),
                       first_name: payload.first_name,
                       middle_name: payload.middle_name,
                       last_name: payload.last_name,
@@ -718,7 +754,7 @@ describe('authController.updateUser', () => {
 describe('authController.bulkImportUsersCsv', () => {
   test('normalizes program chair department and program during CSV import', async () => {
     ensureAuthUser.mockResolvedValue({
-      user: { id: 'auth-user-3', email: 'chair@test.com' },
+      user: { id: 'auth-user-3', email: staffEmail('chair') },
       created: true,
     });
 
@@ -776,7 +812,7 @@ describe('authController.bulkImportUsersCsv', () => {
       file: {
         buffer: Buffer.from([
           'email,password,role,firstName,lastName,department,program',
-          'chair@test.com,SecurePass1,program_chair,Program,Chair,College of Engineering,BS Computer Engineering',
+          `${staffEmail('chair')},SecurePass1,program_chair,Program,Chair,College of Engineering,BS Computer Engineering`,
         ].join('\n')),
       },
     };

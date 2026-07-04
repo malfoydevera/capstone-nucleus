@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /capstone-nucleus/backend
+    schedule: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /capstone-nucleus/frontend
+    schedule: weekly
+    open-pull-requests-limit: 5

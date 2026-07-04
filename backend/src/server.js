@@ -11,6 +11,14 @@ const departmentRoutes = require('./routes/department.routes');
 const { startEscalationScheduler } = require('./utils/escalationAlerts');
 const { startRecycleBinCleanupScheduler } = require('./utils/recycleBinCleanup');
 const { startReviewDeadlineReminderScheduler } = require('./utils/reviewDeadlineReminders');
+const { initSentry, captureException } = require('./config/sentry');
+const logger = require('./utils/logger');
+const pinoHttp = require('pino-http');
+const { registerProcessHandlers, requestIdMiddleware } = require('./utils/processHandlers');
+const { checkReadiness } = require('./utils/readiness');
+const { MAX_MB } = require('./config/upload');
+const { sendError } = require('./utils/response');
+
 dotenv.config();
 
 const validateRequiredEnv = () => {
@@ -21,6 +29,7 @@ const validateRequiredEnv = () => {
 };
 
 validateRequiredEnv();
+initSentry();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -40,7 +49,36 @@ const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http:
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-// Middleware
+const schedulerTimers = [];
+
+const startInlineSchedulers = () => {
+  if (process.env.ENABLE_INLINE_SCHEDULERS !== 'true') {
+    logger.info('Inline schedulers disabled — use scripts/run-jobs.js via cron worker');
+    return;
+  }
+
+  logger.info('Starting inline schedulers (dev mode)');
+  schedulerTimers.push(startEscalationScheduler());
+  schedulerTimers.push(startRecycleBinCleanupScheduler());
+  schedulerTimers.push(startReviewDeadlineReminderScheduler());
+};
+
+const stopSchedulers = () => {
+  schedulerTimers.forEach((timer) => clearInterval(timer));
+  schedulerTimers.length = 0;
+};
+
+app.use(requestIdMiddleware);
+
+app.use(pinoHttp({
+  logger,
+  genReqId: (req) => req.id,
+  customProps: (req) => ({ requestId: req.id }),
+  autoLogging: {
+    ignore: (req) => req.url === '/health' || req.url === '/ready',
+  },
+}));
+
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -59,47 +97,76 @@ app.use(cors({
 app.use(compression());
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/research', researchRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/departments', departmentRoutes);
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Server is running' });
+app.use((req, res, next) => {
+  res.locals.requestId = req.id;
+  next();
 });
 
-// Error handling middleware
+const mountApiRoutes = (prefix) => {
+  app.use(`${prefix}/auth`, authRoutes);
+  app.use(`${prefix}/research`, researchRoutes);
+  app.use(`${prefix}/ai`, aiRoutes);
+  app.use(`${prefix}/departments`, departmentRoutes);
+};
+
+mountApiRoutes('/api');
+mountApiRoutes('/api/v1');
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', message: 'Server is running', requestId: req.id });
+});
+
+app.get('/ready', async (req, res) => {
+  const result = await checkReadiness();
+  if (!result.ok) {
+    return sendError(res, {
+      status: 503,
+      code: 'NOT_READY',
+      message: result.error || 'Service not ready',
+      requestId: req.id,
+    });
+  }
+  return res.json({ status: 'READY', requestId: req.id });
+});
+
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File size too large. Maximum 10MB allowed.' });
+      return res.status(400).json({
+        error: `File size too large. Maximum ${MAX_MB}MB allowed.`,
+        requestId: req.id,
+      });
     }
   }
 
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    return res.status(400).json({ error: 'Invalid JSON payload' });
+    return res.status(400).json({ error: 'Invalid JSON payload', requestId: req.id });
   }
 
-  console.error('Server error:', err);
-  const responseMessage = process.env.NODE_ENV === 'production' ? 'Internal server error' : (err.message || 'Server error');
-  res.status(500).json({ error: responseMessage });
+  if (err.message === 'CORS origin denied') {
+    return res.status(403).json({ error: 'CORS origin denied', requestId: req.id });
+  }
+
+  logger.error({ err: err.message, requestId: req.id, stack: err.stack }, 'Server error');
+  captureException(err, { requestId: req.id });
+
+  const responseMessage = process.env.NODE_ENV === 'production'
+    ? 'Internal server error'
+    : (err.message || 'Server error');
+
+  return sendError(res, {
+    status: err.status || 500,
+    code: 'SERVER_ERROR',
+    message: responseMessage,
+    requestId: req.id,
+  });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-
-  if (process.env.ENABLE_ESCALATION_ALERTS !== 'false') {
-    startEscalationScheduler();
-  }
-
-  if (process.env.ENABLE_RECYCLE_BIN_CLEANUP !== 'false') {
-    startRecycleBinCleanupScheduler();
-  }
-
-  if (process.env.ENABLE_REVIEW_DEADLINE_REMINDERS !== 'false') {
-    startReviewDeadlineReminderScheduler();
-  }
+const server = app.listen(PORT, () => {
+  logger.info({ port: PORT, env: process.env.NODE_ENV || 'development' }, 'Server running');
+  startInlineSchedulers();
 });
 
+registerProcessHandlers({ server, stopSchedulers });
+
+module.exports = app;
