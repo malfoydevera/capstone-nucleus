@@ -49,6 +49,8 @@ router.get('/students/search', authenticate, authController.searchStudents);
 // NEW: Admin Management Routes
 router.get('/admin/export/students', authenticate, authorize('admin'), adminController.exportStudentsCsv);
 router.get('/users', authenticate, authorize('admin'), apiRateLimiter, authController.getAllUsers);
+router.get('/users/:id/records', authenticate, authorize('admin'), authController.getUserRecords);
+router.post('/users/:id/records/export-pdf', authenticate, authorize('admin'), authController.exportUserRecordsPdf);
 router.patch('/users/:id', authenticate, authorize('admin'), authController.updateUser);
 router.delete('/users/:id', authenticate, authorize('admin'), authController.deleteUser);
 router.patch('/users/:id/suspend', authenticate, authorize('admin'), authController.suspendUser);

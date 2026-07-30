@@ -54,9 +54,6 @@ router.get('/dean-chair/members', authenticate, authorize('faculty'), submission
 router.get('/faculty/members', authenticate, submissionController.getFacultyMembers);
 
 // ========== DEAN ONLY ROUTES (must precede /:id catch-all) ==========
-router.get('/dean/activity-monitor', authenticate, authorize('dean'), reviewController.getDeanActivityMonitor);
-router.get('/dean/audit-logs',       authenticate, authorize('dean'), reviewController.getAuditLogs);
-router.get('/dean/audit-logs/pdf',   authenticate, authorize('dean'), reviewController.exportAuditLogsPdf);
 router.get('/dean/department-comparison', authenticate, authorize('dean'), reviewController.getDepartmentComparison);
 
 // ========== AUTHENTICATED USER ROUTES ==========

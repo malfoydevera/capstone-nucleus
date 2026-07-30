@@ -56,8 +56,7 @@ export const ROLE_GUIDANCE = {
     summary: 'The dean monitors cross-department performance, reviews escalations, and intervenes when the process stalls.',
     dashboardSteps: [
       'Use the dashboard to watch inactivity alerts, escalation notices, and cross-department trends.',
-      'Open Activity Monitor for workflow visibility and Audit Logs for accountability history.',
-      'Use the Review Queue only for papers routed to dean-level oversight or bypass decisions.',
+      'Use the Review Queue for papers routed to dean-level oversight or bypass decisions.',
     ],
     support: [
       'Document bypass reasons clearly because they affect the audit trail and user trust.',

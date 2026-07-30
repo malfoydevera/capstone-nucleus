@@ -1,9 +1,8 @@
 /**
  * review.controller.js — F-002
- * Handles: approve, reject, revision, dean-bypass, faculty/dean-chair listings, and activity monitoring.
+ * Handles: approve, reject, revision, dean-bypass, faculty/dean-chair listings.
  */
 const supabase = require('../config/supabase');
-const { logAuditEvent } = require('../utils/audit');
 const { resolvePaperFileUrl, createSignedUrl, canAccessPaper } = require('../utils/fileAccess');
 const { notifyUser, notifyUsers, notifyCoAuthors } = require('../utils/notify');
 const { WORKFLOW_POLICY, validateWorkflowAction } = require('../utils/workflowPolicy');
@@ -278,19 +277,7 @@ exports.declareConflictOfInterest = async (req, res) => {
       message: `A faculty reviewer declared a conflict of interest. Reason: ${reason.trim()}`,
     });
 
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: 'declare_conflict',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        paperTitle: paper.title,
-        previousStatus: paper.status,
-        newStatus: 'pending_editor',
-      },
-      reason: reason.trim(),
-    });
+
 
     return sendSuccess(res, {
       message: 'Conflict declared successfully. Paper removed from your queue.',
@@ -480,7 +467,7 @@ exports.approveResearch = async (req, res) => {
       previousStatus: paper.status,
       newStatus,
     });
-    await logAuditEvent({ userId: reviewerId, userRole: reviewerRole, action: 'approve', targetType: 'research_paper', targetId: id, details: { previousStatus: paper.status, newStatus, paperTitle: paper.title } });
+
     await notifyUser({
       userId: paper.author_id,
       researchId: id,
@@ -614,7 +601,7 @@ exports.rejectResearch = async (req, res) => {
       message: reason,
     });
 
-    await logAuditEvent({ userId: req.user.id, userRole: req.user.role, action: 'reject', targetType: 'research_paper', targetId: id, details: { paperTitle: paper.title, reason, rejection_category: rejectionCategory || null } });
+
     return sendSuccess(res, { message: 'Research rejected successfully', data: {} });
   } catch (error) {
     console.error('Reject research error:', error);
@@ -769,7 +756,7 @@ exports.requestRevision = async (req, res) => {
       previousStatus: paper.status,
       newStatus,
     });
-    await logAuditEvent({ userId: req.user.id, userRole: reviewerRole, action: 'revision', targetType: 'research_paper', targetId: id, details: { previousStatus: paper.status, newStatus, paperTitle: paper.title, notes } });
+
 
     return sendSuccess(res, { message: 'Revision requested successfully', data: { newStatus, paper: updatedPaper } });
   } catch (error) {
@@ -877,19 +864,7 @@ exports.returnToAuthor = async (req, res) => {
       message: `Returned by Research Editor. Notes: ${notes.trim()}`,
     });
 
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: 'staff',
-      action: 'return_to_author',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        previousStatus,
-        newStatus,
-        paperTitle: paper.title,
-      },
-      reason: notes.trim(),
-    });
+
 
     return sendSuccess(res, {
       message: 'Paper returned to author successfully',
@@ -1015,29 +990,7 @@ exports.correctMetadata = async (req, res) => {
       console.error('[correctMetadata] co-author notification failed:', coAuthorErr.message);
     }
 
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: 'staff',
-      action: 'correct_metadata',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        previous: {
-          title: paper.title,
-          abstract: paper.abstract,
-          keywords: paper.keywords,
-          category: paper.category,
-          external_author_notes: paper.external_author_notes,
-        },
-        updated: {
-          title: updatedPaper.title,
-          abstract: updatedPaper.abstract,
-          keywords: updatedPaper.keywords,
-          category: updatedPaper.category,
-          external_author_notes: updatedPaper.external_author_notes,
-        },
-      },
-    });
+
 
     return sendSuccess(res, {
       message: 'Paper metadata corrected successfully',
@@ -1093,21 +1046,7 @@ exports.deanBypassApprove = async (req, res) => {
         targetStatus: target,
       },
     });
-    await logAuditEvent({
-      userId: deanId,
-      userRole: 'dean',
-      action: 'bypass',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        previousStatus,
-        newStatus: target,
-        paperTitle: paper.title,
-        authorName: buildFullName(paper.author),
-        bypass_justification: reason,
-      },
-      reason,
-    });
+
     await notifyUser({
       userId: paper.author_id,
       researchId: id,
@@ -1284,20 +1223,7 @@ exports.assignFacultyReviewer = async (req, res) => {
       message: 'Your paper was reassigned to a faculty reviewer for continued evaluation.',
     });
 
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: 'assign_faculty',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        paperTitle: paper.title,
-        previousStatus,
-        newStatus: 'pending_faculty',
-        assignedFacultyId: faculty.id,
-      },
-      reason: notes || null,
-    });
+
 
     return sendSuccess(res, {
       message: 'Faculty reviewer assigned successfully',
@@ -1639,17 +1565,7 @@ exports.setProgramChairReviewDeadline = async (req, res) => {
       message: `Deadline set for "${paper.title}" on ${parsedDeadline.toLocaleString()}.`,
     });
 
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: 'set_review_deadline',
-      targetType: 'research_paper',
-      targetId: id,
-      details: {
-        paperTitle: paper.title,
-        deadlineAt: parsedDeadline.toISOString(),
-      },
-    });
+
 
     return sendSuccess(res, {
       message: 'Review deadline set successfully',
@@ -1860,140 +1776,7 @@ exports.getDepartmentComparison = async (req, res) => {
   }
 };
 
-exports.getDeanActivityMonitor = async (req, res) => {
-  try {
-    const { data: allPapers, error: papersError } = await supabase.from('research_papers')
-      .select('id, title, status, created_at, updated_at, submission_date, bypass_reason, bypassed_by, bypassed_at, dean_chair_id, faculty_id, author:users!author_id(id, first_name, middle_name, last_name, email, role)')
-      .order('updated_at', { ascending: false }).limit(200);
-    if (papersError) throw papersError;
 
-    let recentActions = [], auditLogs = [];
-    try { const { data } = await supabase.from('approval_workflow').select('*, reviewer:users!approval_workflow_reviewer_id_fkey(first_name, middle_name, last_name, role)').order('created_at', { ascending: false }).limit(50); recentActions = data || []; } catch {}
-    try { const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(50); auditLogs = data || []; } catch {}
-
-    const papers = allPapers || [];
-    const summary = {
-      total: papers.length,
-      pendingFaculty: papers.filter(p => p.status === 'pending_faculty').length,
-      pendingDean: papers.filter(p => p.status === 'pending_dean').length,
-      pendingProgramChair: papers.filter(p => p.status === 'pending_program_chair').length,
-      pendingEditor: papers.filter(p => p.status === 'pending_editor').length,
-      pendingAdmin: papers.filter(p => p.status === 'pending_admin').length,
-      approved: papers.filter(p => ['approved', 'published'].includes(p.status)).length,
-      rejected: papers.filter(p => p.status === 'rejected').length,
-      revisionRequired: papers.filter(p => p.status === 'revision_required').length,
-      bypassed: papers.filter(p => p.bypass_reason).length,
-    };
-
-    const inactivityThresholdDays = parseInt(req.query.inactivityDays) || 3;
-    const thresholdDate = new Date();
-    thresholdDate.setDate(thresholdDate.getDate() - inactivityThresholdDays);
-    const stalePcPapers = papers.filter(p => p.status === 'pending_program_chair' && new Date(p.updated_at || p.created_at) < thresholdDate);
-
-    return sendSuccess(res, {
-      data: {
-        summary,
-        papers: papers.map(p => ({ ...p, users: attachFullName(p.author) })),
-        recentActions: recentActions.map(action => ({ ...action, reviewer: attachFullName(action.reviewer) })),
-        auditLogs,
-        inactivityAlerts: stalePcPapers.map(p => ({ ...p, users: attachFullName(p.author), daysStale: Math.ceil((Date.now() - new Date(p.updated_at || p.created_at)) / 86400000) })),
-        inactivityThresholdDays,
-      },
-    });
-  } catch (error) {
-    console.error('Dean activity monitor error:', error);
-    return sendError(res, { status: 500, code: 'GET_DEAN_ACTIVITY_MONITOR_FAILED', message: 'Server error' });
-  }
-};
-
-exports.getAuditLogs = async (req, res) => {
-  try {
-    const { action, role, from, to, limit: queryLimit } = req.query;
-    const maxLimit = Math.min(parseInt(queryLimit) || 100, 500);
-    let query = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(maxLimit);
-    if (action) query = query.eq('action', action);
-    if (role) query = query.eq('user_role', role);
-    if (from) query = query.gte('created_at', from);
-    if (to) query = query.lte('created_at', to);
-    const { data: logs, error } = await query;
-    if (error) throw error;
-    return sendSuccess(res, { data: { logs: logs || [] } });
-  } catch (error) {
-    console.error('Get audit logs error:', error);
-    return sendError(res, { status: 500, code: 'GET_AUDIT_LOGS_FAILED', message: 'Server error' });
-  }
-};
-
-exports.exportAuditLogsPdf = async (req, res) => {
-  try {
-    const { action, role, from, to, limit: queryLimit } = req.query;
-    const maxLimit = Math.min(parseInt(queryLimit) || 300, 1000);
-
-    let query = supabase
-      .from('audit_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(maxLimit);
-
-    if (action) query = query.eq('action', action);
-    if (role) query = query.eq('user_role', role);
-    if (from) query = query.gte('created_at', from);
-    if (to) query = query.lte('created_at', to);
-
-    const { data: logs, error } = await query;
-    if (error) throw error;
-
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
-    const fileName = `dean_audit_logs_${new Date().toISOString().slice(0, 10)}.pdf`;
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=\"${fileName}\"`);
-
-    doc.pipe(res);
-
-    doc.fontSize(18).text('NUCLEUS Audit Logs', { align: 'left' });
-    doc.moveDown(0.3);
-    doc
-      .fontSize(10)
-      .fillColor('#555')
-      .text(`Generated: ${new Date().toLocaleString()}`)
-      .text(`Filters: action=${action || 'all'}, role=${role || 'all'}, from=${from || '-'}, to=${to || '-'}`)
-      .text(`Entries: ${(logs || []).length}`);
-
-    doc.moveDown(0.8);
-    doc.fillColor('#000');
-
-    if (!logs || logs.length === 0) {
-      doc.fontSize(12).text('No audit logs found for the selected filters.');
-      doc.end();
-      return;
-    }
-
-    logs.forEach((log, index) => {
-      const timestamp = log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A';
-      const detailsText = log.details ? JSON.stringify(log.details) : '-';
-      const reasonText = log.reason || '-';
-      const summary = `#${index + 1} | ${timestamp} | ${log.action || '-'} | ${log.user_role || '-'} | ${log.user_name || 'Unknown'}`;
-
-      if (doc.y > 740) {
-        doc.addPage();
-      }
-
-      doc.fontSize(10).font('Helvetica-Bold').text(summary);
-      doc.font('Helvetica').fontSize(9).text(`Target: ${log.target_type || '-'} (${log.target_id || '-'})`);
-      doc.text(`Reason: ${reasonText}`);
-      doc.text(`Details: ${detailsText.substring(0, 700)}${detailsText.length > 700 ? '...' : ''}`);
-      doc.moveDown(0.6);
-      doc.strokeColor('#dddddd').lineWidth(0.5).moveTo(40, doc.y).lineTo(555, doc.y).stroke();
-      doc.moveDown(0.6);
-    });
-
-    doc.end();
-  } catch (error) {
-    console.error('Export audit logs PDF error:', error);
-    return sendError(res, { status: 500, code: 'EXPORT_AUDIT_LOGS_PDF_FAILED', message: 'Failed to export audit logs PDF' });
-  }
-};
 
 exports.uploadAnnotationDrawing = async (req, res) => {
   try {
@@ -2118,15 +1901,7 @@ exports.uploadAnnotatedFile = async (req, res) => {
       return sendError(res, { status: 500, code: 'UPDATE_FAILED', message: 'Failed to update paper record' });
     }
 
-    await logAuditEvent({
-      userId: req.user.id,
-      userRole: req.user.role,
-      userName: buildFullName(req.user) || null,
-      action: 'upload_annotated_pdf',
-      targetType: 'research_paper',
-      targetId: id,
-      details: { fileName: file.originalname, fileSize: file.size },
-    });
+
 
     await notifyUser({
       userId: paper.author_id,

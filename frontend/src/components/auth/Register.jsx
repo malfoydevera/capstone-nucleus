@@ -21,7 +21,7 @@ import {
   Briefcase,
   FileText
 } from 'lucide-react';
-import nuBuildingImg from '../../assets/dasma.png.jpeg';
+import nuBuildingImg from '../../assets/dasma.webp';
 
 const NAME_FIELDS = ['firstName', 'middleName', 'lastName'];
 const NAME_REGEX = /^[A-Za-z][A-Za-z\s'\-]*$/;

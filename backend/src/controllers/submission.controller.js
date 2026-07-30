@@ -232,6 +232,7 @@ exports.submitResearch = async (req, res) => {
       department,
       departmentId,
       programId,
+      doi,
     } = req.body;
     const file = req.file;
     const userId = req.user.id;
@@ -346,6 +347,13 @@ exports.submitResearch = async (req, res) => {
       }
     }
 
+    const normalizedDoi = doi
+      ? String(doi).trim().replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').trim() || null
+      : null;
+    if (normalizedDoi && !/^10\.\d{4,9}\/\S+$/i.test(normalizedDoi)) {
+      logger.warn(`[submitResearch] Unusual DOI format submitted by user ${userId}: ${normalizedDoi}`);
+    }
+
     const basePayload = {
       ...(id && { id }),
       title,
@@ -359,6 +367,7 @@ exports.submitResearch = async (req, res) => {
       department_id: resolvedDepartmentId,
       program_id: resolvedProgramId,
       status: id ? undefined : (facultyId ? 'pending_faculty' : 'pending_editor'),
+      ...(normalizedDoi !== null && { doi: normalizedDoi }),
       ...fileData,
     };
 
@@ -396,6 +405,14 @@ exports.submitResearch = async (req, res) => {
     if (dbError?.message?.includes('external_author_notes')) {
       const fallbackPayload = { ...basePayload };
       delete fallbackPayload.external_author_notes;
+      const fallbackResult = await supabase.from('research_papers').upsert(fallbackPayload).select().single();
+      research = fallbackResult.data;
+      dbError = fallbackResult.error;
+    }
+
+    if (dbError?.message?.includes('doi')) {
+      const fallbackPayload = { ...basePayload };
+      delete fallbackPayload.doi;
       const fallbackResult = await supabase.from('research_papers').upsert(fallbackPayload).select().single();
       research = fallbackResult.data;
       dbError = fallbackResult.error;
@@ -895,7 +912,8 @@ exports.getPublishedResearch = async (req, res) => {
       category,
       search,
       q,
-      year,
+      yearFrom,
+      yearTo,
       author,
       themes,
       sort = 'newest',
@@ -907,7 +925,7 @@ exports.getPublishedResearch = async (req, res) => {
       .map((entry) => entry.trim())
       .filter(Boolean);
 
-    const cacheKey = `published:${JSON.stringify({ category, textQuery, year, author, themes, sort, page, limit })}`;
+    const cacheKey = `published:${JSON.stringify({ category, textQuery, yearFrom, yearTo, author, themes, sort, page, limit })}`;
     const cachedPayload = await getOrSet(cacheKey, TTL.PUBLISHED, async () => {
       let query = supabase
         .from('research_papers')
@@ -918,9 +936,9 @@ exports.getPublishedResearch = async (req, res) => {
       if (category) query = query.eq('category', category);
       if (themeCategories.length > 0) query = query.in('category', themeCategories);
 
-      if (year) {
-        const yStart = `${year}-01-01`;
-        const yEnd = `${year}-12-31`;
+      if (yearFrom || yearTo) {
+        const yStart = `${yearFrom || 1900}-01-01`;
+        const yEnd = `${yearTo || 9999}-12-31`;
         query = query.or(
           `and(status.eq.published,published_date.gte.${yStart},published_date.lte.${yEnd}),and(status.eq.approved,created_at.gte.${yStart},created_at.lte.${yEnd})`
         );
@@ -957,9 +975,9 @@ exports.getPublishedResearch = async (req, res) => {
           .is('deleted_at', null);
         if (category) fallbackQuery = fallbackQuery.eq('category', category);
         if (themeCategories.length > 0) fallbackQuery = fallbackQuery.in('category', themeCategories);
-        if (year) {
-          const yStart = `${year}-01-01`;
-          const yEnd = `${year}-12-31`;
+        if (yearFrom || yearTo) {
+          const yStart = `${yearFrom || 1900}-01-01`;
+          const yEnd = `${yearTo || 9999}-12-31`;
           fallbackQuery = fallbackQuery.or(
             `and(status.eq.published,published_date.gte.${yStart},published_date.lte.${yEnd}),and(status.eq.approved,created_at.gte.${yStart},created_at.lte.${yEnd})`
           );
@@ -1022,11 +1040,11 @@ const roundScore = (value) =>
 /**
  * GET /api/research/semantic-search
  * AI-powered hybrid (semantic + keyword) thematic search over published papers.
- * Query params: q (required), page, limit, department, year, author.
+ * Query params: q (required), page, limit, department, yearFrom, yearTo, author.
  */
 exports.getSemanticSearch = async (req, res) => {
   try {
-    const { q, department, year, author } = req.query;
+    const { q, department, yearFrom, yearTo, author } = req.query;
     const { page, limit, from, to } = parsePublishedPagination(req.query);
     const queryText = sanitizeSearchTerm(q);
 
@@ -1039,11 +1057,12 @@ exports.getSemanticSearch = async (req, res) => {
     }
 
     const filterDepartment = UUID_PATTERN.test(String(department || '')) ? department : null;
-    const filterYear = /^\d{4}$/.test(String(year || '')) ? Number(year) : null;
+    const filterYearFrom = /^\d{4}$/.test(String(yearFrom || '')) ? Number(yearFrom) : null;
+    const filterYearTo = /^\d{4}$/.test(String(yearTo || '')) ? Number(yearTo) : null;
     const filterAuthor = sanitizeSearchTerm(author) || null;
 
     // Cache the ranked candidate pool by query + filters (not page) so paging is free.
-    const cacheKey = `semantic:${JSON.stringify({ queryText, filterDepartment, filterYear, filterAuthor })}`;
+    const cacheKey = `semantic:${JSON.stringify({ queryText, filterDepartment, filterYearFrom, filterYearTo, filterAuthor })}`;
 
     const ranked = await getOrSet(cacheKey, TTL.PUBLISHED, async () => {
       // 1. Embed the query (asymmetric RETRIEVAL_QUERY task type).
@@ -1058,7 +1077,8 @@ exports.getSemanticSearch = async (req, res) => {
         semantic_weight: SEMANTIC_WEIGHT,
         keyword_weight: KEYWORD_WEIGHT,
         filter_department: filterDepartment,
-        filter_year: filterYear,
+        filter_year_from: filterYearFrom,
+        filter_year_to: filterYearTo,
         filter_author: filterAuthor,
       });
 
@@ -1311,24 +1331,38 @@ exports.trackDownload = async (req, res) => {
     const { id } = req.params;
     const { data: paper, error: paperError } = await supabase
       .from('research_papers')
-      .select('id, status, title, author_id, faculty_id, dean_chair_id, research_authors!research_authors_research_id_fkey(user_id)')
+      .select('id, status, title, author_id, faculty_id, dean_chair_id, file_url, file_storage_path, research_authors!research_authors_research_id_fkey(user_id)')
       .eq('id', id)
       .single();
     if (paperError || !paper) return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
     if (!canAccessPaper(req.user, paper)) return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
-    const { error: updateError } = await supabase.rpc('increment_download_count', { row_id: id });
-    if (updateError) throw updateError;
-    await supabase.from('paper_downloads').insert({ paper_id: id, user_id: req.user.id, downloaded_at: new Date().toISOString() });
+
+    const fileUrl = await resolvePaperFileUrl(paper);
+    if (!fileUrl) {
+      return sendError(res, { status: 400, code: 'FILE_UNAVAILABLE', message: 'Paper file is not available' });
+    }
+
+    try {
+      const { error: updateError } = await supabase.rpc('increment_download_count', { row_id: id });
+      if (updateError) throw updateError;
+      await supabase.from('paper_downloads').insert({ paper_id: id, user_id: req.user.id, downloaded_at: new Date().toISOString() });
+    } catch (trackingError) {
+      logger.warn('[trackDownload] analytics insert failed:', trackingError.message);
+    }
 
     const title = paper.title || 'Your paper';
-    await notifyUser({
-      userId: paper.author_id,
-      researchId: id,
-      type: 'admin_download',
-      title: 'Paper downloaded by administrator',
-      message: `An administrator downloaded the PDF for "${title}".`,
-      senderUserId: req.user.id,
-    });
+    try {
+      await notifyUser({
+        userId: paper.author_id,
+        researchId: id,
+        type: 'admin_download',
+        title: 'Paper downloaded by administrator',
+        message: `An administrator downloaded the PDF for "${title}".`,
+        senderUserId: req.user.id,
+      });
+    } catch (notifyError) {
+      logger.warn('[trackDownload] author notify failed:', notifyError.message);
+    }
     try {
       await notifyCoAuthors({
         researchId: id,
@@ -1339,14 +1373,17 @@ exports.trackDownload = async (req, res) => {
         excludeUserId: paper.author_id,
         alreadyNotifiedIds: [],
       });
-    } catch (e) {
-      logger.warn('[trackDownload] co-author notify failed', e.message);
+    } catch (coAuthorError) {
+      logger.warn('[trackDownload] co-author notify failed:', coAuthorError.message);
     }
 
-    return sendSuccess(res, { message: 'Download tracked successfully', data: {} });
+    return sendSuccess(res, {
+      message: 'Download ready',
+      data: { fileUrl },
+    });
   } catch (error) {
     logger.error('Error tracking download:', error);
-    return sendError(res, { status: 500, code: 'TRACK_DOWNLOAD_FAILED', message: 'Failed to track download' });
+    return sendError(res, { status: 500, code: 'TRACK_DOWNLOAD_FAILED', message: 'Failed to prepare download' });
   }
 };
 

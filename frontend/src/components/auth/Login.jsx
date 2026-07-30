@@ -15,7 +15,7 @@ import {
   Key,
   LogIn
 } from 'lucide-react';
-import nuBuildingImg from '../../assets/dasma.png.jpeg';
+import nuBuildingImg from '../../assets/dasma.webp';
 
 const Login = () => {
   const [email, setEmail] = useState('');

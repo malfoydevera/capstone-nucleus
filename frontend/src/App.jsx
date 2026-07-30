@@ -23,9 +23,10 @@ import AdminReviewSubmissions from './pages/admin/AdminReviewSubmissions';
 import DeanChairReview from './pages/dean/DeanChairReview';
 import DeanDashboard from './pages/dean/DeanDashboard';
 import ProgramChairDashboard from './pages/dean/ProgramChairDashboard';
-import DeanActivityMonitor from './pages/dean/DeanActivityMonitor';
-import DeanAuditLogs from './pages/dean/DeanAuditLogs';
+
 import UserManagement from './pages/admin/UserManagement';
+import UserData from './pages/admin/UserData';
+import UserDataDetail from './pages/admin/UserDataDetail';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
 import ProfileDashboard from './pages/shared/ProfileDashboard';
 import Notifications from './pages/shared/Notifications';
@@ -246,16 +247,7 @@ function App() {
               </ProtectedRoute>
             } />
 
-            <Route path="/dean/activity-monitor" element={
-              <ProtectedRoute allowedRoles={['dean']}>
-                <DeanActivityMonitor />
-              </ProtectedRoute>
-            } />
-            <Route path="/dean/audit-logs" element={
-              <ProtectedRoute allowedRoles={['dean']}>
-                <DeanAuditLogs />
-              </ProtectedRoute>
-            } />
+
 
             <Route path="/staff/review" element={
               <ProtectedRoute allowedRoles={['staff', 'admin']}>
@@ -279,6 +271,11 @@ function App() {
                 <AdminReviewSubmissions />
               </ProtectedRoute>
             } />
+            <Route path="/admin/repository" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <BrowseRepository />
+              </ProtectedRoute>
+            } />
             <Route path="/admin/review/:id" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <Suspense fallback={<RouteFallback />}>
@@ -289,6 +286,16 @@ function App() {
             <Route path="/admin/users" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <UserManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/user-data" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <UserData />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/user-data/:id" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <UserDataDetail />
               </ProtectedRoute>
             } />
             <Route path="/admin/analytics" element={

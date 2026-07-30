@@ -27,8 +27,6 @@ import ReviewDetailNav from '../../components/review/ReviewDetailNav';
 import ReviewSection from '../../components/review/ReviewSection';
 import { formatFullName } from '../../utils/names';
 
-const INTERNAL_CITE_NOTE = 'NUCLEUS internal repository — not for external reference.';
-
 const formatDate = (dateString) => {
   if (!dateString) return '—';
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -57,7 +55,7 @@ const getDefaultRepositoryPath = (role) => {
     case 'dean': return '/dean/repository';
     case 'program_chair': return '/program-chair/repository';
     case 'staff': return '/staff/repository';
-    case 'admin': return '/admin/analytics';
+    case 'admin': return '/admin/repository';
     default: return '/student/browse';
   }
 };
@@ -192,10 +190,35 @@ const ResearchDetail = () => {
     }
   };
 
-  const getCitationYear = () => {
-    const sourceDate = paper?.published_date || paper?.submission_date || paper?.created_at;
-    if (!sourceDate) return 'n.d.';
-    return String(new Date(sourceDate).getFullYear());
+  const handleAdminDownload = async () => {
+    try {
+      const response = await researchAPI.trackDownload(id);
+      const downloadUrl = unwrapApiData(response).fileUrl || stablePreviewPdfUrl || paper?.file_url;
+      if (!downloadUrl) {
+        toast.error('Download unavailable');
+        return;
+      }
+
+      const fileResponse = await fetch(downloadUrl);
+      if (!fileResponse.ok) throw new Error('Download failed');
+
+      const blob = await fileResponse.blob();
+      const safeTitle = (paper?.title || 'research-paper').replace(/[^\w\s.-]+/g, '_').trim() || 'research-paper';
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${safeTitle}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+
+      setDownloadCount((prev) => prev + 1);
+      toast.success('Download started');
+    } catch (error) {
+      console.error('Failed to download paper:', error);
+      toast.error('Unable to download');
+    }
   };
 
   const getExternalAuthorNames = () => {
@@ -204,18 +227,6 @@ const ResearchDetail = () => {
     return Array.from(new Set(
       String(notes).split(',').map((entry) => entry.trim()).filter(Boolean),
     ));
-  };
-
-  const getAuthors = () => {
-    const authors = [];
-    const primaryAuthor = formatFullName(paper?.users);
-    if (primaryAuthor) authors.push(primaryAuthor);
-    const structuredAuthors = Array.isArray(paper?.structured_authors)
-      ? paper.structured_authors.map((entry) => formatFullName(entry.author)).filter(Boolean)
-      : [];
-    if (structuredAuthors.length > 0) authors.push(...structuredAuthors);
-    getExternalAuthorNames().forEach((entry) => authors.push(entry));
-    return Array.from(new Set(authors));
   };
 
   const getDisplayedCoAuthors = () => {
@@ -229,34 +240,7 @@ const ResearchDetail = () => {
   };
 
   const isFormalPublished = paper?.status === 'published' && paper?.doi;
-
-  const formatApaCitation = () => {
-    const authors = getAuthors();
-    const authorText = authors.length > 0 ? authors.join(', ') : 'Unknown Author';
-    const year = getCitationYear();
-    const title = paper?.title || 'Untitled research paper';
-    let line = `${authorText} (${year}). ${title}. NUCLEUS Research Repository.`;
-    if (isFormalPublished) {
-      line += ` https://doi.org/${paper.doi}`;
-    } else {
-      line += ` ${INTERNAL_CITE_NOTE}`;
-    }
-    return line;
-  };
-
-  const formatIeeeCitation = () => {
-    const authors = getAuthors();
-    const authorText = authors.length > 0 ? authors.join(', ') : 'Unknown Author';
-    const year = getCitationYear();
-    const title = paper?.title || 'Untitled research paper';
-    let line = `${authorText}, "${title}," NUCLEUS Research Repository, ${year}.`;
-    if (isFormalPublished) {
-      line += ` doi: ${paper.doi}`;
-    } else {
-      line += ` ${INTERNAL_CITE_NOTE}`;
-    }
-    return line;
-  };
+  const hasPendingDoi = paper?.doi && paper?.status !== 'published';
 
   const formatWorkflowLabel = (entry) => {
     const actionType = (entry?.action_type || '').toLowerCase();
@@ -274,16 +258,6 @@ const ResearchDetail = () => {
     if (status === 'revision_required') return 'Revision requested';
     if (status === 'bypassed') return 'Dean bypass';
     return entry?.status || 'Updated';
-  };
-
-  const copyCitation = async (content) => {
-    try {
-      await navigator.clipboard.writeText(content);
-      toast.success('Citation copied');
-    } catch (error) {
-      console.error('Failed to copy citation:', error);
-      toast.error('Unable to copy citation');
-    }
   };
 
   const copyPageLink = async () => {
@@ -353,18 +327,10 @@ const ResearchDetail = () => {
         <Share2 size={14} aria-hidden="true" />
         Share
       </button>
-      {user?.role === 'admin' && paper.file_url && (
+      {user?.role === 'admin' && (
         <button
           type="button"
-          onClick={async () => {
-            try {
-              await researchAPI.trackDownload(id);
-              window.open(paper.file_url, '_blank', 'noopener,noreferrer');
-              toast.success('Download logged');
-            } catch {
-              toast.error('Unable to download');
-            }
-          }}
+          onClick={handleAdminDownload}
           className="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg bg-[#3674B5] px-2.5 sm:px-3 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#2d6299] transition-colors"
         >
           <Download size={14} aria-hidden="true" />
@@ -447,6 +413,21 @@ const ResearchDetail = () => {
                   </a>
                 </div>
               )}
+
+              {hasPendingDoi && (
+                <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+                  DOI:{' '}
+                  <a
+                    href={`https://doi.org/${paper.doi}`}
+                    className="font-mono underline hover:no-underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {paper.doi}
+                  </a>
+                  <span className="ml-2 text-xs text-amber-700">(pending verification)</span>
+                </div>
+              )}
             </ReviewSection>
 
             <ReviewSection
@@ -485,7 +466,12 @@ const ResearchDetail = () => {
               icon={BookOpen}
               title="Manuscript PDF"
               description="Read-only preview with watermark"
-              action={(
+              action={user?.role === 'admin' ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#3674B5]">
+                  <Download size={12} aria-hidden="true" />
+                  Admin download available
+                </span>
+              ) : (
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
                   <Lock size={12} aria-hidden="true" />
                   View only
@@ -496,7 +482,6 @@ const ResearchDetail = () => {
                 {previewPdfUrl ? (
                   <SecurePDFViewer
                     fileUrl={previewPdfUrl}
-                    watermarkText="NU"
                     drawOverlays={drawOverlays}
                   />
                 ) : (
@@ -505,49 +490,6 @@ const ResearchDetail = () => {
                     <p className="text-sm">Preview not available</p>
                   </div>
                 )}
-              </div>
-            </ReviewSection>
-
-            <ReviewSection
-              id="citation"
-              icon={Copy}
-              title="Cite this paper"
-              description="Copy formatted citations"
-            >
-              {!isFormalPublished && (
-                <p className="mb-3 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  {INTERNAL_CITE_NOTE}
-                </p>
-              )}
-              <div className="space-y-3">
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-sm font-semibold text-slate-700">APA</p>
-                    <button
-                      type="button"
-                      onClick={() => copyCitation(formatApaCitation())}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <Copy size={12} aria-hidden="true" />
-                      Copy
-                    </button>
-                  </div>
-                  <p className="text-sm text-slate-700 leading-relaxed">{formatApaCitation()}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-sm font-semibold text-slate-700">IEEE</p>
-                    <button
-                      type="button"
-                      onClick={() => copyCitation(formatIeeeCitation())}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <Copy size={12} aria-hidden="true" />
-                      Copy
-                    </button>
-                  </div>
-                  <p className="text-sm text-slate-700 leading-relaxed">{formatIeeeCitation()}</p>
-                </div>
               </div>
             </ReviewSection>
 

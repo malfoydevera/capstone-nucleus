@@ -33,7 +33,7 @@ function pathsMatch(a, b) {
  */
 const SecurePDFViewer = ({
   fileUrl,
-  watermarkText = 'NU',
+  watermarkText = 'NU DASMARIÑAS',
   drawOverlays = [],
   pageNumber: controlledPage,
   onPageNumberChange,
@@ -186,6 +186,9 @@ const SecurePDFViewer = ({
   }
 
   const pageOverlays = drawOverlays.filter((o) => o.pageNumber === pageNumber);
+  const watermarkPattern = `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><text x="50%" y="50%" font-size="22" font-weight="bold" font-family="Arial,sans-serif" fill="#000000" fill-opacity="0.11" text-anchor="middle" dominant-baseline="middle" transform="rotate(-45 160 160)">${watermarkText}</text></svg>`
+  )}")`;
 
   return (
     <div
@@ -236,17 +239,6 @@ const SecurePDFViewer = ({
         onCopy={(e) => e.preventDefault()}
         onDragStart={(e) => e.preventDefault()}
       >
-        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Ctext x='50%25' y='50%25' font-size='40' font-weight='bold' fill='%23000000' fill-opacity='0.08' text-anchor='middle' dominant-baseline='middle' transform='rotate(-45 100 100)'%3E${watermarkText}%3C/text%3E%3C/svg%3E")`,
-              backgroundRepeat: 'repeat',
-              backgroundSize: '200px 200px',
-            }}
-          />
-        </div>
-
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-700/95 z-30">
             <div className="text-center">
@@ -260,6 +252,15 @@ const SecurePDFViewer = ({
           <Document file={documentFile} onLoadSuccess={onDocumentLoadSuccess} onLoadError={onDocumentLoadError} loading={null} className="flex justify-center">
             <div className="relative inline-block shadow-2xl">
               <Page pageNumber={pageNumber} scale={scale} renderTextLayer={false} renderAnnotationLayer={false} loading={null} />
+              <div
+                className="pointer-events-none absolute inset-0 z-[5]"
+                aria-hidden="true"
+                style={{
+                  backgroundImage: watermarkPattern,
+                  backgroundRepeat: 'repeat',
+                  backgroundSize: '320px 320px',
+                }}
+              />
               {pageOverlays.map((o) => (
                 <img
                   key={o.id}

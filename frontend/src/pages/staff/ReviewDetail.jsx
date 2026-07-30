@@ -21,6 +21,8 @@ import {
   CornerDownRight,
   Award,
   MessageSquare,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import SecurePDFViewer from '../../components/pdf/SecurePDFViewer';
@@ -79,6 +81,7 @@ const ReviewDetail = () => {
   /** Keeps the same string when polling only rotates signed-query params (stops react-pdf reload flicker). */
   const [stablePreviewPdfUrl, setStablePreviewPdfUrl] = useState(null);
   const [showPublishDoiModal, setShowPublishDoiModal] = useState(false);
+  const [showPublishConfirmModal, setShowPublishConfirmModal] = useState(false);
   const [publishDoiValue, setPublishDoiValue] = useState('');
 
   const getApiErrorMessage = (error, fallback) => {
@@ -304,6 +307,22 @@ const ReviewDetail = () => {
     } finally {
       setActionLoading(false);
       setShowApproveModal(false);
+    }
+  };
+
+  const handleConfirmPublish = async () => {
+    if (!paper?.doi) return;
+    setActionLoading(true);
+    const t = toast.loading('Publishing…');
+    try {
+      await researchAPI.adminPublishResearch(id, {});
+      toast.success('Paper published successfully', { id: t });
+      setShowPublishConfirmModal(false);
+      await fetchPaperDetail();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Publish failed'), { id: t });
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -601,6 +620,36 @@ const ReviewDetail = () => {
 
   const previewPdfUrl = stablePreviewPdfUrl ?? paper.file_url;
 
+  const handleAdminDownload = async () => {
+    try {
+      const response = await researchAPI.trackDownload(id);
+      const downloadUrl = unwrapApiData(response).fileUrl || previewPdfUrl;
+      if (!downloadUrl) {
+        toast.error('Download unavailable');
+        return;
+      }
+
+      const fileResponse = await fetch(downloadUrl);
+      if (!fileResponse.ok) throw new Error('Download failed');
+
+      const blob = await fileResponse.blob();
+      const safeTitle = (paper?.title || 'research-paper').replace(/[^\w\s.-]+/g, '_').trim() || 'research-paper';
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${safeTitle}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+
+      toast.success('Download started');
+    } catch (error) {
+      console.error('Failed to download paper:', error);
+      toast.error('Unable to download');
+    }
+  };
+
   const queueLabel = user?.role === 'faculty'
     ? 'Adviser review queue'
     : user?.role === 'admin'
@@ -629,6 +678,22 @@ const ReviewDetail = () => {
     </button>
   ) : null;
 
+  const headerTrailing = (
+    <div className="flex flex-wrap items-center gap-2">
+      {user?.role === 'admin' && (
+        <button
+          type="button"
+          onClick={handleAdminDownload}
+          className="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg bg-[#3674B5] px-2.5 sm:px-3 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#2d6299] transition-colors"
+        >
+          <Download size={14} aria-hidden="true" />
+          Download
+        </button>
+      )}
+      {feedbackButton}
+    </div>
+  );
+
   return (
     <div className="review-screen flex flex-1 min-h-0 flex-col">
       <ReviewDetailNav
@@ -643,7 +708,7 @@ const ReviewDetail = () => {
             <StatusIcon size={10} aria-hidden="true" /> {statusConfig.label}
           </span>
         )}
-        trailing={feedbackButton}
+        trailing={headerTrailing}
       />
 
       <div className="review-screen__inner flex-1 py-4 sm:py-5 pb-24 lg:pb-8">
@@ -755,7 +820,6 @@ const ReviewDetail = () => {
                 {previewPdfUrl ? (
                   <SecurePDFViewer
                     fileUrl={previewPdfUrl}
-                    watermarkText="NU"
                     drawOverlays={drawOverlays}
                     pageNumber={reviewPdfPage}
                     onPageNumberChange={setReviewPdfPage}
@@ -908,34 +972,73 @@ const ReviewDetail = () => {
             </div>
           </div>
 
-          {user?.role === 'admin' && ['approved', 'published'].includes(paper.status) && (
-            <div className="bg-white rounded-2xl shadow-lg border border-indigo-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-white flex items-center gap-3">
-                <Award size={20} className="text-indigo-600" />
-                <h3 className="font-bold text-slate-900">Admin: Publish &amp; DOI</h3>
+          {paper.doi && paper.status !== 'published' && (
+            <div className="surface-card overflow-hidden">
+              <div className="px-6 py-4 border-b border-[#3674B5]/15 bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 flex items-center gap-3">
+                <ExternalLink size={20} className="text-[#3674B5]" />
+                <h3 className="font-bold text-slate-900">Student-Provided DOI</h3>
               </div>
               <div className="p-6 space-y-3">
                 <p className="text-sm text-slate-600">
-                  Approved papers are visible in the repository as <strong>internal (approved)</strong>. Publishing assigns a DOI and marks the work as formally published.
+                  The student submitted this DOI. Click the link to verify it leads to the correct paper before publishing.
+                </p>
+                <a
+                  href={`https://doi.org/${paper.doi}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#3674B5]/25 bg-[#3674B5]/5 text-[#3674B5] hover:bg-[#3674B5]/10 font-mono text-sm transition-colors"
+                >
+                  <ExternalLink size={15} />
+                  {paper.doi}
+                </a>
+                <p className="text-xs text-slate-500">
+                  Opens doi.org resolver in a new tab. Verify the destination matches this paper before approving.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {user?.role === 'admin' && ['approved', 'published'].includes(paper.status) && (
+            <div className="surface-card overflow-hidden border-[#3674B5]/20">
+              <div className="px-6 py-4 border-b border-[#3674B5]/15 bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 flex items-center gap-3">
+                <Award size={20} className="text-[#3674B5]" />
+                <h3 className="font-bold text-slate-900">Admin: Publish</h3>
+              </div>
+              <div className="p-6 space-y-3">
+                <p className="text-sm text-slate-600">
+                  Approved papers are visible in the repository as <strong>internal (approved)</strong>.
+                  Publishing marks the work as formally published using the student-provided DOI above.
                 </p>
                 {paper.status === 'published' && paper.doi && (
                   <p className="text-sm">
                     <span className="text-slate-500">Current DOI: </span>
-                    <span className="font-mono font-semibold text-slate-900">{paper.doi}</span>
+                    <a
+                      href={`https://doi.org/${paper.doi}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono font-semibold text-[#3674B5] underline hover:no-underline"
+                    >
+                      {paper.doi}
+                    </a>
                   </p>
                 )}
                 <div className="flex flex-col gap-2">
                   {paper.status === 'approved' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPublishDoiValue('');
-                        setShowPublishDoiModal(true);
-                      }}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700"
-                    >
-                      <Award size={18} /> Mark as published (enter DOI)
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        disabled={actionLoading || !paper.doi}
+                        onClick={() => setShowPublishConfirmModal(true)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-[#3674B5] to-[#578FCA] text-white rounded-xl font-bold hover:from-[#2d6299] hover:to-[#3674B5] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Award size={18} /> Mark as published
+                      </button>
+                      {!paper.doi && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          No student DOI on file. Ask the author to resubmit with their journal DOI before formal publication.
+                        </p>
+                      )}
+                    </>
                   )}
                   {paper.status === 'published' && (
                     <button
@@ -944,7 +1047,7 @@ const ReviewDetail = () => {
                         setPublishDoiValue(paper.doi || '');
                         setShowPublishDoiModal(true);
                       }}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700"
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-[#3674B5] to-[#578FCA] text-white rounded-xl font-bold hover:from-[#2d6299] hover:to-[#3674B5] transition-colors"
                     >
                       Update DOI
                     </button>
@@ -952,7 +1055,7 @@ const ReviewDetail = () => {
                   <button
                     type="button"
                     onClick={() => setShowMetadataModal(true)}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-indigo-200 text-indigo-800 rounded-xl font-bold hover:bg-indigo-50"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-[#3674B5]/25 text-[#3674B5] rounded-xl font-bold hover:bg-[#3674B5]/5 transition-colors"
                   >
                     <FileText size={18} /> Edit metadata (title, abstract, …)
                   </button>
@@ -1038,15 +1141,98 @@ const ReviewDetail = () => {
         />
       )}
 
-      {/* Admin publish / DOI */}
-      {showPublishDoiModal && user?.role === 'admin' && (
+      {/* Admin publish confirmation */}
+      {showPublishConfirmModal && user?.role === 'admin' && paper?.status === 'approved' && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="publish-confirm-title"
+          onClick={() => !actionLoading && setShowPublishConfirmModal(false)}
+        >
+          <div
+            className="surface-card w-full max-w-md overflow-hidden"
+            style={{ boxShadow: 'var(--shadow-strong)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-[#3674B5]/15 bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#3674B5] to-[#578FCA] text-white shadow-sm">
+                <Award size={20} aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <h3 id="publish-confirm-title" className="text-xl font-bold text-slate-900">
+                  Confirm publication
+                </h3>
+                <p className="mt-0.5 text-sm text-slate-600">
+                  Mark this paper as formally published
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <div className="surface-card--muted rounded-xl border border-slate-200/80 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Paper</p>
+                <p className="mt-1 text-sm font-semibold leading-snug text-slate-900">{paper.title}</p>
+              </div>
+
+              <div className="rounded-xl border border-[#3674B5]/20 bg-gradient-to-br from-[#3674B5]/5 to-[#578FCA]/5 px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#3674B5]">Student-provided DOI</p>
+                <a
+                  href={`https://doi.org/${paper.doi}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-2 rounded-xl border border-[#3674B5]/25 bg-white px-3 py-2 font-mono text-sm font-medium text-[#3674B5] transition-colors hover:bg-[#3674B5]/5"
+                >
+                  <ExternalLink size={15} aria-hidden="true" />
+                  {paper.doi}
+                </a>
+                <p className="mt-3 text-xs leading-relaxed text-slate-600">
+                  Open the link and confirm it resolves to the correct paper before publishing.
+                </p>
+              </div>
+
+              <div className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                <CheckCircle size={18} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden="true" />
+                <p className="leading-relaxed">
+                  After publication, the work will appear with a <strong>Published</strong> badge and a permanent DOI link for citations.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => setShowPublishConfirmModal(false)}
+                  className="flex-1 h-11 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={actionLoading || !paper.doi}
+                  onClick={handleConfirmPublish}
+                  className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#3674B5] to-[#578FCA] text-sm font-bold text-white transition-colors hover:from-[#2d6299] hover:to-[#3674B5] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionLoading ? 'Publishing…' : (
+                    <>
+                      <Award size={16} aria-hidden="true" />
+                      Publish paper
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin update DOI (published papers only) */}
+      {showPublishDoiModal && user?.role === 'admin' && paper?.status === 'published' && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border">
-            <div className="px-6 py-4 bg-indigo-50 border-b border-indigo-100 flex items-center gap-3">
-              <Award size={20} className="text-indigo-600" />
-              <h3 className="text-xl font-bold text-slate-900">
-                {paper?.status === 'published' ? 'Update DOI' : 'Mark as published'}
-              </h3>
+          <div className="surface-card max-w-md w-full overflow-hidden" style={{ boxShadow: 'var(--shadow-strong)' }}>
+            <div className="px-6 py-4 border-b border-[#3674B5]/15 bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 flex items-center gap-3">
+              <Award size={20} className="text-[#3674B5]" />
+              <h3 className="text-xl font-bold text-slate-900">Update DOI</h3>
             </div>
             <div className="p-6 space-y-4">
               <label className="block text-sm font-bold text-slate-700">
@@ -1057,7 +1243,7 @@ const ReviewDetail = () => {
                 value={publishDoiValue}
                 onChange={(e) => setPublishDoiValue(e.target.value)}
                 placeholder="e.g. 10.1234/nucleus.2026.001"
-                className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+                className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#3674B5]/30 focus:border-[#3674B5] outline-none font-mono text-sm"
               />
               <p className="text-xs text-slate-500">
                 Use the DOI issued by your publisher or repository. You may paste a full https://doi.org/… link; it will be normalized.
@@ -1078,10 +1264,10 @@ const ReviewDetail = () => {
                   disabled={actionLoading || !publishDoiValue.trim()}
                   onClick={async () => {
                     setActionLoading(true);
-                    const t = toast.loading(paper?.status === 'published' ? 'Updating DOI…' : 'Publishing…');
+                    const t = toast.loading('Updating DOI…');
                     try {
                       await researchAPI.adminPublishResearch(id, { doi: publishDoiValue.trim() });
-                      toast.success(paper?.status === 'published' ? 'DOI updated' : 'Paper published', { id: t });
+                      toast.success('DOI updated', { id: t });
                       setShowPublishDoiModal(false);
                       setPublishDoiValue('');
                       await fetchPaperDetail();
@@ -1091,9 +1277,9 @@ const ReviewDetail = () => {
                       setActionLoading(false);
                     }
                   }}
-                  className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50"
+                  className="flex-1 py-3 bg-gradient-to-r from-[#3674B5] to-[#578FCA] text-white rounded-xl font-bold hover:from-[#2d6299] hover:to-[#3674B5] disabled:opacity-50 transition-colors"
                 >
-                  {paper?.status === 'published' ? 'Save DOI' : 'Publish'}
+                  Save DOI
                 </button>
               </div>
             </div>

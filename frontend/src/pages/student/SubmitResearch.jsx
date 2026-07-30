@@ -79,7 +79,8 @@ const SubmitResearch = () => {
     category: resubmitData?.category || '',
     facultyId: resubmitData?.faculty_id || '',
     department: resubmitData?.department || '',
-    departmentId: ''
+    departmentId: '',
+    doi: resubmitData?.doi || '',
   });
 
   useEffect(() => {
@@ -431,7 +432,15 @@ const SubmitResearch = () => {
       submitData.append('facultyId', formData.facultyId);
       submitData.append('department', formData.department);
       submitData.append('departmentId', formData.departmentId);
-      
+
+      const trimmedDoi = formData.doi?.trim() || '';
+      if (trimmedDoi) {
+        if (!/^(https?:\/\/(dx\.)?doi\.org\/)?10\.\d{4,9}\/\S+$/i.test(trimmedDoi)) {
+          toast('DOI format looks unusual. Verify it is correct before submitting.', { icon: '⚠️' });
+        }
+        submitData.append('doi', trimmedDoi);
+      }
+
       const submissionResponse = await researchAPI.submitResearch(submitData);
       const researchId = submissionResponse?.data?.data?.research?.id || submissionResponse?.data?.research?.id;
 
@@ -468,7 +477,12 @@ const SubmitResearch = () => {
       }, 2000);
     } catch (err) {
       console.error('Submission error:', err);
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to submit research';
+      const errorMessage =
+        err.response?.data?.error?.message
+        || err.response?.data?.message
+        || (typeof err.response?.data?.error === 'string' ? err.response.data.error : null)
+        || err.message
+        || 'Failed to submit research';
       toast.error(errorMessage, {
         duration: 4000,
       });
@@ -850,6 +864,29 @@ const SubmitResearch = () => {
             </div>
             <p className="text-sm text-slate-500">Choose the most relevant category for your research</p>
             {fieldErrors.category && <p className="text-sm text-red-600">{fieldErrors.category}</p>}
+          </div>
+
+          {/* DOI */}
+          <div className="space-y-3">
+            <label htmlFor="doi" className="block text-lg font-bold text-slate-900">
+              DOI <span className="text-slate-400 text-base font-normal">(optional)</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                id="doi"
+                name="doi"
+                value={formData.doi}
+                onChange={handleChange}
+                className="w-full px-6 py-4 bg-white border-2 border-slate-300 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#3674B5] focus:border-transparent transition-all duration-300 font-mono text-sm shadow-sm hover:border-slate-400"
+                placeholder="e.g. 10.1234/journal.2026.001"
+              />
+            </div>
+            <p className="text-sm text-slate-500">
+              If your paper has already been assigned a DOI by a journal or publisher, enter it here.
+              You may also paste a full <span className="font-mono">https://doi.org/…</span> link — it will be normalized automatically.
+              The admin will verify it before publishing.
+            </p>
           </div>
           </>
           )}

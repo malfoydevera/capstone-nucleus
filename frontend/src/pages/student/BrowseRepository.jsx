@@ -116,7 +116,8 @@ const BrowseRepository = () => {
   const [searchError, setSearchError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedThemes, setSelectedThemes] = useState([]);
-  const [selectedYear, setSelectedYear] = useState('');
+  const [yearFrom, setYearFrom] = useState('');
+  const [yearTo, setYearTo] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('grid');
   const [expandedPaper, setExpandedPaper] = useState(null);
@@ -137,7 +138,7 @@ const BrowseRepository = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, selectedCategory, selectedThemes, selectedYear, sortBy, aiMode]);
+  }, [debouncedSearch, selectedCategory, selectedThemes, yearFrom, yearTo, sortBy, aiMode]);
 
   // AI hybrid search is used when the toggle is on AND there is a usable query.
   const isAiSearch = aiMode && debouncedSearch.length >= 2;
@@ -156,7 +157,8 @@ const BrowseRepository = () => {
         ...(debouncedSearch && { q: debouncedSearch }),
         ...(selectedCategory && { category: selectedCategory }),
         ...(selectedThemes.length > 0 && { themes: selectedThemes.join(',') }),
-        ...(selectedYear && { year: selectedYear }),
+        ...(yearFrom && { yearFrom }),
+        ...(yearTo && { yearTo }),
       };
 
       // In AI mode the search bar runs the semantic + keyword hybrid endpoint.
@@ -169,7 +171,8 @@ const BrowseRepository = () => {
             page: pageNum,
             limit: 20,
             q: debouncedSearch,
-            ...(selectedYear && { year: selectedYear }),
+            ...(yearFrom && { yearFrom }),
+            ...(yearTo && { yearTo }),
           });
         } catch (aiError) {
           const status = aiError?.response?.status;
@@ -241,7 +244,8 @@ const BrowseRepository = () => {
     debouncedSearch,
     selectedCategory,
     selectedThemes,
-    selectedYear,
+    yearFrom,
+    yearTo,
     sortBy,
     categories.length,
     aiMode,
@@ -322,7 +326,8 @@ const BrowseRepository = () => {
     setSearchTerm('');
     setSelectedCategory('');
     setSelectedThemes([]);
-    setSelectedYear('');
+    setYearFrom('');
+    setYearTo('');
     setSortBy('newest');
   };
 
@@ -331,7 +336,7 @@ const BrowseRepository = () => {
     if (searchTerm) count++;
     if (selectedCategory) count++;
     if (selectedThemes.length) count += selectedThemes.length;
-    if (selectedYear) count++;
+    if (yearFrom || yearTo) count++;
     return count;
   };
 
@@ -362,8 +367,10 @@ const BrowseRepository = () => {
     selectedCategory,
     onCategoryChange: setSelectedCategory,
     categories,
-    selectedYear,
-    onYearChange: setSelectedYear,
+    yearFrom,
+    yearTo,
+    onYearFromChange: setYearFrom,
+    onYearToChange: setYearTo,
     yearOptions,
     sortBy,
     onSortChange: setSortBy,

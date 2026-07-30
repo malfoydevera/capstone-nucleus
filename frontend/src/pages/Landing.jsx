@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import nuBuildingImg from '../assets/dasma.png.jpeg';
+import nuBuildingImg from '../assets/dasma.webp';
 import nuLogoLeft from '../assets/left.png';
 
 import NucleusLogoMark from '../components/branding/NucleusLogoMark';

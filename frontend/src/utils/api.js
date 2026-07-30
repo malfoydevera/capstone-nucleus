@@ -117,6 +117,9 @@ export const authAPI = {
   searchStudents: (query) => api.get('/auth/students/search', { params: { query } }),
   exportStudentsCsv: () =>
     api.get('/auth/admin/export/students', { responseType: 'blob' }),
+  getUserRecords: (id) => api.get(`/auth/users/${id}/records`),
+  exportUserRecordsPdf: (id, filters) =>
+    api.post(`/auth/users/${id}/records/export-pdf`, { filters }, { responseType: 'blob' }),
 };
 
 export const notificationsAPI = {
@@ -194,9 +197,7 @@ export const researchAPI = {
   }),
   // Backend expects { reason, targetStatus } for dean bypass actions.
   deanBypassApprove: (id, bypassReason, target) => api.post(`/research/${id}/dean-bypass`, { reason: bypassReason, targetStatus: target }),
-  getDeanActivityMonitor: (params) => api.get('/research/dean/activity-monitor', { params }),
-  getAuditLogs: (params) => api.get('/research/dean/audit-logs', { params }),
-  getAuditLogsPdf: (params) => api.get('/research/dean/audit-logs/pdf', { params, responseType: 'blob' }),
+
   getDepartmentComparison: (params) => api.get('/research/dean/department-comparison', { params }),
   exportPapersCsv: (params) =>
     api.get('/research/admin/export/papers', { params, responseType: 'blob' }),

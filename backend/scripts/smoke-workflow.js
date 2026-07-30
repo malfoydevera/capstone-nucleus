@@ -48,8 +48,6 @@ const ROLE_CHECKS = {
   dean: [
     { name: 'Auth profile', method: 'get', path: '/auth/me' },
     { name: 'Dean queue', method: 'get', path: '/research/dean-chair/assigned' },
-    { name: 'Activity monitor', method: 'get', path: '/research/dean/activity-monitor' },
-    { name: 'Audit logs', method: 'get', path: '/research/dean/audit-logs?limit=5' },
   ],
   program_chair: [
     { name: 'Auth profile', method: 'get', path: '/auth/me' },

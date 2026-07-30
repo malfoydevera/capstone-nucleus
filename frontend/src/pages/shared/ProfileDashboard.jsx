@@ -33,7 +33,7 @@ import LoadMoreFooter from '../../components/ui/LoadMoreFooter';
 import ChangePasswordModal from '../../components/profile/ChangePasswordModal';
 import ChangeEmailModal from '../../components/profile/ChangeEmailModal';
 import ChangeRecoveryEmailModal from '../../components/profile/ChangeRecoveryEmailModal';
-import nuBuildingImg from '../../assets/dasma.png.jpeg';
+import nuBuildingImg from '../../assets/dasma.webp';
 
 const PAGE_SIZE = 6;
 

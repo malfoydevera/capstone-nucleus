@@ -413,6 +413,17 @@ const SidebarPdfDrawPreview = ({
             loading={null}
             className="relative z-0 bg-white"
           />
+          <div
+            className="pointer-events-none absolute inset-0 z-[5]"
+            aria-hidden="true"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><text x="50%" y="50%" font-size="22" font-weight="bold" font-family="Arial,sans-serif" fill="#000000" fill-opacity="0.11" text-anchor="middle" dominant-baseline="middle" transform="rotate(-45 160 160)">NU DASMARIÑAS</text></svg>'
+              )}")`,
+              backgroundRepeat: 'repeat',
+              backgroundSize: '320px 320px',
+            }}
+          />
           <canvas
             ref={drawCanvasRef}
             className="pointer-events-auto absolute inset-0 z-10 h-full w-full touch-none cursor-crosshair"

@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const PDFDocument = require('pdfkit');
 const supabase = require('../config/supabase');
 const { attachFullName, buildFullName, normalizeNameParts, splitFullName } = require('../utils/name');
 const { sendSuccess, sendError } = require('../utils/response');
@@ -191,6 +192,137 @@ function attachOrganizationLabels(user, organizationLookups = {}) {
     department,
     program,
   };
+}
+
+// Human-readable labels for research_papers.status (admin User Data records).
+const RESEARCH_STATUS_LABELS = {
+  pending: 'Pending',
+  pending_faculty: 'Pending (Faculty Review)',
+  pending_dean: 'Pending (Dean Review)',
+  pending_program_chair: 'Pending (Program Chair Review)',
+  pending_editor: 'Pending (Editor Review)',
+  pending_admin: 'Pending (Admin Review)',
+  under_review: 'Under Review',
+  faculty_approved: 'Faculty Approved',
+  editor_approved: 'Editor Approved',
+  approved: 'Approved',
+  published: 'Published',
+  rejected: 'Rejected',
+  revision_required: 'Revision Required',
+};
+
+function formatResearchStatusLabel(status) {
+  if (!status) return 'Unknown';
+  return RESEARCH_STATUS_LABELS[status]
+    || status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatReportDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/**
+ * Draws a bordered PDF table with dynamic row heights so wrapped titles never overlap.
+ * Each row's height is computed from the tallest cell before rendering.
+ */
+function drawPdfTable(doc, { startX, pageRight, columns, rows }) {
+  const rowPadding = 6;
+  const pageBottom = doc.page.height - doc.page.margins.bottom;
+
+  const measureRowHeight = (cells, isHeader) => {
+    doc.fontSize(isHeader ? 9 : 8);
+    doc.font(isHeader ? 'Helvetica-Bold' : 'Helvetica');
+    let maxHeight = 22;
+    columns.forEach((col, index) => {
+      const cellHeight = doc.heightOfString(String(cells[index] ?? ''), {
+        width: col.width - 10,
+      });
+      maxHeight = Math.max(maxHeight, cellHeight + rowPadding * 2);
+    });
+    return maxHeight;
+  };
+
+  const drawRow = (cells, { header = false } = {}) => {
+    const rowHeight = measureRowHeight(cells, header);
+
+    if (doc.y + rowHeight > pageBottom) {
+      doc.addPage();
+    }
+
+    const rowY = doc.y;
+    let x = startX;
+
+    columns.forEach((col, index) => {
+      if (header) {
+        doc.save();
+        doc.rect(x, rowY, col.width, rowHeight).fill('#f1f5f9');
+        doc.restore();
+      }
+
+      doc.rect(x, rowY, col.width, rowHeight)
+        .strokeColor('#cbd5e1')
+        .lineWidth(0.5)
+        .stroke();
+
+      doc.fontSize(header ? 9 : 8)
+        .font(header ? 'Helvetica-Bold' : 'Helvetica')
+        .fillColor(header ? '#0f172a' : '#334155')
+        .text(String(cells[index] ?? ''), x + 5, rowY + rowPadding, {
+          width: col.width - 10,
+          lineBreak: true,
+        });
+
+      x += col.width;
+    });
+
+    doc.x = startX;
+    doc.y = rowY + rowHeight;
+  };
+
+  drawRow(columns.map((col) => col.label), { header: true });
+  rows.forEach((cells) => drawRow(cells));
+
+  doc.moveDown(0.4);
+  doc.moveTo(startX, doc.y).lineTo(pageRight, doc.y).strokeColor('#dbe3ed').stroke();
+}
+
+// Shared query used by both the admin "user records" view and the PDF export,
+// so filtering logic only lives in one place.
+async function queryUserResearchRecords(userId, filters = {}) {
+  let query = supabase
+    .from('research_papers')
+    .select('id, title, category, status, submission_date, published_date, created_at, rejection_reason')
+    .eq('author_id', userId)
+    .is('deleted_at', null)
+    .order('submission_date', { ascending: false });
+
+  if (filters.status) {
+    query = query.eq('status', filters.status);
+  }
+  if (filters.dateFrom) {
+    query = query.gte('submission_date', filters.dateFrom);
+  }
+  if (filters.dateTo) {
+    query = query.lte('submission_date', filters.dateTo);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data || []).map((paper) => ({
+    id: paper.id,
+    type: 'research_submission',
+    title: paper.title,
+    category: paper.category || null,
+    status: paper.status,
+    statusLabel: formatResearchStatusLabel(paper.status),
+    submissionDate: paper.submission_date || paper.created_at,
+    publishedDate: paper.published_date || null,
+    rejectionReason: paper.rejection_reason || null,
+  }));
 }
 
 function formatUserResponse(user, organizationLookups = {}) {
@@ -1432,36 +1564,16 @@ exports.getProfileActivity = async (req, res) => {
     }
 
     if (role === 'admin') {
-      const [{ data: auditRows, error: auditError }, { data: reviewRows, error: reviewError }] = await Promise.all([
-        supabase
-          .from('audit_logs')
-          .select('id, action, target_type, target_id, details, reason, created_at')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(limit),
-        supabase
-          .from('approval_workflow')
-          .select('id, status, reviewer_role, research_id, reviewed_at, created_at')
-          .eq('reviewer_id', userId)
-          .eq('reviewer_role', 'admin')
-          .neq('status', 'pending')
-          .order('created_at', { ascending: false })
-          .limit(limit),
-      ]);
+      const { data: reviewRows, error: reviewError } = await supabase
+        .from('approval_workflow')
+        .select('id, status, reviewer_role, research_id, reviewed_at, created_at')
+        .eq('reviewer_id', userId)
+        .eq('reviewer_role', 'admin')
+        .neq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
-      if (auditError && !String(auditError.message || '').includes('audit_logs')) throw auditError;
       if (reviewError && !String(reviewError.message || '').includes('approval_workflow')) throw reviewError;
-
-      const auditItems = (auditRows || []).map((row) => ({
-        type: 'audit',
-        id: row.id,
-        action: row.action,
-        targetType: row.target_type,
-        targetId: row.target_id,
-        occurredAt: row.created_at,
-        details: row.details || {},
-        reason: row.reason || null,
-      }));
 
       const reviewItems = (reviewRows || []).map((row) => ({
         type: 'review',
@@ -1474,14 +1586,14 @@ exports.getProfileActivity = async (req, res) => {
         comments: null,
       }));
 
-      const items = [...auditItems, ...reviewItems]
+      const items = reviewItems
         .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
         .slice(0, limit);
 
       return sendSuccess(res, {
         data: {
           stats: {
-            totalActions: auditItems.length,
+            totalActions: 0,
             papersApproved: (reviewRows || []).filter((row) => row.status === 'approved').length,
             reviewsCompleted: (reviewRows || []).length,
           },
@@ -1594,6 +1706,147 @@ exports.getAllUsers = async (req, res) => {
   } catch (error) {
     logger.error('Get all users error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// NEW: User Data Page — full profile + research submission records for one user (Admin only)
+exports.getUserRecords = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationLookups = await getOrganizationLookups();
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, email, first_name, middle_name, last_name, role, program, program_id, department, department_id, is_active, suspended_at, suspended_reason, created_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (userError) throw userError;
+    if (!user) {
+      return sendError(res, { status: 404, code: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    const records = await queryUserResearchRecords(id);
+
+    return sendSuccess(res, {
+      data: {
+        user: attachFullName(attachOrganizationLabels(user, organizationLookups)),
+        records,
+      },
+    });
+  } catch (error) {
+    logger.error('Get user records error:', error);
+    return sendError(res, { status: 500, code: 'GET_USER_RECORDS_FAILED', message: 'Failed to fetch user records' });
+  }
+};
+
+// NEW: User Data Page — PDF report of a user's (filtered) research submission records (Admin only)
+exports.exportUserRecordsPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const filters = (req.body && typeof req.body.filters === 'object' && req.body.filters) || {};
+    const organizationLookups = await getOrganizationLookups();
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, email, first_name, middle_name, last_name, role, program, program_id, department, department_id, is_active, created_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (userError) throw userError;
+    if (!user) {
+      return sendError(res, { status: 404, code: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    const labeledUser = attachOrganizationLabels(user, organizationLookups);
+    const fullName = buildFullName(user) || user.email || 'User';
+    const records = await queryUserResearchRecords(id, filters);
+
+    const appliedFilters = [];
+    if (filters.dateFrom) appliedFilters.push(`From ${formatReportDate(filters.dateFrom)}`);
+    if (filters.dateTo) appliedFilters.push(`To ${formatReportDate(filters.dateTo)}`);
+    if (filters.status) appliedFilters.push(`Status: ${formatResearchStatusLabel(filters.status)}`);
+    const filtersSummary = appliedFilters.length ? appliedFilters.join('   |   ') : 'None (showing all records)';
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const safeName = fullName.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'user';
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="user_record_report_${safeName}_${stamp}.pdf"`);
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    doc.on('error', (streamError) => {
+      logger.error('PDF stream error:', streamError);
+      if (!res.headersSent) res.status(500);
+      res.end();
+    });
+    doc.pipe(res);
+
+    const pageRight = doc.page.width - doc.page.margins.right;
+
+    doc.fontSize(20).fillColor('#0f172a').text('User Record Report');
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor('#64748b').text(
+      `Generated on ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`
+    );
+    doc.moveDown(0.8);
+
+    doc.fontSize(12).fillColor('#0f172a').text('User Profile', { underline: true });
+    doc.moveDown(0.4);
+
+    const startX = doc.page.margins.left;
+    drawPdfTable(doc, {
+      startX,
+      pageRight,
+      columns: [
+        { label: 'Field', width: 130 },
+        { label: 'Value', width: pageRight - startX - 130 },
+      ],
+      rows: [
+        ['Full Name', fullName],
+        ['Email', user.email || '—'],
+        ['Department', labeledUser.department || '—'],
+        ['Program', labeledUser.program || '—'],
+        ['Role', user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : '—'],
+        ['Account Status', user.is_active === false ? 'Inactive' : 'Active'],
+        ['Joined', formatReportDate(user.created_at)],
+        ['Filters Applied', filtersSummary],
+      ],
+    });
+
+    doc.moveDown(0.8);
+    doc.fontSize(12).fillColor('#0f172a').text(`Research Records (${records.length})`, { underline: true });
+    doc.moveDown(0.5);
+
+    if (records.length === 0) {
+      doc.fontSize(10).fillColor('#64748b').text('No records match the applied filters.');
+    } else {
+      const tableWidth = pageRight - startX;
+      drawPdfTable(doc, {
+        startX,
+        pageRight,
+        columns: [
+          { label: 'Record Title', width: Math.round(tableWidth * 0.42) },
+          { label: 'Type', width: Math.round(tableWidth * 0.18) },
+          { label: 'Submission Date', width: Math.round(tableWidth * 0.18) },
+          { label: 'Status', width: tableWidth - Math.round(tableWidth * 0.42) - Math.round(tableWidth * 0.18) - Math.round(tableWidth * 0.18) },
+        ],
+        rows: records.map((record) => [
+          record.title || 'Untitled',
+          'Research Submission',
+          formatReportDate(record.submissionDate),
+          record.statusLabel,
+        ]),
+      });
+    }
+
+    doc.end();
+  } catch (error) {
+    logger.error('Export user records PDF error:', error);
+    if (!res.headersSent) {
+      return sendError(res, { status: 500, code: 'EXPORT_USER_RECORDS_PDF_FAILED', message: 'Failed to generate PDF report' });
+    }
+    res.end();
   }
 };
 
@@ -2133,29 +2386,7 @@ async function buildSystemHealthPayload() {
       },
     };
 
-    try {
-      const { data: auditRows, error: auditError } = await supabase
-        .from('audit_logs')
-        .select('action, created_at')
-        .gte('created_at', since24h)
-        .order('created_at', { ascending: false })
-        .limit(5000);
-
-      if (auditError) throw auditError;
-
-      const rows = auditRows || [];
-      const errors = rows.filter((row) => /error|failed|fail|denied|invalid/i.test(String(row.action || '')));
-      const requests24h = rows.length;
-      const errors24h = errors.length;
-
-      response.api.requests24h = requests24h;
-      response.api.errors24h = errors24h;
-      response.api.errorRate24h = requests24h > 0
-        ? Math.round((errors24h / requests24h) * 10000) / 100
-        : 0;
-    } catch (err) {
-      logger.error('System health API metrics error:', err.message);
-    }
+    // audit_logs table removed — API metrics default to 0
 
     try {
       const { data: papers, error: papersError } = await supabase
@@ -2184,36 +2415,7 @@ async function buildSystemHealthPayload() {
       logger.error('System health storage/workflow metrics error:', err.message);
     }
 
-    try {
-      const { data: aiAuditRows, error: aiAuditError } = await supabase
-        .from('audit_logs')
-        .select('action, created_at')
-        .gte('created_at', since30d)
-        .order('created_at', { ascending: false })
-        .limit(10000);
-
-      if (aiAuditError) throw aiAuditError;
-
-      const aiRows = (aiAuditRows || []).filter((row) => /ai/i.test(String(row.action || '')));
-      const aiFailures = aiRows.filter((row) => /error|failed|fail|denied|quota/i.test(String(row.action || '')));
-
-      response.ai.requests30d = aiRows.length;
-      response.ai.failures30d = aiFailures.length;
-      response.ai.successRate30d = aiRows.length > 0
-        ? Math.round(((aiRows.length - aiFailures.length) / aiRows.length) * 10000) / 100
-        : 0;
-
-      const envQuota = parseInt(process.env.AI_MONTHLY_QUOTA || process.env.AI_DAILY_QUOTA || '', 10);
-      if (!Number.isNaN(envQuota) && envQuota > 0) {
-        response.ai.configuredQuota = envQuota;
-        response.ai.quotaUsedPercent = Math.min(
-          100,
-          Math.round((response.ai.requests30d / envQuota) * 10000) / 100
-        );
-      }
-    } catch (err) {
-      logger.error('System health AI metrics error:', err.message);
-    }
+    // audit_logs table removed — AI metrics default to 0
 
     try {
       const [

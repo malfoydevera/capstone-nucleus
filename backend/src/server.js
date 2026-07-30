@@ -14,6 +14,19 @@ const { startReviewDeadlineReminderScheduler } = require('./utils/reviewDeadline
 const { initSentry, captureException } = require('./config/sentry');
 const logger = require('./utils/logger');
 const pinoHttp = require('pino-http');
+// #region agent log
+(() => {
+  try {
+    const pinoHttpPino = require('pino-http/node_modules/pino');
+    const rootPino = require('pino');
+    const symHttp = pinoHttpPino.symbols.stringifySym;
+    const symRoot = rootPino.symbols.stringifySym;
+    fetch('http://127.0.0.1:7699/ingest/31ab08dd-a09a-416f-8c2d-d8ca10ba795d', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7c1e1a' }, body: JSON.stringify({ sessionId: '7c1e1a', runId: 'pre-fix', hypothesisId: 'H1-H4', location: 'server.js:startup', message: 'pino symbol compatibility check', data: { rootPinoVersion: require('pino/package.json').version, pinoHttpPinoVersion: require('pino-http/node_modules/pino/package.json').version, sameStringifySym: symHttp === symRoot, loggerHasHttpSym: typeof logger[symHttp], loggerHasRootSym: typeof logger[symRoot], customPropsConfigured: true }, timestamp: Date.now() }) }).catch(() => {});
+  } catch (e) {
+    fetch('http://127.0.0.1:7699/ingest/31ab08dd-a09a-416f-8c2d-d8ca10ba795d', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7c1e1a' }, body: JSON.stringify({ sessionId: '7c1e1a', runId: 'pre-fix', hypothesisId: 'H2', location: 'server.js:startup', message: 'pino check failed', data: { error: e.message }, timestamp: Date.now() }) }).catch(() => {});
+  }
+})();
+// #endregion
 const { registerProcessHandlers, requestIdMiddleware } = require('./utils/processHandlers');
 const { checkReadiness } = require('./utils/readiness');
 const { MAX_MB } = require('./config/upload');
@@ -99,6 +112,11 @@ app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
 
 app.use((req, res, next) => {
   res.locals.requestId = req.id;
+  // #region agent log
+  res.on('finish', () => {
+    fetch('http://127.0.0.1:7699/ingest/31ab08dd-a09a-416f-8c2d-d8ca10ba795d', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7c1e1a' }, body: JSON.stringify({ sessionId: '7c1e1a', runId: 'pre-fix', hypothesisId: 'H3', location: 'server.js:res-finish', message: 'request completed without crash', data: { url: req.url, statusCode: res.statusCode, requestId: req.id }, timestamp: Date.now() }) }).catch(() => {});
+  });
+  // #endregion
   next();
 });
 

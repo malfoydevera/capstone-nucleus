@@ -6,7 +6,7 @@ const supabase = require('../config/supabase');
 const { resolvePaperFileUrl } = require('../utils/fileAccess');
 const { sendSuccess, sendError } = require('../utils/response');
 const { attachFullName, buildFullName } = require('../utils/name');
-const { logAuditEvent } = require('../utils/audit');
+
 const { validateWorkflowStages } = require('../utils/workflowEngine');
 const { notifyUser, notifyCoAuthors } = require('../utils/notify');
 const { invalidateBrowseCaches } = require('../utils/cache');
@@ -88,16 +88,8 @@ function toCsv(headers, rows) {
   return `${lines.join('\n')}\n`;
 }
 
-async function auditCsvExport(req, action, details = {}) {
-  await logAuditEvent({
-    userId: req.user?.id,
-    userRole: req.user?.role,
-    userName: req.user?.fullName,
-    action,
-    targetType: 'system',
-    details,
-    ipAddress: req.ip || null,
-  });
+async function auditCsvExport() {
+  // Audit logging removed
 }
 
 exports.getAllResearch = async (req, res) => {
@@ -259,7 +251,7 @@ exports.adminPublishResearch = async (req, res) => {
   try {
     const { id } = req.params;
     const doiRaw = req.body?.doi;
-    const doiNormalized = normalizeDoiInput(doiRaw);
+    const doiFromBody = normalizeDoiInput(doiRaw);
 
     const { data: existing, error: fetchError } = await supabase
       .from('research_papers')
@@ -271,6 +263,9 @@ exports.adminPublishResearch = async (req, res) => {
     if (!existing) {
       return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
     }
+
+    // Use admin-provided DOI; fall back to student-submitted DOI already on the paper.
+    const doiNormalized = doiFromBody || normalizeDoiInput(existing.doi);
 
     const nowIso = new Date().toISOString();
 

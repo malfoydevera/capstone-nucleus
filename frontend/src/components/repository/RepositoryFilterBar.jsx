@@ -9,8 +9,10 @@ const RepositoryFilterBar = ({
   selectedCategory,
   onCategoryChange,
   categories = [],
-  selectedYear,
-  onYearChange,
+  yearFrom,
+  yearTo,
+  onYearFromChange,
+  onYearToChange,
   yearOptions = [],
   sortBy,
   onSortChange,
@@ -37,18 +39,35 @@ const RepositoryFilterBar = ({
       ))}
     </select>
 
-    <label htmlFor={`${idPrefix}-year`} className="sr-only">
-      Year
+    <label htmlFor={`${idPrefix}-year-from`} className="sr-only">
+      Year from
     </label>
     <select
-      id={`${idPrefix}-year`}
-      value={selectedYear}
-      onChange={(e) => onYearChange(e.target.value)}
+      id={`${idPrefix}-year-from`}
+      value={yearFrom}
+      onChange={(e) => onYearFromChange(e.target.value)}
       className={selectClass}
     >
-      <option value="">All years</option>
+      <option value="">From</option>
       {yearOptions.map((year) => (
-        <option key={year} value={year}>
+        <option key={year} value={year} disabled={yearTo && year > Number(yearTo)}>
+          {year}
+        </option>
+      ))}
+    </select>
+
+    <label htmlFor={`${idPrefix}-year-to`} className="sr-only">
+      Year to
+    </label>
+    <select
+      id={`${idPrefix}-year-to`}
+      value={yearTo}
+      onChange={(e) => onYearToChange(e.target.value)}
+      className={selectClass}
+    >
+      <option value="">To</option>
+      {yearOptions.map((year) => (
+        <option key={year} value={year} disabled={yearFrom && year < Number(yearFrom)}>
           {year}
         </option>
       ))}

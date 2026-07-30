@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Calendar,
   Search,
-  Activity,
   Users,
   Bell,
 } from 'lucide-react';
@@ -95,7 +94,7 @@ const DeanDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [assignedPapers, setAssignedPapers] = useState([]);
-  const [monitorData, setMonitorData] = useState(null);
+
   const [deptComparison, setDeptComparison] = useState(null);
   const [escalationAlerts, setEscalationAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -105,15 +104,13 @@ const DeanDashboard = () => {
   const fetchDashboard = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const [papersRes, monitorRes, notificationRes, comparisonRes] = await Promise.all([
+      const [papersRes, notificationRes, comparisonRes] = await Promise.all([
         researchAPI.getDeanChairAssignedPapers(),
-        researchAPI.getDeanActivityMonitor(),
         notificationsAPI.getMine({ limit: 80 }),
         researchAPI.getDepartmentComparison(),
       ]);
 
       setAssignedPapers(unwrapApiData(papersRes).papers || []);
-      setMonitorData(unwrapApiData(monitorRes));
       setDeptComparison(unwrapApiData(comparisonRes));
       setEscalationAlerts(
         (unwrapApiData(notificationRes).notifications || [])
@@ -135,9 +132,8 @@ const DeanDashboard = () => {
     return () => clearInterval(interval);
   }, [fetchDashboard]);
 
-  const summary = monitorData?.summary || {};
-  const inactivityAlerts = monitorData?.inactivityAlerts || [];
-  const recentLogs = (monitorData?.auditLogs || []).slice(0, 5);
+  const summary = {};
+  const inactivityAlerts = [];
   const departmentRows = (deptComparison?.departments || []).slice(0, 4);
 
   const stats = useMemo(() => {
@@ -273,16 +269,7 @@ const DeanDashboard = () => {
     });
   };
 
-  const getActionLabel = (action) => {
-    const map = {
-      approve: 'Approved',
-      reject: 'Rejected',
-      revision: 'Revision',
-      bypass: 'Bypass',
-      login: 'Login',
-    };
-    return map[action] || action || 'Activity';
-  };
+
 
   if (loading) {
     return (
@@ -378,22 +365,7 @@ const DeanDashboard = () => {
             </div>
           </button>
 
-          <button
-            type="button"
-            onClick={() => navigate('/dean/activity-monitor')}
-            className="group bg-white rounded-xl p-3.5 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#3674B5]/10 flex items-center justify-center shrink-0">
-                <Activity size={20} className="text-[#3674B5]" aria-hidden="true" />
-              </div>
-              <div className="text-left min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-900">Activity monitor</p>
-                <p className="text-xs text-slate-500">Workflow overview</p>
-              </div>
-              <ChevronRight size={16} className="text-slate-300 shrink-0" aria-hidden="true" />
-            </div>
-          </button>
+
 
           <button
             type="button"
@@ -492,34 +464,7 @@ const DeanDashboard = () => {
               )}
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="px-4 sm:px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-2">
-                <h2 className="font-semibold text-slate-900 text-sm">Recent activity</h2>
-                <button
-                  type="button"
-                  onClick={() => navigate('/dean/audit-logs')}
-                  className="text-xs font-semibold text-[#3674B5] hover:text-[#2d6299] inline-flex items-center gap-0.5"
-                >
-                  Audit logs <ChevronRight size={12} aria-hidden="true" />
-                </button>
-              </div>
-              {recentLogs.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-slate-500 text-center">No recent activity</p>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {recentLogs.slice(0, 3).map((log, index) => (
-                    <div key={log.id || index} className="px-4 sm:px-5 py-3">
-                      <p className="text-sm font-medium text-slate-900">{getActionLabel(log.action)}</p>
-                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
-                        {log.user_name || log.user_role || 'User'}
-                        {log.details?.paperTitle ? ` · ${log.details.paperTitle}` : ''}
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-1">{formatDateTime(log.created_at)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+
           </div>
         </div>
       </div>

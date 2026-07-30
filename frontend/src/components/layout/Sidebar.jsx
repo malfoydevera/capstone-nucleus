@@ -18,7 +18,6 @@ import {
   PieChart,
   UserCog,
   FileEdit,
-  Eye,
   PlusCircle,
   Search,
   UserPlus,
@@ -165,7 +164,9 @@ const Sidebar = () => {
       admin: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { name: 'User Management', icon: UserCog, path: '/admin/users' },
+        { name: 'User Data', icon: Users, path: '/admin/user-data' },
         { name: 'Final Approval Queue', icon: FileEdit, path: '/admin/papers', badge: stats.adminPending || null },
+        { name: 'Repository', icon: BookOpen, path: '/admin/repository' },
         { name: 'Analytics', icon: PieChart, path: '/admin/analytics' },
       ],
       staff: [
@@ -181,8 +182,6 @@ const Sidebar = () => {
       dean: [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { name: 'Dean Review Queue', icon: FileCheck, path: '/dean/review', badge: stats.deanChairPending || null },
-        { name: 'Activity Monitor', icon: Eye, path: '/dean/activity-monitor' },
-        { name: 'Audit Logs', icon: Shield, path: '/dean/audit-logs' },
         { name: 'Repository', icon: Search, path: '/dean/repository' },
       ],
       program_chair: [
