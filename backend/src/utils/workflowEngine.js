@@ -136,22 +136,10 @@ function resolvePreviousStageCode(stages, currentStatus, preferredRoles = []) {
   return previousStages[0]?.code || null;
 }
 
-function resolveRevisionTransition({ stages, currentStatus, reviewerRole, deanChairRole }) {
-  const safeStages = normalizeStages(stages);
-
-  if (['faculty', 'dean', 'program_chair'].includes(reviewerRole)) {
+function resolveRevisionTransition({ reviewerRole }) {
+  if (['faculty', 'dean', 'program_chair', 'staff', 'admin'].includes(reviewerRole)) {
     return 'revision_required';
   }
-
-  if (reviewerRole === 'staff') {
-    const preferredRoles = deanChairRole ? [deanChairRole, 'faculty'] : ['faculty'];
-    return resolvePreviousStageCode(safeStages, currentStatus, preferredRoles) || 'pending_faculty';
-  }
-
-  if (reviewerRole === 'admin') {
-    return resolvePreviousStageCode(safeStages, currentStatus, ['staff']) || 'pending_editor';
-  }
-
   return null;
 }
 

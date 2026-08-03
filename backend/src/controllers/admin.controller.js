@@ -11,6 +11,7 @@ const { validateWorkflowStages } = require('../utils/workflowEngine');
 const { notifyUser, notifyCoAuthors } = require('../utils/notify');
 const { invalidateBrowseCaches } = require('../utils/cache');
 const { parseListPagination } = require('../utils/pagination');
+const { normalizeDoiInput, isValidDoiFormat } = require('../utils/doi');
 
 const RECYCLE_BIN_RETENTION_DAYS = Number.parseInt(process.env.RECYCLE_BIN_RETENTION_DAYS || '30', 10);
 const WORKFLOW_STAGE_MUTATION_MESSAGE = 'Workflow stages are fixed and cannot be modified through the admin UI.';
@@ -56,22 +57,6 @@ function pickAdminUpdatePayload(body) {
     if (ADMIN_UPDATE_ALLOWED_KEYS.has(key)) out[key] = body[key];
   }
   return out;
-}
-
-/** Loose DOI check: optional https://doi.org/ prefix, then common DOI patterns */
-function normalizeDoiInput(raw) {
-  if (raw === undefined || raw === null) return '';
-  let s = String(raw).trim();
-  if (!s) return '';
-  s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '');
-  return s.trim();
-}
-
-function isValidDoiFormat(doi) {
-  if (!doi || doi.length > 512) return false;
-  // Typical Crossref-style DOI
-  if (/^10\.\d{4,9}\/\S+$/i.test(doi)) return true;
-  return false;
 }
 
 function csvEscape(value) {
@@ -311,6 +296,9 @@ exports.adminPublishResearch = async (req, res) => {
         published_date: nowIso,
         doi: doiNormalized,
         updated_at: nowIso,
+        // Publishing resolves any pending student "request to publish".
+        publish_requested_at: null,
+        publish_requested_by: null,
       })
       .eq('id', id)
       .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)')
@@ -361,6 +349,63 @@ exports.adminUnpublishResearch = async (req, res) => {
     return sendError(res, { status: 500, code: 'ADMIN_UNPUBLISH_RESEARCH_FAILED', message: 'Failed to unpublish research' });
   } finally {
     invalidateBrowseCaches();
+  }
+};
+
+/**
+ * Admin declines a student's "request to publish". The paper stays in
+ * 'approved' status (never demoted) — only the pending request is cleared.
+ */
+exports.declinePublishRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('research_papers')
+      .select('id, status, title, author_id, publish_requested_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!existing) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+    if (existing.status !== 'approved' || !existing.publish_requested_at) {
+      return sendError(res, {
+        status: 400,
+        code: 'NO_PENDING_PUBLISH_REQUEST',
+        message: 'This paper has no pending publish request',
+      });
+    }
+
+    const { data: updated, error } = await supabase
+      .from('research_papers')
+      .update({
+        publish_requested_at: null,
+        publish_requested_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)')
+      .single();
+    if (error) throw error;
+
+    await notifyUser({
+      userId: updated.author_id,
+      researchId: id,
+      type: 'publish_request_declined',
+      title: 'Publish Request Declined',
+      message: reason
+        ? `Your request to publish "${updated.title}" was declined. Reason: ${reason}`
+        : `Your request to publish "${updated.title}" was declined. The paper remains approved (internal).`,
+      senderUserId: req.user?.id || null,
+    });
+
+    return sendSuccess(res, { data: { paper: { ...updated, users: attachFullName(updated.author) } } });
+  } catch (error) {
+    console.error('Decline publish request error:', error);
+    return sendError(res, { status: 500, code: 'DECLINE_PUBLISH_REQUEST_FAILED', message: 'Failed to decline publish request' });
   }
 };
 

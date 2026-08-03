@@ -258,18 +258,6 @@ const FacultyReview = () => {
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="review-screen flex flex-1 min-h-0 flex-col items-center justify-center h-full">
-        <div className="relative">
-          <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
-        </div>
-        <p className="mt-5 text-sm font-medium text-slate-500">Loading assigned papers…</p>
-      </div>
-    );
-  }
-
   const submissions = filteredPapers.map((paper) => ({
     id: paper.id,
     title: paper.title,
@@ -322,6 +310,7 @@ const FacultyReview = () => {
         emptyDescription="Switch to another queue above, or clear your department and date filters."
         submissions={submissions}
         pageSize={PAGE_SIZE}
+        loading={loading}
         renderRowActions={(submission) => (
           (submission.paper?.status === 'pending_faculty' || submission.paper?.status === 'revision_required') ? (
             <button

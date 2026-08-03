@@ -16,11 +16,13 @@ import {
   Upload,
   UserPlus,
   X,
+  Award,
 } from 'lucide-react';
 import { notificationsAPI, unwrapApiData } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import UserGuideLink from '../../components/ui/UserGuideLink';
 import LoadMoreFooter from '../../components/ui/LoadMoreFooter';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
 
 const FETCH_PAGE_SIZE = 12;
 const LIST_PAGE_SIZE = 8;
@@ -36,6 +38,8 @@ const ACTION_TYPES = new Set([
   'escalation_alert',
   'review_deadline_reminder',
   'review_deadline_set',
+  'publish_request',
+  'publish_request_declined',
 ]);
 
 const APPROVAL_TYPES = new Set([
@@ -79,6 +83,28 @@ function getTypeMeta(type) {
       iconBg: 'bg-rose-100',
       iconText: 'text-rose-600',
       Icon: X,
+    };
+  }
+  if (t === 'publish_request') {
+    return {
+      label: 'Publish Request',
+      legendKey: 'action',
+      stripe: 'bg-amber-500',
+      badge: 'bg-amber-50 text-amber-800 border-amber-200',
+      iconBg: 'bg-amber-100',
+      iconText: 'text-amber-600',
+      Icon: Award,
+    };
+  }
+  if (t === 'publish_request_declined') {
+    return {
+      label: 'Publish Declined',
+      legendKey: 'action',
+      stripe: 'bg-amber-500',
+      badge: 'bg-amber-50 text-amber-800 border-amber-200',
+      iconBg: 'bg-amber-100',
+      iconText: 'text-amber-600',
+      Icon: ShieldAlert,
     };
   }
   if (t === 'revision_required' || t === 'returned_to_author' || t === 'returned_for_review') {
@@ -389,6 +415,20 @@ const NotificationCard = memo(function NotificationCard({
   );
 });
 
+const NotificationCardSkeleton = () => (
+  <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white animate-pulse" aria-hidden="true">
+    <div className="absolute left-0 top-0 bottom-0 w-1 bg-slate-200" />
+    <div className="flex items-start gap-3 px-4 py-3.5 pl-5">
+      <div className="mt-0.5 h-9 w-9 shrink-0 rounded-lg bg-slate-100" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="h-4 w-20 rounded-full bg-slate-100" />
+        <div className="h-3.5 w-2/3 rounded bg-slate-200" />
+        <div className="h-3 w-1/2 rounded bg-slate-100" />
+      </div>
+    </div>
+  </div>
+);
+
 const Notifications = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -596,6 +636,18 @@ const Notifications = () => {
   );
 
   const canLoadMoreList = visibleCount < sortedNotifications.length;
+  const listLoadMoreRef = useAutoLoadMore({
+    canLoadMore: canLoadMoreList,
+    enabled: !loading,
+    setVisibleCount,
+    step: LIST_PAGE_SIZE,
+  });
+  const fetchLoadMoreRef = useAutoLoadMore({
+    canLoadMore: hasMore,
+    enabled: !loading && !canLoadMoreList,
+    onLoadMore: loadMoreNotifications,
+    step: FETCH_PAGE_SIZE,
+  });
 
   useEffect(() => {
     setVisibleCount(LIST_PAGE_SIZE);
@@ -606,17 +658,6 @@ const Notifications = () => {
       setExpandedId(null);
     }
   }, [notifications, expandedId]);
-
-  if (loading) {
-    return (
-      <div className="w-full min-h-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm text-slate-600">
-          <RefreshCw size={18} className="animate-spin" />
-          <span className="font-medium">Loading notifications…</span>
-        </div>
-      </div>
-    );
-  }
 
   if (error) {
     return (
@@ -719,14 +760,18 @@ const Notifications = () => {
 
       <div className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-slate-600">
-              <span className="font-bold text-slate-900">{totalCount || notifications.length}</span> total
-              {unreadCount > 0 && (
-                <span className="ml-2 inline-flex items-center rounded-full bg-[#3674B5] px-2 py-0.5 text-[10px] font-bold text-white">
-                  {unreadCount} unread
-                </span>
-              )}
-            </p>
+            {loading ? (
+              <div className="h-4 w-24 rounded bg-slate-100 animate-pulse" aria-hidden="true" />
+            ) : (
+              <p className="text-sm text-slate-600">
+                <span className="font-bold text-slate-900">{totalCount || notifications.length}</span> total
+                {unreadCount > 0 && (
+                  <span className="ml-2 inline-flex items-center rounded-full bg-[#3674B5] px-2 py-0.5 text-[10px] font-bold text-white">
+                    {unreadCount} unread
+                  </span>
+                )}
+              </p>
+            )}
           </div>
 
           <div className="px-4 py-3 border-b border-slate-100">
@@ -781,7 +826,13 @@ const Notifications = () => {
 
           <UserGuideLink />
 
-          {sortedNotifications.length === 0 ? (
+          {loading ? (
+            <div className="space-y-2 p-3 sm:p-4" role="status" aria-label="Loading notifications">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <NotificationCardSkeleton key={index} />
+              ))}
+            </div>
+          ) : sortedNotifications.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <Bell size={32} className="mx-auto text-slate-300 mb-3" />
               <p className="text-sm font-semibold text-slate-700">
@@ -810,6 +861,12 @@ const Notifications = () => {
                     isStudent={isStudent}
                   />
                 ))}
+                {loadingMore && (
+                  <>
+                    <NotificationCardSkeleton />
+                    <NotificationCardSkeleton />
+                  </>
+                )}
               </div>
 
               {sortedNotifications.length > LIST_PAGE_SIZE && (
@@ -822,6 +879,8 @@ const Notifications = () => {
                     label="in this view"
                     step={LIST_PAGE_SIZE}
                   />
+                  {/* Auto-loads more as this scrolls into view; button above remains as a manual fallback */}
+                  <div ref={listLoadMoreRef} className="h-1" aria-hidden="true" />
                 </div>
               )}
 
@@ -836,6 +895,9 @@ const Notifications = () => {
                     label="notifications"
                     step={FETCH_PAGE_SIZE}
                   />
+                  {!canLoadMoreList && (
+                    <div ref={fetchLoadMoreRef} className="h-1" aria-hidden="true" />
+                  )}
                 </div>
               )}
             </>

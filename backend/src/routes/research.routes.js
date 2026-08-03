@@ -104,12 +104,13 @@ router.post('/:id/approve',   authenticate, authorize('faculty', 'dean', 'progra
 router.post('/:id/reject',    authenticate, authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'), reviewController.rejectResearch);
 router.post('/:id/revision',  authenticate, authorize('faculty', 'dean', 'program_chair', 'staff', 'admin'), reviewController.requestRevision);
 router.post('/:id/declare-conflict', authenticate, authorize('faculty'), reviewController.declareConflictOfInterest);
-router.post('/:id/return-to-author', authenticate, authorize('staff'), reviewController.returnToAuthor);
 router.patch('/:id/metadata', authenticate, authorize('staff'), reviewController.correctMetadata);
 router.get('/:id/plagiarism', authenticate, authorize('staff', 'admin'), reviewController.getPlagiarismReport);
 router.post('/:id/plagiarism/run', authenticate, authorize('staff'), reviewController.runPlagiarismScan);
 router.post('/:id/assign-faculty', authenticate, authorize('dean', 'program_chair'), reviewController.assignFacultyReviewer);
 router.post('/:id/co-author-invitations', authenticate, authorize('student'), coauthorInvitationController.createCoAuthorInvitations);
+router.post('/:id/request-publish', authenticate, authorize('student'), submissionController.requestPublish);
+router.post('/:id/cancel-publish-request', authenticate, authorize('student'), submissionController.cancelPublishRequest);
 
 // ========== FACULTY ROUTES ==========
 router.get('/faculty/assigned', authenticate, authorize('faculty'), reviewController.getFacultyAssignedPapers);
@@ -134,6 +135,7 @@ router.delete('/admin/:id',        authenticate, authorize('admin'), adminContro
 router.post('/admin/:id/restore',  authenticate, authorize('admin'), adminController.adminRestoreResearch);
 router.post('/admin/:id/publish',  authenticate, authorize('admin'), adminController.adminPublishResearch);
 router.post('/admin/:id/unpublish', authenticate, authorize('admin'), adminController.adminUnpublishResearch);
+router.post('/admin/:id/decline-publish-request', authenticate, authorize('admin'), adminController.declinePublishRequest);
 
 // ========== DEAN BYPASS ==========
 router.post('/:id/dean-bypass', authenticate, authorize('dean'), reviewController.deanBypassApprove);

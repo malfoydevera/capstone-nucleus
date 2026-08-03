@@ -9,7 +9,6 @@ const { WORKFLOW_POLICY, validateWorkflowAction } = require('../utils/workflowPo
 const {
   getActiveWorkflowStages,
   resolveApprovalTransition,
-  resolveRevisionTransition,
   resolveRejectionStatus,
   resolveBypassTargets,
 } = require('../utils/workflowEngine');
@@ -581,6 +580,19 @@ exports.rejectResearch = async (req, res) => {
       console.error('[rejectResearch] co-author notification failed:', coAuthorErr.message);
     }
 
+    try {
+      const { data: allReviewers } = await supabase.from('users').select('id').in('role', ['faculty', 'dean', 'program_chair', 'staff', 'admin']);
+      if (allReviewers?.length > 0) {
+        await notifyUsers(
+          allReviewers
+            .filter((u) => u.id !== req.user.id)
+            .map((u) => ({ user_id: u.id, research_id: id, type: 'rejection', title: `Research Rejected: ${paper.title}`, message: `A paper was rejected by ${req.user.role}. Reason: ${reason.trim()}` }))
+        );
+      }
+    } catch (reviewerNotifErr) {
+      console.error('[rejectResearch] reviewer fan-out notification failed:', reviewerNotifErr.message);
+    }
+
     await insertApprovalWorkflowEvent({
       researchId: id,
       reviewerId: req.user.id,
@@ -622,54 +634,11 @@ exports.requestRevision = async (req, res) => {
     const validation = validateWorkflowAction('revision', req.user, paper);
     if (!validation.ok) return sendError(res, { status: validation.code, code: 'INVALID_WORKFLOW_TRANSITION', message: validation.error, details: JSON.stringify({ currentStatus: paper.status, yourRole: reviewerRole }) });
 
-    const activeStages = await getActiveWorkflowStages();
-
-    let newStatus, notificationUserId, notificationTitle, notificationMessage;
-
-    if (reviewerRole === 'faculty' && paper.status === 'pending_faculty') {
-      newStatus = 'revision_required'; notificationUserId = paper.author_id;
-      notificationTitle = `Revision Required: ${paper.title}`; notificationMessage = `Your adviser requires revisions. Notes: ${notes}`;
-    } else if ((reviewerRole === 'dean' && paper.status === 'pending_dean') || (reviewerRole === 'program_chair' && paper.status === 'pending_program_chair')) {
-      newStatus = 'revision_required'; notificationUserId = paper.author_id;
-      const roleLabel = reviewerRole === 'dean' ? 'Dean' : 'Program Chair';
-      notificationTitle = `Revision Required: ${paper.title}`; notificationMessage = `The ${roleLabel} requires revisions. Notes: ${notes}`;
-    } else if (reviewerRole === 'staff' && paper.status === 'pending_editor') {
-      let deanChairRole = null;
-      if (paper.dean_chair_id) {
-        const { data: dcUser } = await supabase.from('users').select('role').eq('id', paper.dean_chair_id).single();
-        deanChairRole = dcUser?.role || null;
-        newStatus = resolveRevisionTransition({
-          stages: activeStages,
-          currentStatus: paper.status,
-          reviewerRole,
-          deanChairRole,
-        }) || (dcUser?.role === 'dean' ? 'pending_dean' : 'pending_program_chair');
-      } else {
-        newStatus = resolveRevisionTransition({
-          stages: activeStages,
-          currentStatus: paper.status,
-          reviewerRole,
-        }) || 'pending_faculty';
-      }
-
-      if (newStatus === 'pending_dean' || newStatus === 'pending_program_chair') {
-        notificationUserId = paper.dean_chair_id;
-      } else if (newStatus === 'pending_faculty') {
-        notificationUserId = paper.faculty_id;
-      }
-
-      notificationTitle = `Paper Returned for Review: ${paper.title}`; notificationMessage = `The Research Editor returned this paper with notes: ${notes}`;
-    } else if (reviewerRole === 'admin' && paper.status === 'pending_admin') {
-      newStatus = resolveRevisionTransition({
-        stages: activeStages,
-        currentStatus: paper.status,
-        reviewerRole,
-      }) || 'pending_editor';
-      notificationUserId = null;
-      notificationTitle = `Paper Returned for Review: ${paper.title}`; notificationMessage = `The Admin returned this paper with notes: ${notes}`;
-    } else {
-      return sendError(res, { status: 400, code: 'INVALID_WORKFLOW_TRANSITION', message: `Cannot request revision from status "${paper.status}" as role "${reviewerRole}"` });
-    }
+    const newStatus = 'revision_required';
+    const roleLabelMap = { faculty: 'Adviser', dean: 'Dean', program_chair: 'Program Chair', staff: 'Research Editor', admin: 'Admin' };
+    const roleLabel = roleLabelMap[reviewerRole] || reviewerRole;
+    const notificationTitle = `Revision Required: ${paper.title}`;
+    const notificationMessage = `The ${roleLabel} requires revisions. Notes: ${notes}`;
 
     const { data: updatedPaper, error: updateError } = await supabase.from('research_papers')
       .update({ status: newStatus, revision_notes: notes, last_reviewer_role: reviewerRole, previous_status: paper.status, updated_at: new Date().toISOString() })
@@ -678,80 +647,55 @@ exports.requestRevision = async (req, res) => {
 
     maybeInvalidateBrowseCache(paper.status, newStatus);
 
-    if (notificationUserId) {
-      await notifyUser({
-        userId: notificationUserId,
+    await notifyUser({
+      userId: paper.author_id,
+      researchId: id,
+      type: 'revision_required',
+      title: notificationTitle,
+      message: notificationMessage,
+      senderUserId: req.user.id,
+    });
+
+    try {
+      await notifyCoAuthors({
         researchId: id,
-        type: newStatus === 'revision_required' ? 'revision_required' : 'returned_for_review',
-        title: notificationTitle,
-        message: notificationMessage,
+        type: 'revision_required',
+        title: 'Revision Requested for Co-authored Paper',
+        message: `Revision has been requested for the paper "${paper.title}". Please check the feedback.`,
         senderUserId: req.user.id,
+        alreadyNotifiedIds: [paper.author_id],
       });
+    } catch (coAuthorErr) {
+      console.error('[requestRevision] co-author notification failed:', coAuthorErr.message);
+    }
 
-      // When paper goes back to the student for revision, also notify co-authors
-      if (newStatus === 'revision_required') {
-        try {
-          await notifyCoAuthors({
-            researchId: id,
-            type: 'revision_required',
-            title: 'Revision Requested for Co-authored Paper',
-            message: `Revision has been requested for the paper "${paper.title}". Please check the feedback.`,
-            senderUserId: req.user.id,
-            alreadyNotifiedIds: [notificationUserId],
-          });
-        } catch (coAuthorErr) {
-          console.error('[requestRevision] co-author notification failed:', coAuthorErr.message);
-        }
-      }
+    try {
+      const { data: recipient } = await supabase.from('users').select('first_name, middle_name, last_name, email').eq('id', paper.author_id).single();
+      await sendPaperStatusEmail({ user: recipient, paperTitle: paper.title, statusLabel: newStatus, message: notificationMessage });
+    } catch (emailErr) {
+      console.error('Revision email error:', emailErr.message);
+    }
 
-      try {
-        const { data: recipient } = await supabase
-          .from('users')
-          .select('first_name, middle_name, last_name, email')
-          .eq('id', notificationUserId)
-          .single();
-        await sendPaperStatusEmail({
-          user: recipient,
-          paperTitle: paper.title,
-          statusLabel: newStatus,
-          message: notificationMessage,
-        });
-      } catch (emailErr) {
-        console.error('Revision email error:', emailErr.message);
+    try {
+      const { data: allReviewers } = await supabase.from('users').select('id').in('role', ['faculty', 'dean', 'program_chair', 'staff', 'admin']);
+      if (allReviewers?.length > 0) {
+        const reviewerNotifTitle = `Revision Requested: ${paper.title}`;
+        const reviewerNotifMessage = `The ${roleLabel} requested a revision for "${paper.title}". Notes: ${notes}`;
+        await notifyUsers(
+          allReviewers
+            .filter((u) => u.id !== req.user.id)
+            .map((u) => ({ user_id: u.id, research_id: id, type: 'revision_required', title: reviewerNotifTitle, message: reviewerNotifMessage }))
+        );
       }
-    } else if (newStatus === 'pending_editor') {
-      const { data: staffUsers } = await supabase.from('users').select('id').eq('role', 'staff');
-      if (staffUsers?.length > 0) {
-        await notifyUsers(staffUsers.map((s) => ({ user_id: s.id, research_id: id, type: 'returned_for_review', title: notificationTitle, message: notificationMessage })));
-
-        try {
-          const { data: staffRecipients } = await supabase
-            .from('users')
-            .select('id, first_name, middle_name, last_name, email')
-            .eq('role', 'staff');
-          if (staffRecipients?.length) {
-            await Promise.all(
-              staffRecipients.map((staff) =>
-                sendPaperStatusEmail({
-                  user: staff,
-                  paperTitle: paper.title,
-                  statusLabel: newStatus,
-                  message: notificationMessage,
-                })
-              )
-            );
-          }
-        } catch (emailErr) {
-          console.error('Staff revision email error:', emailErr.message);
-        }
-      }
+    } catch (reviewerNotifErr) {
+      console.error('[requestRevision] reviewer fan-out notification failed:', reviewerNotifErr.message);
     }
 
     await insertApprovalWorkflowEvent({
       researchId: id,
       reviewerId: req.user.id,
       reviewerRole,
-      actionType: newStatus === 'revision_required' ? 'request_revision' : 'returned_for_review',
+      actionType: 'request_revision',
       comments: notes,
       previousStatus: paper.status,
       newStatus,

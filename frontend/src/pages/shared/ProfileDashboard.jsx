@@ -30,6 +30,7 @@ import {
 import { getStudentStatusLabel, getStudentStatusTone } from '../../utils/studentStatus';
 import { reviewStatusLabel } from '../../components/review/reviewStatus';
 import LoadMoreFooter from '../../components/ui/LoadMoreFooter';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
 import ChangePasswordModal from '../../components/profile/ChangePasswordModal';
 import ChangeEmailModal from '../../components/profile/ChangeEmailModal';
 import ChangeRecoveryEmailModal from '../../components/profile/ChangeRecoveryEmailModal';
@@ -101,6 +102,43 @@ const emptyEditForm = {
   departmentId: '',
   programId: '',
 };
+
+const HighlightStatSkeleton = () => (
+  <div className="text-center px-3 py-2 animate-pulse" aria-hidden="true">
+    <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 mb-2" />
+    <div className="h-6 w-10 rounded bg-slate-200 mx-auto" />
+    <div className="h-3 w-16 rounded bg-slate-100 mx-auto mt-2" />
+  </div>
+);
+
+const PortfolioCardSkeleton = () => (
+  <div
+    className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden animate-pulse"
+    aria-hidden="true"
+  >
+    <div className="h-2 bg-slate-100" />
+    <div className="p-5">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="h-11 w-11 rounded-xl bg-slate-100 shrink-0" />
+        <div className="h-5 w-16 rounded-full bg-slate-100" />
+      </div>
+      <div className="h-4 w-5/6 rounded bg-slate-200 mb-2" />
+      <div className="h-4 w-1/2 rounded bg-slate-200" />
+      <div className="h-3 w-24 rounded bg-slate-100 mt-3" />
+      <div className="mt-4 h-1.5 w-full rounded-full bg-slate-100" />
+    </div>
+  </div>
+);
+
+const TimelineItemSkeleton = () => (
+  <div className="relative animate-pulse" aria-hidden="true">
+    <span className="absolute -left-6 top-1.5 h-[18px] w-[18px] rounded-full bg-slate-200 border-2 border-white shadow-sm" />
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="h-3.5 w-2/3 rounded bg-slate-200 mb-2" />
+      <div className="h-3 w-1/3 rounded bg-slate-100" />
+    </div>
+  </div>
+);
 
 const HighlightStat = ({ label, value, icon: Icon, accent = 'text-[#3674B5]' }) => (
   <div className="text-center px-3 py-2">
@@ -443,17 +481,13 @@ const ProfileDashboard = () => {
 
   const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || user?.email || 'User')}&background=3674B5&color=fff&size=256&bold=true`;
 
-  if (loading) {
-    return (
-      <div className="profile-screen flex flex-col items-center justify-center min-h-[100svh] bg-slate-50/50">
-        <div className="relative">
-          <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
-        </div>
-        <p className="mt-5 text-sm font-medium text-slate-500">Preparing your profile…</p>
-      </div>
-    );
-  }
+  const canLoadMorePapers = visibleCount < filteredStudentPapers.length;
+  const portfolioLoadMoreRef = useAutoLoadMore({
+    canLoadMore: canLoadMorePapers,
+    enabled: !loading,
+    setVisibleCount,
+    step: PAGE_SIZE,
+  });
 
   return (
     <div className="profile-screen min-h-[100svh] w-full bg-slate-50/50 animate-fadeIn flex flex-col">
@@ -592,9 +626,9 @@ const ProfileDashboard = () => {
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 -mt-14 sm:-mt-16 lg:-mt-20 relative z-10">
         <div className="rounded-2xl border border-slate-200/80 bg-white shadow-lg overflow-hidden">
           <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-slate-100">
-            {highlights.map((item) => (
-              <HighlightStat key={item.key} {...item} />
-            ))}
+            {loading
+              ? Array.from({ length: 4 }).map((_, index) => <HighlightStatSkeleton key={index} />)
+              : highlights.map((item) => <HighlightStat key={item.key} {...item} />)}
           </div>
         </div>
       </div>
@@ -681,7 +715,13 @@ const ProfileDashboard = () => {
                 </div>
               </div>
 
-              {filteredStudentPapers.length === 0 ? (
+              {loading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" role="status" aria-label="Loading your portfolio">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <PortfolioCardSkeleton key={index} />
+                  ))}
+                </div>
+              ) : filteredStudentPapers.length === 0 ? (
                 <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white px-6 py-16 text-center">
                   <div className="w-16 h-16 rounded-2xl bg-[#3674B5]/10 flex items-center justify-center mx-auto mb-4">
                     <FileText size={28} className="text-[#3674B5]" />
@@ -713,11 +753,13 @@ const ProfileDashboard = () => {
                   <LoadMoreFooter
                     visibleCount={visibleStudentPapers.length}
                     totalCount={filteredStudentPapers.length}
-                    canLoadMore={visibleCount < filteredStudentPapers.length}
+                    canLoadMore={canLoadMorePapers}
                     onLoadMore={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
                     step={PAGE_SIZE}
                     label="papers"
                   />
+                  {/* Auto-loads more as this scrolls into view; button above remains as a manual fallback */}
+                  <div ref={portfolioLoadMoreRef} className="h-1" aria-hidden="true" />
                 </>
               )}
             </section>
@@ -771,7 +813,16 @@ const ProfileDashboard = () => {
               </p>
             </div>
 
-            {activity.items.length === 0 ? (
+            {loading ? (
+              <div className="relative pl-6" role="status" aria-label="Loading activity timeline">
+                <div className="absolute left-[9px] top-2 bottom-2 w-px bg-slate-200" aria-hidden="true" />
+                <div className="space-y-5">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <TimelineItemSkeleton key={index} />
+                  ))}
+                </div>
+              </div>
+            ) : activity.items.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-white px-6 py-14 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3">
                   <Sparkles size={22} className="text-slate-400" />

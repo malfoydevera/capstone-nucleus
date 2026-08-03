@@ -20,6 +20,7 @@ const { sendPaperStatusEmail, sendReviewAssignmentEmail } = require('../utils/wo
 const { getSystemPolicy, isFileAllowedByPolicy } = require('../utils/systemPolicy');
 const { notifyUser, notifyUsers, notifyCoAuthors } = require('../utils/notify');
 const { parseListPagination } = require('../utils/pagination');
+const { normalizeDoiInput, isValidDoiFormat } = require('../utils/doi');
 const {
   buildEmbeddingInput,
   contentHash,
@@ -1487,5 +1488,129 @@ exports.deleteMyDraft = async (req, res) => {
   } catch (error) {
     logger.error('Delete draft error:', error);
     return sendError(res, { status: 500, code: 'DELETE_DRAFT_FAILED', message: 'Failed to delete draft' });
+  }
+};
+
+/** True when the requesting user is the primary author or an accepted co-author of the paper. */
+function isPaperAuthorOrCoAuthor(user, paper) {
+  if (!user || !paper) return false;
+  if (String(paper.author_id || '') === String(user.id)) return true;
+  const coAuthors = Array.isArray(paper.research_authors) ? paper.research_authors : [];
+  return coAuthors.some((entry) => String(entry?.user_id || '') === String(user.id));
+}
+
+/**
+ * Student requests admin review to formally publish an approved paper.
+ * Does not change `status` — only flags the paper for the admin publish queue.
+ */
+exports.requestPublish = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doiFromBody = normalizeDoiInput(req.body?.doi);
+
+    const { data: paper, error: fetchError } = await supabase
+      .from('research_papers')
+      .select('id, status, title, author_id, doi, research_authors!research_authors_research_id_fkey(user_id)')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!paper) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+    if (!isPaperAuthorOrCoAuthor(req.user, paper)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
+    }
+    if (paper.status !== 'approved') {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_WORKFLOW_TRANSITION',
+        message: `Only papers approved (internal) can request formal publication (current status: ${paper.status})`,
+      });
+    }
+
+    const doiNormalized = doiFromBody || normalizeDoiInput(paper.doi);
+    if (!doiNormalized || !isValidDoiFormat(doiNormalized)) {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_DOI',
+        message: 'A valid DOI (e.g. 10.1234/example.2026.001) is required to request publication',
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .from('research_papers')
+      .update({
+        doi: doiNormalized,
+        publish_requested_at: nowIso,
+        publish_requested_by: req.user.id,
+        updated_at: nowIso,
+      })
+      .eq('id', id)
+      .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)')
+      .single();
+    if (error) throw error;
+
+    try {
+      const { data: admins } = await supabase.from('users').select('id').eq('role', 'admin');
+      if (admins?.length > 0) {
+        await notifyUsers(
+          admins.map((admin) => ({
+            user_id: admin.id,
+            research_id: id,
+            type: 'publish_request',
+            title: 'Publish Request Submitted',
+            message: `"${updated.title}" was submitted by the author for formal publication review (DOI: ${doiNormalized}).`,
+            sender_user_id: req.user.id,
+            action_url: `/admin/review/${id}`,
+          }))
+        );
+      }
+    } catch (notifyErr) {
+      console.error('[requestPublish] admin notification failed:', notifyErr.message);
+    }
+
+    return sendSuccess(res, { data: { paper: { ...updated, users: attachFullName(updated.author) } } });
+  } catch (error) {
+    logger.error('Request publish error:', error);
+    return sendError(res, { status: 500, code: 'REQUEST_PUBLISH_FAILED', message: 'Failed to request publication' });
+  }
+};
+
+/** Student withdraws a pending "request to publish" before the admin acts on it. */
+exports.cancelPublishRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: paper, error: fetchError } = await supabase
+      .from('research_papers')
+      .select('id, status, author_id, publish_requested_at, research_authors!research_authors_research_id_fkey(user_id)')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!paper) {
+      return sendError(res, { status: 404, code: 'PAPER_NOT_FOUND', message: 'Research paper not found' });
+    }
+    if (!isPaperAuthorOrCoAuthor(req.user, paper)) {
+      return sendError(res, { status: 403, code: 'ACCESS_DENIED', message: 'Access denied' });
+    }
+    if (!paper.publish_requested_at) {
+      return sendError(res, { status: 400, code: 'NO_PENDING_PUBLISH_REQUEST', message: 'There is no pending publish request to cancel' });
+    }
+
+    const { data: updated, error } = await supabase
+      .from('research_papers')
+      .update({ publish_requested_at: null, publish_requested_by: null, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('*, author:users!author_id (id, first_name, middle_name, last_name, email)')
+      .single();
+    if (error) throw error;
+
+    return sendSuccess(res, { data: { paper: { ...updated, users: attachFullName(updated.author) } } });
+  } catch (error) {
+    logger.error('Cancel publish request error:', error);
+    return sendError(res, { status: 500, code: 'CANCEL_PUBLISH_REQUEST_FAILED', message: 'Failed to cancel publish request' });
   }
 };

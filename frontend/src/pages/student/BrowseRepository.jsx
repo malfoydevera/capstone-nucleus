@@ -18,6 +18,8 @@ import {
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 import RepositoryFilterBar from '../../components/repository/RepositoryFilterBar';
+import ResultsSkeleton from '../../components/repository/RepositorySkeletonCard';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -257,9 +259,15 @@ const BrowseRepository = () => {
 
   const canLoadMore = papers.length < total;
   const handleLoadMore = () => {
-    if (!canLoadMore || loadingMore) return;
+    if (!canLoadMore || loadingMore || loading) return;
     fetchPapers({ pageNum: page + 1, append: true });
   };
+  const loadMoreRef = useAutoLoadMore({
+    canLoadMore,
+    enabled: !loading,
+    onLoadMore: handleLoadMore,
+    step: 20,
+  });
 
   const filteredPapers = isAiSearch
     ? papers // preserve AI relevance ranking
@@ -380,20 +388,6 @@ const BrowseRepository = () => {
     hasActiveFilters: activeFilterCount() > 0,
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-50 to-white">
-        <div className="text-center">
-          <div className="relative">
-            <div className="w-20 h-20 border-4 border-[#3674B5]/20 rounded-full"></div>
-            <div className="absolute top-0 left-0 w-20 h-20 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin"></div>
-          </div>
-          <p className="mt-6 text-lg font-medium text-slate-600 animate-pulse">Loading research repository...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -507,7 +501,9 @@ const BrowseRepository = () => {
         </div>
 
         {/* Papers Grid/List */}
-        {filteredPapers.length === 0 ? (
+        {loading ? (
+          <ResultsSkeleton viewMode={viewMode} />
+        ) : filteredPapers.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center mx-auto mb-6">
               <FileText size={32} className="text-slate-400" />
@@ -750,7 +746,13 @@ const BrowseRepository = () => {
           </div>
         )}
 
-        {filteredPapers.length > 0 && (
+        {!loading && loadingMore && (
+          <div className="mt-6">
+            <ResultsSkeleton viewMode={viewMode} count={viewMode === 'grid' ? 3 : 2} />
+          </div>
+        )}
+
+        {!loading && filteredPapers.length > 0 && (
           <div className="mt-10 text-center space-y-4">
             <p className="text-sm text-slate-600">
               Showing {papers.length} of {total} research papers
@@ -772,6 +774,8 @@ const BrowseRepository = () => {
                 )}
               </button>
             )}
+            {/* Auto-loads more as this scrolls into view; button above remains as a manual fallback */}
+            <div ref={loadMoreRef} className="h-1" aria-hidden="true" />
           </div>
         )}
       </div>

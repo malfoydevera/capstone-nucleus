@@ -18,7 +18,6 @@ import {
   ShieldCheck,
   Eye,
   Maximize2,
-  CornerDownRight,
   Award,
   MessageSquare,
   ExternalLink,
@@ -32,6 +31,7 @@ import ReviewSection from '../../components/review/ReviewSection';
 import ReviewAssignmentBanner, { ActiveReviewerNotes } from '../../components/review/ReviewAssignmentBanner';
 import ReviewProgressTracker, { shouldShowWorkflowProgress } from '../../components/review/ReviewProgressTracker';
 import { formatFullName } from '../../utils/names';
+import SearchableUserSelect from '../../components/ui/SearchableUserSelect';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -46,13 +46,11 @@ const ReviewDetail = () => {
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
-  const [showReturnToAuthorModal, setShowReturnToAuthorModal] = useState(false);
   const [showMetadataModal, setShowMetadataModal] = useState(false);
   const [comments, setComments] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectionCategory, setRejectionCategory] = useState('methodology');
   const [revisionNotes, setRevisionNotes] = useState('');
-  const [returnToAuthorNotes, setReturnToAuthorNotes] = useState('');
   const [metadataForm, setMetadataForm] = useState({
     title: '',
     abstract: '',
@@ -83,6 +81,8 @@ const ReviewDetail = () => {
   const [showPublishDoiModal, setShowPublishDoiModal] = useState(false);
   const [showPublishConfirmModal, setShowPublishConfirmModal] = useState(false);
   const [publishDoiValue, setPublishDoiValue] = useState('');
+  const [showDeclinePublishModal, setShowDeclinePublishModal] = useState(false);
+  const [declineReason, setDeclineReason] = useState('');
 
   const getApiErrorMessage = (error, fallback) => {
     const payload = error?.response?.data;
@@ -326,6 +326,22 @@ const ReviewDetail = () => {
     }
   };
 
+  const handleDeclinePublishRequest = async () => {
+    setActionLoading(true);
+    const t = toast.loading('Declining request…');
+    try {
+      await researchAPI.declinePublishRequest(id, declineReason.trim());
+      toast.success('Publish request declined', { id: t });
+      setShowDeclinePublishModal(false);
+      setDeclineReason('');
+      await fetchPaperDetail();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to decline request'), { id: t });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
       toast.error('Please provide a rejection reason');
@@ -423,27 +439,6 @@ const ReviewDetail = () => {
       fetchPaperDetail();
     } catch (error) {
       toast.error(getApiErrorMessage(error, 'Failed to set review deadline'), { id: loadingToast });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleReturnToAuthor = async () => {
-    if (!returnToAuthorNotes.trim()) {
-      toast.error('Please provide return notes for the author');
-      return;
-    }
-
-    setActionLoading(true);
-    const loadingToast = toast.loading('Returning paper to author...');
-    try {
-      await researchAPI.returnToAuthor(id, returnToAuthorNotes.trim());
-      toast.success('Paper returned to author successfully', { id: loadingToast, duration: 3000 });
-      setShowReturnToAuthorModal(false);
-      setReturnToAuthorNotes('');
-      navigate('/staff/review');
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to return paper to author'), { id: loadingToast });
     } finally {
       setActionLoading(false);
     }
@@ -889,15 +884,6 @@ const ReviewDetail = () => {
                   </button>
                 )}
 
-                {user?.role === 'staff' && ['pending_editor'].includes(paper.status) && (
-                  <button
-                    onClick={() => setShowReturnToAuthorModal(true)}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-violet-200 bg-violet-50 text-violet-800 rounded-lg hover:bg-violet-100 transition-colors text-sm font-semibold"
-                  >
-                    <CornerDownRight size={18} aria-hidden="true" /> Return to Author
-                  </button>
-                )}
-
                 {user?.role !== 'program_chair' && (
                   <button onClick={() => setShowRejectModal(true)} className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-red-200 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-sm font-semibold">
                     <XCircle size={18} aria-hidden="true" /> Reject Paper
@@ -1022,6 +1008,11 @@ const ReviewDetail = () => {
                     </a>
                   </p>
                 )}
+                {paper.status === 'approved' && paper.publish_requested_at && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+                    Student requested publication on {new Date(paper.publish_requested_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.
+                  </div>
+                )}
                 <div className="flex flex-col gap-2">
                   {paper.status === 'approved' && (
                     <>
@@ -1037,6 +1028,16 @@ const ReviewDetail = () => {
                         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                           No student DOI on file. Ask the author to resubmit with their journal DOI before formal publication.
                         </p>
+                      )}
+                      {paper.publish_requested_at && (
+                        <button
+                          type="button"
+                          disabled={actionLoading}
+                          onClick={() => setShowDeclinePublishModal(true)}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-rose-200 text-rose-800 rounded-xl font-bold hover:bg-rose-50 disabled:opacity-50 transition-colors"
+                        >
+                          Decline request
+                        </button>
                       )}
                     </>
                   )}
@@ -1287,50 +1288,148 @@ const ReviewDetail = () => {
         </div>
       )}
 
-      {/* Modals remain the same as previous logic */}
+      {/* Admin decline publish request */}
+      {showDeclinePublishModal && user?.role === 'admin' && paper?.status === 'approved' && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => !actionLoading && setShowDeclinePublishModal(false)}
+        >
+          <div
+            className="surface-card w-full max-w-md overflow-hidden"
+            style={{ boxShadow: 'var(--shadow-strong)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-rose-100 bg-rose-50 flex items-center gap-3">
+              <AlertCircle size={20} className="text-rose-600" />
+              <h3 className="text-xl font-bold text-slate-900">Decline publish request</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600">
+                The paper stays approved (internal); it will not be demoted. The author is notified with your reason, if provided.
+              </p>
+              <textarea
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                placeholder="Optional reason for the author (e.g. DOI does not resolve, needs a valid publisher DOI)…"
+                rows={3}
+                className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-300 focus:border-rose-400 outline-none text-sm"
+              />
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => {
+                    setShowDeclinePublishModal(false);
+                    setDeclineReason('');
+                  }}
+                  className="flex-1 h-11 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={handleDeclinePublishRequest}
+                  className="flex-1 h-11 rounded-xl bg-rose-600 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Declining…' : 'Decline request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Approve Modal */}
       {showApproveModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="approve-research-title"
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border"
+          >
             <div className="px-6 py-4 bg-emerald-50 border-b border-emerald-100 flex items-center gap-3">
-              <CheckCircle size={20} className="text-emerald-600" />
-              <h3 className="text-xl font-bold text-slate-900">Approve Research</h3>
+              <CheckCircle size={20} className="text-emerald-600" aria-hidden="true" />
+              <h3 id="approve-research-title" className="text-xl font-bold text-slate-900">Approve Research</h3>
             </div>
             <div className="p-6 space-y-4">
-              <textarea value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Enter approval comments..." rows={3} className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
+              <div>
+                <label htmlFor="approve-comments" className="block text-sm font-bold text-slate-700 mb-2">
+                  Approval comments <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  id="approve-comments"
+                  value={comments}
+                  onChange={(e) => setComments(e.target.value)}
+                  placeholder="Summarize why this paper is ready to move forward..."
+                  rows={3}
+                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-slate-900 placeholder:text-slate-400"
+                />
+              </div>
 
               {/* Dean / Program Chair picker — only shown for Adviser (faculty) role */}
               {user?.role === 'faculty' && (
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                  <label htmlFor="approve-forward-target" className="block text-sm font-bold text-slate-700 mb-2">
                     Forward to Dean or Program Chair <span className="text-red-500">*</span>
                   </label>
                   {deanChairList.length === 0 ? (
-                    <p className="text-sm text-amber-600">No Dean or Program Chair accounts found. Ask your admin to create one.</p>
+                    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                      No Dean or Program Chair accounts found. Ask your admin to create one.
+                    </p>
                   ) : (
-                    <select
-                      value={selectedTargetId}
-                      onChange={(e) => {
-                        const selected = deanChairList.find(m => m.id === e.target.value);
-                        setSelectedTargetId(e.target.value);
-                        setSelectedTargetRole(selected?.role || '');
-                      }}
-                      className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900"
-                    >
-                      <option value="">-- Select reviewer --</option>
-                      {deanChairList.map(m => (
-                        <option key={m.id} value={m.id}>
-                          {formatFullName(m)} ({m.role === 'dean' ? 'Dean' : 'Program Chair'})
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <SearchableUserSelect
+                        id="approve-forward-target"
+                        options={deanChairList}
+                        value={selectedTargetId}
+                        required
+                        accentClass="emerald"
+                        placeholder="Search by name, email, or role..."
+                        emptyMessage="No matching Dean or Program Chair found."
+                        aria-label="Search Dean or Program Chair to forward this paper"
+                        getSecondaryText={(member) => {
+                          const roleLabel = member.role === 'dean' ? 'Dean' : 'Program Chair';
+                          return [roleLabel, member.department, member.email].filter(Boolean).join(' · ');
+                        }}
+                        onChange={(nextId, selected) => {
+                          setSelectedTargetId(nextId);
+                          setSelectedTargetRole(selected?.role || '');
+                        }}
+                      />
+                      <p className="mt-2 text-xs text-slate-500">
+                        Type to filter accounts, then select who should review next.
+                      </p>
+                    </>
                   )}
                 </div>
               )}
 
-              <div className="flex gap-3">
-                <button onClick={() => setShowApproveModal(false)} className="flex-1 py-3 border rounded-xl font-medium">Cancel</button>
-                <button onClick={handleApprove} disabled={actionLoading} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold">
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowApproveModal(false);
+                    setSelectedTargetId('');
+                    setSelectedTargetRole('');
+                  }}
+                  className="flex-1 h-11 border border-slate-300 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  disabled={
+                    actionLoading ||
+                    !comments.trim() ||
+                    (user?.role === 'faculty' && (!selectedTargetId || !selectedTargetRole))
+                  }
+                  className="flex-1 h-11 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
                   {actionLoading ? 'Processing...' : 'Approve'}
                 </button>
               </div>
@@ -1387,50 +1486,6 @@ const ReviewDetail = () => {
                 <button onClick={() => setShowRevisionModal(false)} className="flex-1 py-3 border rounded-xl font-medium">Cancel</button>
                 <button onClick={handleRequestRevision} disabled={actionLoading} className="flex-1 py-3 bg-amber-600 text-white rounded-xl font-bold">
                   {actionLoading ? 'Processing...' : 'Request'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Return to Author Modal */}
-      {showReturnToAuthorModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border">
-            <div className="px-6 py-4 bg-fuchsia-50 border-b border-fuchsia-100 flex items-center gap-3">
-              <CornerDownRight size={20} className="text-fuchsia-600" />
-              <h3 className="text-xl font-bold text-slate-900">Return to Author</h3>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="bg-fuchsia-50 p-3 rounded-xl border border-fuchsia-100">
-                <p className="text-sm text-fuchsia-800 font-medium">
-                  This will send the paper directly back to the student for revision without rejecting it.
-                </p>
-              </div>
-              <textarea
-                value={returnToAuthorNotes}
-                onChange={(e) => setReturnToAuthorNotes(e.target.value)}
-                placeholder="Enter revision instructions for the author..."
-                rows={4}
-                className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-fuchsia-500 outline-none"
-              />
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setShowReturnToAuthorModal(false);
-                    setReturnToAuthorNotes('');
-                  }}
-                  className="flex-1 py-3 border rounded-xl font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleReturnToAuthor}
-                  disabled={actionLoading || !returnToAuthorNotes.trim()}
-                  className="flex-1 py-3 bg-fuchsia-600 text-white rounded-xl font-bold disabled:opacity-50"
-                >
-                  {actionLoading ? 'Returning...' : 'Return to Author'}
                 </button>
               </div>
             </div>
@@ -1620,23 +1675,33 @@ const ReviewDetail = () => {
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">
+                <label htmlFor="assign-faculty-select" className="block text-sm font-bold text-slate-700 mb-2">
                   Select Faculty <span className="text-red-500">*</span>
                 </label>
-                <select
-                  value={selectedFacultyId}
-                  onChange={(e) => setSelectedFacultyId(e.target.value)}
-                  className="w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-900"
-                >
-                  <option value="">-- Select faculty reviewer --</option>
-                  {facultyMembers.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {formatFullName(member)}{member.department ? ` (${member.department})` : ''}
-                    </option>
-                  ))}
-                </select>
-                {facultyMembers.length === 0 && (
-                  <p className="mt-2 text-sm text-amber-700">No faculty accounts found for assignment.</p>
+                {facultyMembers.length === 0 ? (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                    No faculty accounts found for assignment.
+                  </p>
+                ) : (
+                  <>
+                    <SearchableUserSelect
+                      id="assign-faculty-select"
+                      options={facultyMembers}
+                      value={selectedFacultyId}
+                      required
+                      accentClass="blue"
+                      placeholder="Search faculty by name, email, or department..."
+                      emptyMessage="No matching faculty found."
+                      aria-label="Search faculty reviewer"
+                      getSecondaryText={(member) =>
+                        [member.department, member.email].filter(Boolean).join(' · ')
+                      }
+                      onChange={(nextId) => setSelectedFacultyId(nextId)}
+                    />
+                    <p className="mt-2 text-xs text-slate-500">
+                      Type to filter faculty accounts, then select a reviewer.
+                    </p>
+                  </>
                 )}
               </div>
 

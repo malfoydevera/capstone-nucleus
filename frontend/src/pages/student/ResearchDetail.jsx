@@ -101,6 +101,8 @@ const ResearchDetail = () => {
   const [annotations, setAnnotations] = useState([]);
   const [workflowHistory, setWorkflowHistory] = useState([]);
   const [stablePreviewPdfUrl, setStablePreviewPdfUrl] = useState(null);
+  const [doiInput, setDoiInput] = useState('');
+  const [publishRequestLoading, setPublishRequestLoading] = useState(false);
 
   const backTarget = location.state?.from || getDefaultRepositoryPath(user?.role);
   const backLabel = getBackLabel(backTarget);
@@ -137,6 +139,7 @@ const ResearchDetail = () => {
         setWorkflowHistory(payload.workflowHistory || []);
         setDownloadCount(payload.paper?.download_count || 0);
         setViewCount(payload.paper?.view_count || 0);
+        setDoiInput((prev) => prev || payload.paper?.doi || '');
       }
 
       if (fileResponse.status === 'fulfilled') {
@@ -266,6 +269,39 @@ const ResearchDetail = () => {
       toast.success('Link copied to clipboard');
     } catch {
       toast.error('Unable to copy link');
+    }
+  };
+
+  const handleRequestPublish = async () => {
+    const trimmedDoi = doiInput.trim();
+    if (!trimmedDoi) {
+      toast.error('Enter a DOI before requesting publication');
+      return;
+    }
+    setPublishRequestLoading(true);
+    const t = toast.loading('Submitting request…');
+    try {
+      const response = await researchAPI.requestPublish(id, trimmedDoi);
+      setPaper(unwrapApiData(response).paper || paper);
+      toast.success('Publish request sent to admin', { id: t });
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Failed to submit request', { id: t });
+    } finally {
+      setPublishRequestLoading(false);
+    }
+  };
+
+  const handleCancelPublishRequest = async () => {
+    setPublishRequestLoading(true);
+    const t = toast.loading('Cancelling request…');
+    try {
+      const response = await researchAPI.cancelPublishRequest(id);
+      setPaper(unwrapApiData(response).paper || paper);
+      toast.success('Publish request cancelled', { id: t });
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Failed to cancel request', { id: t });
+    } finally {
+      setPublishRequestLoading(false);
     }
   };
 
@@ -621,6 +657,71 @@ const ResearchDetail = () => {
                 </div>
               </dl>
             </section>
+
+            {isAuthorOrCoAuthor && paper.status === 'approved' && (
+              <section className="rounded-xl border border-[#3674B5]/20 bg-white shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#3674B5]/15 bg-gradient-to-r from-[#3674B5]/10 to-[#578FCA]/10 flex items-center gap-2">
+                  <Award size={14} className="text-[#3674B5]" aria-hidden="true" />
+                  <h2 className="text-sm font-semibold text-slate-900">Formal publication</h2>
+                </div>
+                <div className="px-4 py-3 space-y-3">
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Your paper is approved (internal). Enter your journal/repository DOI and request
+                    admin review to mark it as formally published.
+                  </p>
+                  {paper.publish_requested_at ? (
+                    <>
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                        Requested {getTimeAgo(paper.publish_requested_at)} — pending admin review.
+                        {paper.doi && (
+                          <>
+                            {' '}DOI:{' '}
+                            <a
+                              href={`https://doi.org/${paper.doi}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono underline hover:no-underline"
+                            >
+                              {paper.doi}
+                            </a>
+                          </>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={publishRequestLoading}
+                        onClick={handleCancelPublishRequest}
+                        className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                      >
+                        Cancel request
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        DOI
+                        <input
+                          type="text"
+                          value={doiInput}
+                          onChange={(e) => setDoiInput(e.target.value)}
+                          placeholder="e.g. 10.1234/nucleus.2026.001"
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-mono focus:border-[#3674B5] focus:outline-none focus:ring-2 focus:ring-[#3674B5]/20"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={publishRequestLoading || !doiInput.trim()}
+                        onClick={handleRequestPublish}
+                        className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-[#3674B5] to-[#578FCA] px-3 py-2 text-xs font-semibold text-white hover:from-[#2d6299] hover:to-[#3674B5] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Award size={13} aria-hidden="true" />
+                        Request to mark as published
+                      </button>
+                    </>
+                  )}
+                </div>
+              </section>
+            )}
 
             <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">

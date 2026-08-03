@@ -1,10 +1,22 @@
 import { useEffect, useRef } from 'react';
 
+/**
+ * Observes a sentinel element and triggers loading more content once it
+ * scrolls near the viewport, removing the need to click a "Load more" button.
+ *
+ * Two usage modes:
+ * - Client-side slicing: pass `setVisibleCount` + `step` to reveal more of an
+ *   already-fetched array (e.g. `setVisibleCount((count) => count + step)`).
+ * - Server-paginated / async: pass `onLoadMore` to invoke a fetch callback
+ *   directly (the callback is responsible for its own in-flight guard, e.g.
+ *   `if (loadingMore) return;`).
+ */
 const useAutoLoadMore = ({
   canLoadMore,
   enabled = true,
   rootMargin = '240px 0px',
   setVisibleCount,
+  onLoadMore,
   step,
 }) => {
   const sentinelRef = useRef(null);
@@ -25,7 +37,11 @@ const useAutoLoadMore = ({
         }
 
         scheduled = true;
-        setVisibleCount((count) => count + step);
+        if (onLoadMore) {
+          onLoadMore();
+        } else {
+          setVisibleCount((count) => count + step);
+        }
 
         requestAnimationFrame(() => {
           scheduled = false;
@@ -39,7 +55,7 @@ const useAutoLoadMore = ({
     return () => {
       observer.disconnect();
     };
-  }, [canLoadMore, enabled, rootMargin, setVisibleCount, step]);
+  }, [canLoadMore, enabled, rootMargin, setVisibleCount, onLoadMore, step]);
 
   return sentinelRef;
 };

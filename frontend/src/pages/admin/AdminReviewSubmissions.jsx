@@ -58,6 +58,7 @@ const AdminReviewSubmissions = () => {
     pendingStaff: papers.filter((p) => ['pending_faculty', 'pending_editor'].includes(p.status)).length,
     pendingAdmin: papers.filter((p) => p.status === 'pending_admin').length,
     approved: papers.filter((p) => p.status === 'approved').length,
+    publishRequested: papers.filter((p) => p.status === 'approved' && p.publish_requested_at).length,
     published: papers.filter((p) => p.status === 'published').length,
     rejected: papers.filter((p) => p.status === 'rejected').length,
     revisionRequired: papers.filter((p) => p.status === 'revision_required').length,
@@ -73,6 +74,8 @@ const AdminReviewSubmissions = () => {
       );
     } else if (statusFilter === 'pending_faculty') {
       filtered = filtered.filter((p) => ['pending_faculty', 'pending_editor'].includes(p.status));
+    } else if (statusFilter === 'publish_requested') {
+      filtered = filtered.filter((p) => p.status === 'approved' && p.publish_requested_at);
     } else if (statusFilter !== 'all') {
       filtered = filtered.filter((p) => p.status === statusFilter);
     }
@@ -105,6 +108,9 @@ const AdminReviewSubmissions = () => {
     }
 
     filtered.sort((a, b) => {
+      if (statusFilter === 'publish_requested') {
+        return new Date(a.publish_requested_at) - new Date(b.publish_requested_at);
+      }
       if (sortBy === 'oldest') {
         return new Date(a.submission_date || a.created_at) - new Date(b.submission_date || b.created_at);
       }
@@ -173,6 +179,12 @@ const AdminReviewSubmissions = () => {
       count: stats.approved,
     },
     {
+      key: 'publish_requested',
+      label: 'Publish requests',
+      description: 'Student requested formal publication review',
+      count: stats.publishRequested,
+    },
+    {
       key: 'published',
       label: 'Published',
       description: 'Formally published with DOI',
@@ -218,18 +230,6 @@ const AdminReviewSubmissions = () => {
       ],
     },
   ];
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <div className="relative">
-          <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
-        </div>
-        <p className="mt-5 text-sm font-medium text-slate-500">Loading research submissions…</p>
-      </div>
-    );
-  }
 
   const submissions = filteredPapers.map((paper) => ({
     id: paper.id,
@@ -286,6 +286,7 @@ const AdminReviewSubmissions = () => {
       emptyDescription="Select another queue from the left panel to view different workflow stages."
       submissions={submissions}
       pageSize={PAGE_SIZE}
+      loading={loading}
     />
   );
 };

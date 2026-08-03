@@ -14,11 +14,49 @@ import {
   TrendingUp,
   Activity,
   AlertTriangle,
+  Award,
 } from 'lucide-react';
 import { researchAPI, unwrapApiData } from '../../utils/api';
 import LoadMoreFooter from '../../components/ui/LoadMoreFooter';
+import useAutoLoadMore from '../../hooks/useAutoLoadMore';
 import { formatFullName } from '../../utils/names';
 import { getStudentStatusLabel, getStudentStatusTone, isNeedsAction } from '../../utils/studentStatus';
+
+const StatPillSkeleton = () => (
+  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 flex items-center gap-2.5 animate-pulse" aria-hidden="true">
+    <div className="h-8 w-8 rounded-lg bg-slate-100 shrink-0" />
+    <div className="space-y-1.5">
+      <div className="h-4 w-8 rounded bg-slate-200" />
+      <div className="h-2.5 w-14 rounded bg-slate-100" />
+    </div>
+  </div>
+);
+
+const SubmissionCardSkeleton = () => (
+  <div className="rounded-lg border border-slate-100 bg-white p-4 animate-pulse" aria-hidden="true">
+    <div className="flex items-start justify-between gap-3">
+      <div className="h-4 w-2/3 rounded bg-slate-200" />
+      <div className="h-5 w-16 rounded-full bg-slate-100 shrink-0" />
+    </div>
+    <div className="mt-3 border-t border-slate-100 pt-3 space-y-2">
+      <div className="h-2.5 w-1/3 rounded bg-slate-100" />
+      <div className="h-3 w-1/2 rounded bg-slate-100" />
+    </div>
+    <div className="mt-3 h-1 w-full rounded-full bg-slate-100" />
+  </div>
+);
+
+const SubmissionRowSkeleton = () => (
+  <tr className="border-b border-slate-200 animate-pulse" aria-hidden="true">
+    <td className={TABLE_BODY_CELL}><div className="h-3.5 w-40 rounded bg-slate-200" /></td>
+    <td className={TABLE_BODY_CELL}><div className="h-3 w-24 rounded bg-slate-100" /></td>
+    <td className={TABLE_BODY_CELL}><div className="h-3 w-20 rounded bg-slate-100" /></td>
+    <td className={TABLE_BODY_CELL}><div className="h-5 w-20 rounded-full bg-slate-100" /></td>
+    <td className={TABLE_BODY_CELL}><div className="h-3 w-24 rounded bg-slate-100" /></td>
+    <td className={TABLE_BODY_CELL}><div className="h-3 w-16 rounded bg-slate-100" /></td>
+    <td className={TABLE_BODY_CELL}><div className="h-8 w-24 rounded bg-slate-100 ml-auto" /></td>
+  </tr>
+);
 
 const getStructuredAuthors = (paper) =>
   Array.isArray(paper?.structured_authors) ? paper.structured_authors : [];
@@ -150,6 +188,12 @@ const MyResearch = () => {
 
   const visibleRows = useMemo(() => listRows.slice(0, visibleCount), [listRows, visibleCount]);
   const canLoadMore = visibleCount < listRows.length;
+  const loadMoreRef = useAutoLoadMore({
+    canLoadMore,
+    enabled: !loading,
+    setVisibleCount,
+    step: PAGE_SIZE,
+  });
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -161,18 +205,6 @@ const MyResearch = () => {
     { key: 'updates', label: 'In Progress', count: summary.pending + summary.inReview },
     { key: 'archive', label: 'Published', count: summary.published },
   ];
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <div className="relative">
-          <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
-        </div>
-        <p className="mt-5 text-sm font-medium text-slate-500">Loading submissions…</p>
-      </div>
-    );
-  }
 
   const renderRowActions = (paper, isPublished) => (
     <div className="flex items-center gap-1.5">
@@ -186,6 +218,28 @@ const MyResearch = () => {
         <span className="hidden sm:inline">Status &amp; Feedback</span>
         <span className="sm:hidden">Feedback</span>
       </button>
+      {isPublished && (
+        <button
+          type="button"
+          onClick={() =>
+            navigate(`/research/${paper.id}`, {
+              state: { from: '/student/my-research' },
+            })
+          }
+          className={`h-8 px-3 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            paper.publish_requested_at
+              ? 'border border-amber-200 bg-amber-50 text-amber-800'
+              : 'border border-[#3674B5]/25 bg-white text-[#3674B5] hover:bg-[#3674B5]/5'
+          }`}
+          title={paper.publish_requested_at ? 'Publish request pending admin review' : 'Request to mark as published'}
+        >
+          <Award size={13} />
+          <span className="hidden sm:inline">
+            {paper.publish_requested_at ? 'Publish request pending' : 'Request publication'}
+          </span>
+          <span className="sm:hidden">{paper.publish_requested_at ? 'Pending' : 'Publish'}</span>
+        </button>
+      )}
       <button
         type="button"
         onClick={() =>
@@ -268,44 +322,52 @@ const MyResearch = () => {
           </div>
 
           {/* Summary stat pills */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 flex items-center gap-2.5">
-              <span className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                <BookOpen size={15} className="text-slate-600" />
-              </span>
-              <div>
-                <p className="text-lg font-bold leading-none text-slate-900">{summary.total}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Total</p>
+          {loading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" role="status" aria-label="Loading submission summary">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <StatPillSkeleton key={index} />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 flex items-center gap-2.5">
+                <span className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                  <BookOpen size={15} className="text-slate-600" />
+                </span>
+                <div>
+                  <p className="text-lg font-bold leading-none text-slate-900">{summary.total}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Total</p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 flex items-center gap-2.5">
+                <span className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                  <Activity size={15} className="text-amber-600" />
+                </span>
+                <div>
+                  <p className="text-lg font-bold leading-none text-amber-800">{summary.pending}</p>
+                  <p className="text-[11px] text-amber-700 mt-0.5">Pending</p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 flex items-center gap-2.5">
+                <span className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                  <TrendingUp size={15} className="text-emerald-600" />
+                </span>
+                <div>
+                  <p className="text-lg font-bold leading-none text-emerald-800">{summary.published}</p>
+                  <p className="text-[11px] text-emerald-700 mt-0.5">Published</p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2.5 flex items-center gap-2.5">
+                <span className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={15} className="text-orange-600" />
+                </span>
+                <div>
+                  <p className="text-lg font-bold leading-none text-orange-800">{summary.needsAction}</p>
+                  <p className="text-[11px] text-orange-700 mt-0.5">Needs Action</p>
+                </div>
               </div>
             </div>
-            <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 flex items-center gap-2.5">
-              <span className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-                <Activity size={15} className="text-amber-600" />
-              </span>
-              <div>
-                <p className="text-lg font-bold leading-none text-amber-800">{summary.pending}</p>
-                <p className="text-[11px] text-amber-700 mt-0.5">Pending</p>
-              </div>
-            </div>
-            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 flex items-center gap-2.5">
-              <span className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
-                <TrendingUp size={15} className="text-emerald-600" />
-              </span>
-              <div>
-                <p className="text-lg font-bold leading-none text-emerald-800">{summary.published}</p>
-                <p className="text-[11px] text-emerald-700 mt-0.5">Published</p>
-              </div>
-            </div>
-            <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2.5 flex items-center gap-2.5">
-              <span className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
-                <AlertTriangle size={15} className="text-orange-600" />
-              </span>
-              <div>
-                <p className="text-lg font-bold leading-none text-orange-800">{summary.needsAction}</p>
-                <p className="text-[11px] text-orange-700 mt-0.5">Needs Action</p>
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* Urgent revision banner */}
           {topActionPaper && activeFilter !== 'archive' && (
@@ -374,7 +436,35 @@ const MyResearch = () => {
           </div>
 
           {/* Table */}
-          {papers.length === 0 ? (
+          {loading ? (
+            <>
+              <div className="space-y-3 md:hidden" role="status" aria-label="Loading submissions">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <SubmissionCardSkeleton key={index} />
+                ))}
+              </div>
+              <div className="hidden md:block rounded-lg border border-slate-200 bg-white overflow-hidden">
+                <table className="w-full min-w-[1024px] text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className={`${TABLE_HEAD_CELL} min-w-[220px]`}>Title</th>
+                      <th className={`${TABLE_HEAD_CELL} min-w-[140px]`}>Author</th>
+                      <th className={`${TABLE_HEAD_CELL} min-w-[160px]`}>Co-Authors</th>
+                      <th className={TABLE_HEAD_CELL}>Status</th>
+                      <th className={TABLE_HEAD_CELL}>Stage</th>
+                      <th className={TABLE_HEAD_CELL}>Submitted</th>
+                      <th className={`${TABLE_HEAD_CELL} text-right`}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <SubmissionRowSkeleton key={index} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : papers.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
               <FileText size={28} className="mx-auto text-slate-300" />
               <h3 className="mt-3 text-sm font-semibold text-slate-700">No submissions yet</h3>
@@ -592,6 +682,8 @@ const MyResearch = () => {
                   step={PAGE_SIZE}
                 />
               )}
+              {/* Auto-loads more as this scrolls into view; button above remains as a manual fallback */}
+              <div ref={loadMoreRef} className="h-1" aria-hidden="true" />
             </>
           )}
       </div>

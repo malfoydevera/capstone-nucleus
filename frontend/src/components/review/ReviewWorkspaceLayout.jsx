@@ -14,6 +14,27 @@ import { reviewStatusLabel, reviewStatusTone } from './reviewStatus';
 
 const DEFAULT_FILTER_VALUES = new Set(['all', 'newest', '']);
 
+const SubmissionRowSkeleton = () => (
+  <div
+    className="w-full rounded-xl border border-slate-200 bg-white p-4 sm:p-5 2xl:p-6 animate-pulse"
+    aria-hidden="true"
+  >
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0 flex-1 space-y-2.5">
+        <div className="flex items-center gap-3">
+          <div className="h-5 w-24 rounded-full bg-slate-100" />
+          <div className="h-3 w-28 rounded bg-slate-100" />
+        </div>
+        <div className="h-4 w-3/4 rounded bg-slate-200" />
+        <div className="h-3 w-1/2 rounded bg-slate-100" />
+      </div>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+        <div className="h-11 w-32 rounded-lg bg-slate-100" />
+      </div>
+    </div>
+  </div>
+);
+
 const SubmissionRow = ({ submission, renderRowActions }) => (
   <article className="w-full rounded-xl border border-slate-200 bg-white p-4 sm:p-5 2xl:p-6 hover:border-[#3674B5]/25 transition-colors">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -109,6 +130,7 @@ const ReviewWorkspaceLayout = ({
   pageSize = 10,
   headerExtra = null,
   renderRowActions,
+  loading = false,
 }) => {
   const [visibleCount, setVisibleCount] = useState(pageSize);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -316,9 +338,11 @@ const ReviewWorkspaceLayout = ({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
               <p className="text-sm text-slate-700">
                 <span className="font-semibold text-slate-900">{activeQueueMeta?.label || 'Queue'}</span>
-                <span className="text-slate-500">
-                  {' '}· {submissions.length} manuscript{submissions.length !== 1 ? 's' : ''}
-                </span>
+                {!loading && (
+                  <span className="text-slate-500">
+                    {' '}· {submissions.length} manuscript{submissions.length !== 1 ? 's' : ''}
+                  </span>
+                )}
               </p>
               {activeFilterCount > 0 && (
                 <p className="text-xs text-[#3674B5] font-medium">
@@ -330,7 +354,17 @@ const ReviewWorkspaceLayout = ({
 
           {/* Manuscript list — scrollable, fills remaining height */}
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full">
-            {isEmpty ? (
+            {loading ? (
+              <div
+                className="review-panel__pad py-4 sm:py-5 pb-8 space-y-4 w-full max-w-none 2xl:space-y-5"
+                role="status"
+                aria-label="Loading manuscripts"
+              >
+                {Array.from({ length: Math.min(pageSize, 6) }).map((_, index) => (
+                  <SubmissionRowSkeleton key={index} />
+                ))}
+              </div>
+            ) : isEmpty ? (
               <div className="review-panel__pad py-6 min-h-[min(24rem,50vh)] flex items-center justify-center">
                 <div className="w-full rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
                   <FileText size={32} className="mx-auto text-slate-300" aria-hidden="true" />

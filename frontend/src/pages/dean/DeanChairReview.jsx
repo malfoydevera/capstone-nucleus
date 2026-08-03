@@ -231,18 +231,6 @@ const DeanChairReview = () => {
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <div className="relative">
-          <div className="w-16 h-16 border-4 border-[#3674B5]/20 rounded-full" />
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-[#3674B5] border-t-transparent rounded-full animate-spin" />
-        </div>
-        <p className="mt-5 text-sm font-medium text-slate-500">Loading review queue…</p>
-      </div>
-    );
-  }
-
   const submissions = filteredPapers.map((paper) => ({
     id: paper.id,
     title: paper.title,
@@ -300,6 +288,7 @@ const DeanChairReview = () => {
       emptyDescription="Select a different queue from the left panel or adjust your search."
       submissions={submissions}
       pageSize={PAGE_SIZE}
+      loading={loading}
     />
   );
 };
