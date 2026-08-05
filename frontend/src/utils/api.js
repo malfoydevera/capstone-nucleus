@@ -91,6 +91,9 @@ export const authAPI = {
   changePassword: (data) => api.post('/auth/change-password', data),
   changeEmail: (newEmail) => api.post('/auth/change-email', { newEmail }),
   validateRecoveryEmail: (recoveryEmail) => api.post('/auth/recovery-email/validate', { recoveryEmail }),
+  requestRecoveryEmail: (recoveryEmail, refreshToken) =>
+    api.post('/auth/recovery-email/request', { recoveryEmail, refreshToken }),
+  confirmRecoveryEmailOtp: (data) => api.post('/auth/recovery-email/confirm-otp', data),
   confirmRecoveryEmail: () => api.post('/auth/recovery-email/confirm'),
   confirmInstitutionalEmail: () => api.post('/auth/confirm-institutional-email'),
   requestPasswordReset: (email) => api.post('/auth/forgot-password/request', { email }),
@@ -101,9 +104,6 @@ export const authAPI = {
   getAllUsers: (role) => api.get('/auth/users', { params: { role } }),
   createUser: (data) => api.post('/auth/users/create', data),
   updateUser: (id, data) => api.patch(`/auth/users/${id}`, data),
-  importUsersCsv: (formData) => api.post('/auth/users/import-csv', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }),
   getSubmissionPolicy: () => api.get('/auth/submission-policy'),
   getSystemPolicy: () => api.get('/auth/system-policy'),
   updateSystemPolicy: (data) => api.patch('/auth/system-policy', data),
@@ -115,8 +115,6 @@ export const authAPI = {
   suspendUser: (id, reason) => api.patch(`/auth/users/${id}/suspend`, { reason }),
   reactivateUser: (id) => api.patch(`/auth/users/${id}/reactivate`),
   searchStudents: (query) => api.get('/auth/students/search', { params: { query } }),
-  exportStudentsCsv: () =>
-    api.get('/auth/admin/export/students', { responseType: 'blob' }),
   getUserRecords: (id) => api.get(`/auth/users/${id}/records`),
   exportUserRecordsPdf: (id, filters) =>
     api.post(`/auth/users/${id}/records/export-pdf`, { filters }, { responseType: 'blob' }),
@@ -202,8 +200,6 @@ export const researchAPI = {
   deanBypassApprove: (id, bypassReason, target) => api.post(`/research/${id}/dean-bypass`, { reason: bypassReason, targetStatus: target }),
 
   getDepartmentComparison: (params) => api.get('/research/dean/department-comparison', { params }),
-  exportPapersCsv: (params) =>
-    api.get('/research/admin/export/papers', { params, responseType: 'blob' }),
 };
 
 export const departmentsAPI = {

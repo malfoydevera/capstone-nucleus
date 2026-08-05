@@ -12,10 +12,8 @@ import {
   Search,
   Users,
   BarChart3,
-  Download,
   Shield,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { researchAPI, authAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName } from '../../utils/names';
 import UserGuideLink from '../../components/ui/UserGuideLink';
@@ -23,15 +21,6 @@ import { reviewStatusLabel, reviewStatusTone } from '../../components/review/rev
 
 const POLL_MS = 10000;
 const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-
-const downloadCsvBlob = (blob, filename) => {
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  window.URL.revokeObjectURL(url);
-};
 
 const formatDate = (dateString) => {
   if (!dateString) return '—';
@@ -97,7 +86,6 @@ const AdminDashboard = () => {
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [exporting, setExporting] = useState(null);
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -125,32 +113,6 @@ const AdminDashboard = () => {
     const interval = setInterval(() => fetchDashboardData(true), POLL_MS);
     return () => clearInterval(interval);
   }, [fetchDashboardData]);
-
-  const handleExportStudents = async () => {
-    setExporting('students');
-    try {
-      const response = await authAPI.exportStudentsCsv();
-      downloadCsvBlob(response.data, `nucleus_students_${new Date().toISOString().slice(0, 10)}.csv`);
-      toast.success('Student export downloaded');
-    } catch {
-      toast.error('Failed to export students');
-    } finally {
-      setExporting(null);
-    }
-  };
-
-  const handleExportPapers = async () => {
-    setExporting('papers');
-    try {
-      const response = await researchAPI.exportPapersCsv();
-      downloadCsvBlob(response.data, `nucleus_papers_${new Date().toISOString().slice(0, 10)}.csv`);
-      toast.success('Papers export downloaded');
-    } catch {
-      toast.error('Failed to export papers');
-    } finally {
-      setExporting(null);
-    }
-  };
 
   const now = new Date();
   const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -284,24 +246,6 @@ const AdminDashboard = () => {
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={handleExportStudents}
-              disabled={exporting !== null}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              <Download size={14} aria-hidden="true" />
-              {exporting === 'students' ? 'Exporting…' : 'Students'}
-            </button>
-            <button
-              type="button"
-              onClick={handleExportPapers}
-              disabled={exporting !== null}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              <Download size={14} aria-hidden="true" />
-              {exporting === 'papers' ? 'Exporting…' : 'Papers'}
-            </button>
             <button
               type="button"
               onClick={() => fetchDashboardData()}

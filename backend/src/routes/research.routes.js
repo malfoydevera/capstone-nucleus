@@ -128,7 +128,6 @@ router.get('/admin/workflow-stages/validate', authenticate, authorize('admin'), 
 router.post('/admin/workflow-stages', authenticate, authorize('admin'), adminController.createWorkflowStage);
 router.patch('/admin/workflow-stages/:stageId', authenticate, authorize('admin'), adminController.updateWorkflowStage);
 router.delete('/admin/workflow-stages/:stageId', authenticate, authorize('admin'), adminController.deleteWorkflowStage);
-router.get('/admin/export/papers', authenticate, authorize('admin'), adminController.exportPapersCsv);
 router.get('/admin/all',           authenticate, authorize('admin'), adminController.adminGetAllResearch);
 router.put('/admin/:id',           authenticate, authorize('admin'), adminController.adminUpdateResearch);
 router.delete('/admin/:id',        authenticate, authorize('admin'), adminController.adminDeleteResearch);

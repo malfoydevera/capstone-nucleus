@@ -18,6 +18,7 @@ const ForgotPassword = () => {
   const [step, setStep] = useState('email'); // 'email' | 'code'
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
+  const [recoveryEmailHint, setRecoveryEmailHint] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -37,8 +38,10 @@ const ForgotPassword = () => {
     setLoading(true);
     setRecoveryRequired(false);
     try {
-      await authAPI.requestPasswordReset(normalizedEmail);
-      toast.success('If an account exists, a reset code was sent to the recovery email on file.');
+      const res = await authAPI.requestPasswordReset(normalizedEmail);
+      const hint = res?.data?.data?.recoveryEmailHint || '';
+      setRecoveryEmailHint(hint);
+      toast.success('Check your personal inbox for the reset code.');
       return true;
     } catch (error) {
       if (getApiErrorCode(error) === 'RECOVERY_EMAIL_REQUIRED') {
@@ -121,9 +124,12 @@ const ForgotPassword = () => {
         {step === 'email' ? (
           <>
             <h1 className="text-2xl font-bold text-slate-900">Forgot your password?</h1>
-            <p className="text-slate-600 mt-2 mb-6">
-              Enter your <strong>institutional login email</strong>. We will send a reset code to the
-              recovery email saved in your Profile.
+            <p className="text-slate-600 mt-2 mb-2">
+              Enter your <strong>institutional login email</strong> (e.g.{' '}
+              <span className="font-mono text-sm">you@students.nu-dasma.edu.ph</span>).
+            </p>
+            <p className="text-sm text-slate-500 mb-6">
+              A reset code will be sent to the personal recovery email saved in your Profile.
             </p>
 
             {recoveryRequired && (
@@ -171,8 +177,13 @@ const ForgotPassword = () => {
             <p className="text-slate-600 mt-2 mb-1">
               We sent a reset code to the recovery email linked to{' '}
               <span className="font-semibold text-slate-800">{normalizedEmail}</span>.
+              {recoveryEmailHint && (
+                <span> It was delivered to <span className="font-semibold">{recoveryEmailHint}</span>.</span>
+              )}
             </p>
-            <p className="text-xs text-slate-500 mb-6">Check your personal inbox and spam folder. Codes expire after about an hour.</p>
+            <p className="text-xs text-slate-500 mb-6">
+              Check your personal inbox and spam folder. Codes expire after about an hour.
+            </p>
 
             <form onSubmit={handleResetSubmit} className="space-y-4">
               <label htmlFor="otp" className="block text-sm font-medium text-slate-700">
@@ -254,7 +265,7 @@ const ForgotPassword = () => {
                 disabled={loading}
                 className="w-full py-2 text-sm font-medium text-[#3674B5] hover:underline disabled:opacity-50"
               >
-                Resend code
+                Send code again
               </button>
             </form>
           </>

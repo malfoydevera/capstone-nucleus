@@ -18,8 +18,6 @@ import {
   Eye,
   MoreVertical,
   RefreshCw,
-  Download,
-  Upload
 } from 'lucide-react';
 import { authAPI, departmentsAPI, unwrapApiData } from '../../utils/api';
 import { formatFullName, getInitials } from '../../utils/names';
@@ -74,7 +72,6 @@ const UserManagement = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-  const [importLoading, setImportLoading] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
@@ -420,58 +417,6 @@ const UserManagement = () => {
     }
   };
 
-  const downloadCsvTemplate = () => {
-    const template = [
-      'email,password,role,firstName,middleName,lastName,department,program',
-      'faculty1@university.edu,TempPass123,faculty,Juan,,Dela Cruz,College of Engineering,',
-      'student1@university.edu,TempPass123,student,Ana,,Santos,College of Engineering,BS Computer Engineering',
-      'chair1@university.edu,TempPass123,program_chair,Maria,,Reyes,College of Engineering,BS Computer Engineering',
-    ].join('\n');
-
-    const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'user_import_template.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  };
-
-  const handleImportCsv = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      toast.error('Please select a CSV file');
-      event.target.value = '';
-      return;
-    }
-
-    setImportLoading(true);
-    const loadingToast = toast.loading('Importing users from CSV...');
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const response = await authAPI.importUsersCsv(formData);
-      const result = unwrapApiData(response);
-
-      toast.success(
-        `Import complete: ${result.created} created, ${result.skipped} skipped, ${result.failed} failed`,
-        { id: loadingToast, duration: 4500 }
-      );
-
-      await fetchUsers();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to import CSV', { id: loadingToast });
-    } finally {
-      setImportLoading(false);
-      event.target.value = '';
-    }
-  };
-
   const handleToggleSuspension = async (targetUser) => {
     setActionLoading(true);
     try {
@@ -608,14 +553,6 @@ const UserManagement = () => {
             <button type="button" onClick={fetchUsers} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
               <RefreshCw size={15} aria-hidden="true" /> Refresh
             </button>
-            <button type="button" onClick={downloadCsvTemplate} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              <Download size={15} aria-hidden="true" /> Template
-            </button>
-            <label className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium ${importLoading ? 'border-slate-200 text-slate-400 cursor-not-allowed' : 'border-emerald-200 bg-emerald-50 text-emerald-700 cursor-pointer hover:bg-emerald-100'}`}>
-              <Upload size={15} aria-hidden="true" />
-              {importLoading ? 'Importing…' : 'Import CSV'}
-              <input type="file" accept=".csv,text/csv" onChange={handleImportCsv} className="hidden" disabled={importLoading} />
-            </label>
             <button
               type="button"
               onClick={() => { setCreateForm(emptyCreateForm); setPrograms([]); setShowCreateModal(true); }}

@@ -7,9 +7,7 @@ jest.mock('../../utils/name', () => ({
   buildFullName: jest.fn(() => 'Test User'),
 }));
 
-jest.mock('../../utils/mailer', () => ({
-  sendTransactionalEmail: jest.fn().mockResolvedValue(undefined),
-}));
+// Email functionality simplified - logs emails instead of sending them
 
 const supabase = require('../../config/supabase');
 const controller = require('../../controllers/coauthorInvitation.controller');

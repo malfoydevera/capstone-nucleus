@@ -18,6 +18,9 @@ const {
   getAuthUserById,
   resetPasswordForEmail,
   verifyRecoveryOtp,
+  resetPendingEmailChange,
+  verifyEmailChangeOtp,
+  initiateRecoveryEmailChangeViaSupabase,
   deleteAuthUserById,
   deleteAuthUserByEmail,
 } = require('../utils/supabaseAuth');
@@ -27,6 +30,66 @@ const logger = require('../utils/logger');
 function getConfirmationRedirectUrl() {
   const base = (process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
   return `${base}/auth/callback`;
+}
+
+async function persistVerifiedRecoveryEmail({ userId, institutionalEmail, recoveryEmail, authUserId }) {
+  const normalizedRecovery = String(recoveryEmail || '').trim().toLowerCase();
+  const normalizedInstitutional = String(institutionalEmail || '').trim().toLowerCase();
+
+  const availability = await assertRecoveryEmailAvailable({
+    recoveryEmail: normalizedRecovery,
+    userId,
+    institutionalEmail: normalizedInstitutional,
+  });
+
+  if (!availability.valid) {
+    return { ok: false, message: availability.message };
+  }
+
+  const updatePayload = {
+    recovery_email: normalizedRecovery,
+  };
+
+  if (authUserId) {
+    updatePayload.auth_user_id = authUserId;
+  }
+
+  const { data: updatedUser, error: updateError } = await supabase
+    .from('users')
+    .update(updatePayload)
+    .eq('id', userId)
+    .select('id, email, recovery_email, first_name, middle_name, last_name, role, department, department_id, program, program_id, bio, created_at')
+    .single();
+
+  if (updateError) throw updateError;
+
+  const organizationLookups = await getOrganizationLookups();
+  return {
+    ok: true,
+    user: formatUserResponse(updatedUser, organizationLookups),
+  };
+}
+
+async function clearLegacyPasswordHash(userId) {
+  if (!userId) return;
+  await supabase.from('users').update({ password: null }).eq('id', userId);
+}
+
+async function resolveAuthUserIdForProfile(profile, req) {
+  if (profile?.auth_user_id) return profile.auth_user_id;
+
+  const token = getBearerToken(req?.headers?.authorization);
+  if (token) {
+    const { data } = await supabase.auth.getUser(token);
+    if (data?.user?.id) return data.user.id;
+  }
+
+  if (profile?.email) {
+    const authUser = await findAuthUserByEmail(profile.email);
+    if (authUser?.id) return authUser.id;
+  }
+
+  return null;
 }
 
 function getBearerToken(authHeader) {
@@ -71,7 +134,6 @@ async function getAuthEmailFromRequest(req) {
   return String(data.user.email).trim().toLowerCase();
 }
 
-const BULK_IMPORT_ALLOWED_ROLES = ['student', 'faculty', 'dean', 'program_chair', 'staff', 'admin'];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function normalizeOrganizationKey(value) {
@@ -113,44 +175,6 @@ async function findProgramByIdentifier(identifier) {
   }
 
   return null;
-}
-
-function normalizeCsvHeader(header) {
-  return String(header || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-}
-
-function parseCsvLine(line) {
-  const cells = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (ch === ',' && !inQuotes) {
-      cells.push(current.trim());
-      current = '';
-      continue;
-    }
-
-    current += ch;
-  }
-
-  cells.push(current.trim());
-  return cells;
 }
 
 function isUuid(value) {
@@ -852,7 +876,7 @@ exports.changePassword = async (req, res) => {
 
     const { data: profile, error: profileError } = await supabase
       .from('users')
-      .select('id, email, recovery_email, auth_user_id')
+      .select('id, email, recovery_email, auth_user_id, password, role')
       .eq('id', userId)
       .maybeSingle();
 
@@ -879,14 +903,37 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    // Verifying the current password via sign-in also yields the exact Supabase
-    // auth user id without scanning the entire auth user list.
+    let authUserId = profile.auth_user_id || null;
+    let currentPasswordVerified = false;
+
     const { data: signInData, error: signInError } = await signInWithPassword(authEmail, currentPassword);
-    if (signInError || !signInData?.user) {
+    if (!signInError && signInData?.user) {
+      authUserId = signInData.user.id;
+      currentPasswordVerified = true;
+    } else if (profile.password) {
+      const isValidLegacyPassword = await bcrypt.compare(currentPassword, profile.password);
+      if (isValidLegacyPassword) {
+        const ensured = await ensureAuthUser({
+          email: authEmail,
+          password: currentPassword,
+          userMetadata: { role: profile.role },
+          forcePasswordSync: true,
+        });
+        authUserId = ensured.user?.id || authUserId;
+        currentPasswordVerified = Boolean(authUserId);
+      }
+    }
+
+    if (!currentPasswordVerified || !authUserId) {
       return sendError(res, { status: 400, code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect' });
     }
 
-    await updateAuthUserPasswordById(signInData.user.id, newPassword);
+    await updateAuthUserPasswordById(authUserId, newPassword);
+    await clearLegacyPasswordHash(userId);
+
+    if (!profile.auth_user_id && authUserId) {
+      await supabase.from('users').update({ auth_user_id: authUserId }).eq('id', userId);
+    }
 
     return sendSuccess(res, {
       message: 'Password changed successfully',
@@ -1057,6 +1104,215 @@ exports.validateRecoveryEmail = async (req, res) => {
   }
 };
 
+exports.requestRecoveryEmail = async (req, res) => {
+  try {
+    const { recoveryEmail, refreshToken } = req.body;
+    const userId = req.user?.id;
+    const institutionalEmail = req.user?.email;
+
+    if (!recoveryEmail) {
+      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'A recovery email address is required' });
+    }
+
+    if (!userId || !institutionalEmail) {
+      return sendError(res, { status: 401, code: 'UNAUTHORIZED', message: 'Unable to resolve the current account' });
+    }
+
+    const normalizedRecoveryEmail = String(recoveryEmail).toLowerCase().trim();
+    const availability = await assertRecoveryEmailAvailable({
+      recoveryEmail: normalizedRecoveryEmail,
+      userId,
+      institutionalEmail,
+    });
+
+    if (!availability.valid) {
+      return sendError(res, { status: 400, code: 'INVALID_RECOVERY_EMAIL', message: availability.message });
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('id, email, auth_user_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+    if (!profile) {
+      return sendError(res, { status: 404, code: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    const authUserId = await resolveAuthUserIdForProfile(profile, req);
+    if (!authUserId) {
+      return sendError(res, {
+        status: 400,
+        code: 'AUTH_USER_MISSING',
+        message: 'Unable to link your account for recovery email setup. Sign out and sign in again, then retry.',
+      });
+    }
+
+    const institutionalEmailNormalized = String(institutionalEmail).trim().toLowerCase();
+    const authUser = await getAuthUserById(authUserId);
+    const currentAuthEmail = String(authUser?.email || institutionalEmailNormalized).trim().toLowerCase();
+    const sentAt = new Date();
+
+    // If auth already confirmed this recovery address (partial setup), persist and skip re-sending.
+    if (currentAuthEmail === normalizedRecoveryEmail && authUser?.email_confirmed_at) {
+      const saved = await persistVerifiedRecoveryEmail({
+        userId,
+        institutionalEmail: institutionalEmailNormalized,
+        recoveryEmail: normalizedRecoveryEmail,
+        authUserId,
+      });
+
+      if (!saved.ok) {
+        return sendError(res, { status: 400, code: 'INVALID_RECOVERY_EMAIL', message: saved.message });
+      }
+
+      return sendSuccess(res, {
+        message: 'Recovery email saved successfully.',
+        data: {
+          user: saved.user,
+          recoveryEmail: normalizedRecoveryEmail,
+          deliveryProvider: 'supabase',
+          sentAt: sentAt.toISOString(),
+          alreadyVerified: true,
+        },
+      });
+    }
+
+    // Only reset auth email when it drifted to a recovery inbox from a partial setup.
+    // Resetting before every resend breaks accounts whose institutional domain (e.g.
+    // @staff.com) Supabase rejects on the subsequent updateUser call.
+    if (currentAuthEmail !== institutionalEmailNormalized) {
+      await resetPendingEmailChange(authUserId, institutionalEmailNormalized);
+    }
+
+    let latestAuthUser = await getAuthUserById(authUserId);
+    const pendingChangeEmail = String(
+      latestAuthUser?.new_email || latestAuthUser?.email_change || ''
+    ).trim().toLowerCase();
+    const resendOnly = pendingChangeEmail === normalizedRecoveryEmail;
+
+    if (!profile.auth_user_id && authUserId) {
+      await supabase.from('users').update({ auth_user_id: authUserId }).eq('id', userId);
+    }
+
+    const accessToken = getBearerToken(req.headers.authorization);
+    if (!accessToken || !refreshToken) {
+      return sendError(res, {
+        status: 401,
+        code: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please sign out and sign in again, then retry.',
+      });
+    }
+
+    let deliveryMethod = 'updateUser';
+    try {
+      const delivery = await initiateRecoveryEmailChangeViaSupabase({
+        accessToken,
+        refreshToken,
+        recoveryEmail: normalizedRecoveryEmail,
+        currentEmail: institutionalEmailNormalized,
+        resendOnly,
+        emailRedirectTo: getConfirmationRedirectUrl(),
+      });
+      deliveryMethod = delivery?.method || deliveryMethod;
+    } catch (deliveryError) {
+      logger.error({ userId, err: deliveryError?.message }, '[recovery-email] Supabase email trigger failed');
+      const message =
+        deliveryError?.message ||
+        'Could not send the verification email. Try signing out and back in, then send again.';
+      return sendError(res, {
+        status: 502,
+        code: 'EMAIL_DELIVERY_FAILED',
+        message,
+      });
+    }
+
+    logger.info(
+      { userId, recoveryEmail: normalizedRecoveryEmail, resendOnly, deliveryMethod },
+      '[recovery-email] Supabase confirmation email triggered'
+    );
+
+    return sendSuccess(res, {
+      message: 'Verification email sent. Check your inbox (and spam folder).',
+      data: {
+        recoveryEmail: normalizedRecoveryEmail,
+        deliveryProvider: 'supabase',
+        sentAt: sentAt.toISOString(),
+        supportsOtp: true,
+      },
+    });
+  } catch (error) {
+    logger.error('Request recovery email error:', error);
+    const message = error?.message || 'Server error';
+    return sendError(res, { status: 500, code: 'RECOVERY_EMAIL_FAILED', message });
+  }
+};
+
+exports.confirmRecoveryEmailOtp = async (req, res) => {
+  try {
+    const { recoveryEmail, code } = req.body;
+    const userId = req.user?.id;
+    const institutionalEmail = String(req.user?.email || '').trim().toLowerCase();
+
+    if (!recoveryEmail || !code) {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_INPUT',
+        message: 'Recovery email and verification code are required',
+      });
+    }
+
+    if (!userId || !institutionalEmail) {
+      return sendError(res, { status: 401, code: 'UNAUTHORIZED', message: 'Unable to resolve the current account' });
+    }
+
+    const normalizedRecoveryEmail = String(recoveryEmail).trim().toLowerCase();
+    const normalizedCode = String(code).replace(/\D/g, '');
+
+    if (normalizedCode.length < 6 || normalizedCode.length > 8) {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_INPUT',
+        message: 'Enter the full verification code from your latest email (6–8 digits)',
+      });
+    }
+
+    // Verify the OTP from Supabase's "Confirm Email Change" email.
+    const { data: verifyData, error: verifyError } = await verifyEmailChangeOtp({
+      email: normalizedRecoveryEmail,
+      token: normalizedCode,
+    });
+
+    if (verifyError || !verifyData?.user) {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_RECOVERY_CODE',
+        message: 'That code is invalid or expired. Send a new verification email and use the latest code.',
+      });
+    }
+
+    const saved = await persistVerifiedRecoveryEmail({
+      userId,
+      institutionalEmail,
+      recoveryEmail: normalizedRecoveryEmail,
+      authUserId: verifyData.user.id,
+    });
+
+    if (!saved.ok) {
+      return sendError(res, { status: 400, code: 'INVALID_RECOVERY_EMAIL', message: saved.message });
+    }
+
+    return sendSuccess(res, {
+      message: 'Recovery email saved successfully.',
+      data: { user: saved.user },
+    });
+  } catch (error) {
+    logger.error('Confirm recovery email OTP error:', error);
+    return sendError(res, { status: 500, code: 'RECOVERY_EMAIL_FAILED', message: 'Server error' });
+  }
+};
+
 exports.confirmRecoveryEmail = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -1098,27 +1354,20 @@ exports.confirmRecoveryEmail = async (req, res) => {
       resolvedAuthUserId = authData?.user?.id || null;
     }
 
-    const updatePayload = {
-      recovery_email: authEmail,
-    };
+    const saved = await persistVerifiedRecoveryEmail({
+      userId,
+      institutionalEmail,
+      recoveryEmail: authEmail,
+      authUserId: resolvedAuthUserId,
+    });
 
-    if (resolvedAuthUserId) {
-      updatePayload.auth_user_id = resolvedAuthUserId;
+    if (!saved.ok) {
+      return sendError(res, { status: 400, code: 'INVALID_RECOVERY_EMAIL', message: saved.message });
     }
 
-    const { data: updatedUser, error: updateError } = await supabase
-      .from('users')
-      .update(updatePayload)
-      .eq('id', userId)
-      .select('id, email, recovery_email, first_name, middle_name, last_name, role, department, department_id, program, program_id, bio, created_at')
-      .single();
-
-    if (updateError) throw updateError;
-
-    const organizationLookups = await getOrganizationLookups();
     return sendSuccess(res, {
       message: 'Recovery email saved successfully.',
-      data: { user: formatUserResponse(updatedUser, organizationLookups) },
+      data: { user: saved.user },
     });
   } catch (error) {
     logger.error('Confirm recovery email error:', error);
@@ -1205,21 +1454,58 @@ exports.requestPasswordReset = async (req, res) => {
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
-    const { data: user, error } = await supabase
+
+    // Look up by institutional email first, then by recovery_email so users
+    // who accidentally type their personal inbox still get the right account.
+    let { data: user, error } = await supabase
       .from('users')
-      .select('id, recovery_email')
+      .select('id, email, recovery_email, auth_user_id')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
     if (error) throw error;
 
     if (!user) {
+      const { data: byRecovery, error: recErr } = await supabase
+        .from('users')
+        .select('id, email, recovery_email, auth_user_id')
+        .eq('recovery_email', normalizedEmail)
+        .maybeSingle();
+      if (recErr) throw recErr;
+      user = byRecovery;
+    }
+
+    // Always return a generic success so we never reveal whether an account exists.
+    if (!user) {
       return sendSuccess(res, {
         message: 'If an account exists, a reset code was sent to the recovery email on file.',
       });
     }
 
-    if (!user.recovery_email) {
+    // If public.users.recovery_email is not set, try to recover it from auth.users
+    // (this happens when the email change was confirmed via link but the local
+    // record was never updated by confirmRecoveryEmail/confirmRecoveryEmailOtp).
+    let recoveryEmail = user.recovery_email;
+    if (!recoveryEmail && user.auth_user_id) {
+      try {
+        const authUser = await getAuthUserById(user.auth_user_id);
+        const authEmail = String(authUser?.email || '').trim().toLowerCase();
+        const { isInstitutionalEmail } = require('../utils/emailDomain');
+        if (authEmail && !isInstitutionalEmail(authEmail)) {
+          // Sync the confirmed email back to public.users
+          recoveryEmail = authEmail;
+          await supabase
+            .from('users')
+            .update({ recovery_email: recoveryEmail })
+            .eq('id', user.id);
+          logger.info({ userId: user.id, recoveryEmail }, '[password-reset] Synced missing recovery_email from auth.users');
+        }
+      } catch (syncErr) {
+        logger.warn('[password-reset] Could not sync recovery_email from auth.users:', syncErr?.message);
+      }
+    }
+
+    if (!recoveryEmail) {
       return sendError(res, {
         status: 400,
         code: 'RECOVERY_EMAIL_REQUIRED',
@@ -1227,13 +1513,23 @@ exports.requestPasswordReset = async (req, res) => {
       });
     }
 
-    const { error: resetError } = await resetPasswordForEmail(user.recovery_email);
+    // Supabase sends the reset OTP to the recovery inbox via its built-in mailer.
+    const { error: resetError } = await resetPasswordForEmail(recoveryEmail);
     if (resetError && resetError.status && resetError.status >= 500) {
       throw resetError;
     }
 
+    logger.info({ userId: user.id, recoveryEmail }, '[password-reset] Supabase reset email triggered');
+
+    const maskEmail = (addr) => {
+      const [local, domain] = String(addr).split('@');
+      if (!local || !domain) return '';
+      return `${local[0]}${'*'.repeat(Math.min(local.length - 1, 4))}@${domain}`;
+    };
+
     return sendSuccess(res, {
       message: 'If an account exists, a reset code was sent to the recovery email on file.',
+      data: { recoveryEmailHint: maskEmail(recoveryEmail) },
     });
   } catch (error) {
     logger.error('Request password reset error:', error);
@@ -1269,15 +1565,47 @@ exports.confirmPasswordReset = async (req, res) => {
       });
     }
 
-    const { data: user, error: userError } = await supabase
+    let { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, recovery_email, auth_user_id')
+      .select('id, email, recovery_email, auth_user_id')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
     if (userError) throw userError;
 
-    if (!user?.recovery_email) {
+    // Same lookup-by-recovery-email fallback as requestPasswordReset
+    if (!user) {
+      const { data: byRecovery, error: recErr } = await supabase
+        .from('users')
+        .select('id, email, recovery_email, auth_user_id')
+        .eq('recovery_email', normalizedEmail)
+        .maybeSingle();
+      if (recErr) throw recErr;
+      user = byRecovery;
+    }
+
+    if (!user) {
+      return sendError(res, {
+        status: 400,
+        code: 'INVALID_RESET_CODE',
+        message: 'That code is invalid or expired. Request a new one.',
+      });
+    }
+
+    let recoveryEmail = user.recovery_email;
+    if (!recoveryEmail && user.auth_user_id) {
+      try {
+        const authUser = await getAuthUserById(user.auth_user_id);
+        const authEmail = String(authUser?.email || '').trim().toLowerCase();
+        const { isInstitutionalEmail } = require('../utils/emailDomain');
+        if (authEmail && !isInstitutionalEmail(authEmail)) {
+          recoveryEmail = authEmail;
+          await supabase.from('users').update({ recovery_email: recoveryEmail }).eq('id', user.id);
+        }
+      } catch (_) { /* non-fatal */ }
+    }
+
+    if (!recoveryEmail) {
       return sendError(res, {
         status: 400,
         code: 'RECOVERY_EMAIL_REQUIRED',
@@ -1286,7 +1614,7 @@ exports.confirmPasswordReset = async (req, res) => {
     }
 
     const { data: verifyData, error: verifyError } = await verifyRecoveryOtp({
-      email: user.recovery_email,
+      email: recoveryEmail,
       token: normalizedCode,
     });
 
@@ -1304,6 +1632,7 @@ exports.confirmPasswordReset = async (req, res) => {
     }
 
     await updateAuthUserPasswordById(authUserId, newPassword);
+    await clearLegacyPasswordHash(user.id);
 
     if (!user.auth_user_id) {
       await supabase
@@ -2106,207 +2435,6 @@ exports.createPrivilegedUser = async (req, res) => {
   } catch (error) {
     logger.error('Create privileged user error:', error);
     res.status(500).json({ error: 'Failed to create user account.' });
-  }
-};
-
-exports.bulkImportUsersCsv = async (req, res) => {
-  try {
-    if (!req.file || !req.file.buffer) {
-      return sendError(res, { status: 400, code: 'INVALID_INPUT', message: 'CSV file is required' });
-    }
-
-    const csvText = req.file.buffer.toString('utf8');
-    const lines = csvText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (lines.length < 2) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_INPUT',
-        message: 'CSV must include a header row and at least one data row',
-      });
-    }
-
-    const headers = parseCsvLine(lines[0]).map(normalizeCsvHeader);
-    const idx = {
-      email: headers.findIndex((h) => h === 'email'),
-      password: headers.findIndex((h) => h === 'password'),
-      role: headers.findIndex((h) => h === 'role'),
-      firstname: headers.findIndex((h) => h === 'firstname' || h === 'first'),
-      middlename: headers.findIndex((h) => h === 'middlename' || h === 'middle'),
-      lastname: headers.findIndex((h) => h === 'lastname' || h === 'last'),
-      fullname: headers.findIndex((h) => h === 'fullname' || h === 'name'),
-      department: headers.findIndex((h) => h === 'department'),
-      departmentId: headers.findIndex((h) => h === 'departmentid'),
-      program: headers.findIndex((h) => h === 'program'),
-      programId: headers.findIndex((h) => h === 'programid'),
-    };
-
-    if (idx.email < 0 || idx.password < 0 || idx.role < 0 || (idx.fullname < 0 && (idx.firstname < 0 || idx.lastname < 0))) {
-      return sendError(res, {
-        status: 400,
-        code: 'INVALID_INPUT',
-        message: 'CSV headers must include email,password,role and either fullName or firstName+lastName',
-      });
-    }
-
-    const summary = {
-      totalRows: lines.length - 1,
-      created: 0,
-      skipped: 0,
-      failed: 0,
-      results: [],
-    };
-
-    for (let i = 1; i < lines.length; i += 1) {
-      const rowNumber = i + 1;
-      const cells = parseCsvLine(lines[i]);
-      const row = {
-        email: (cells[idx.email] || '').toLowerCase().trim(),
-        password: (cells[idx.password] || '').trim(),
-        role: (cells[idx.role] || '').trim().toLowerCase(),
-        firstName: idx.firstname >= 0 ? (cells[idx.firstname] || '').trim() : '',
-        middleName: idx.middlename >= 0 ? (cells[idx.middlename] || '').trim() : '',
-        lastName: idx.lastname >= 0 ? (cells[idx.lastname] || '').trim() : '',
-        fullName: idx.fullname >= 0 ? (cells[idx.fullname] || '').trim() : '',
-        department: idx.department >= 0 ? (cells[idx.department] || '').trim() : '',
-        departmentId: idx.departmentId >= 0 ? (cells[idx.departmentId] || '').trim() : '',
-        program: idx.program >= 0 ? (cells[idx.program] || '').trim() : '',
-        programId: idx.programId >= 0 ? (cells[idx.programId] || '').trim() : '',
-      };
-
-      try {
-        const parsedFullName = splitFullName(row.fullName);
-        const normalizedNames = normalizeNameParts({
-          first_name: row.firstName || parsedFullName.first_name || '',
-          middle_name: row.middleName || parsedFullName.middle_name || '',
-          last_name: row.lastName || parsedFullName.last_name || '',
-        });
-        const resolvedFirstName = normalizedNames.first_name;
-        const resolvedMiddleName = normalizedNames.middle_name;
-        const resolvedLastName = normalizedNames.last_name;
-
-        if (!row.email || !row.password || !row.role || !resolvedFirstName || !resolvedLastName) {
-          summary.failed += 1;
-          summary.results.push({ row: rowNumber, email: row.email || null, status: 'failed', reason: 'Missing required fields' });
-          continue;
-        }
-
-        if (!BULK_IMPORT_ALLOWED_ROLES.includes(row.role)) {
-          summary.failed += 1;
-          summary.results.push({ row: rowNumber, email: row.email, status: 'failed', reason: 'Invalid role' });
-          continue;
-        }
-
-        if (row.password.length < 6) {
-          summary.failed += 1;
-          summary.results.push({ row: rowNumber, email: row.email, status: 'failed', reason: 'Password must be at least 6 characters' });
-          continue;
-        }
-
-        const rowDomainCheck = validateEmailDomainForRole(row.email, row.role);
-        if (!rowDomainCheck.valid) {
-          summary.failed += 1;
-          summary.results.push({ row: rowNumber, email: row.email, status: 'failed', reason: rowDomainCheck.message });
-          continue;
-        }
-
-        const { data: existingUser, error: existingError } = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', row.email)
-          .maybeSingle();
-
-        if (existingError) throw existingError;
-
-        if (existingUser) {
-          summary.skipped += 1;
-          summary.results.push({ row: rowNumber, email: row.email, status: 'skipped', reason: 'Email already exists' });
-          continue;
-        }
-
-        const organization = await resolveUserOrganizationAssignment({
-          role: row.role,
-          department: row.department,
-          departmentId: row.departmentId || null,
-          program: row.program,
-          programId: row.programId || null,
-          requireProgramForRoles: ['student', 'program_chair'],
-        });
-
-        if (organization.errorMessage) {
-          summary.failed += 1;
-          summary.results.push({ row: rowNumber, email: row.email, status: 'failed', reason: organization.errorMessage });
-          continue;
-        }
-
-        const authProvision = await ensureAuthUser({
-          email: row.email,
-          password: row.password,
-          userMetadata: { role: row.role },
-        });
-
-        const basePayload = {
-          email: row.email,
-          first_name: resolvedFirstName,
-          middle_name: resolvedMiddleName,
-          last_name: resolvedLastName,
-          role: row.role,
-          department: organization.resolvedDepartmentName,
-          department_id: organization.resolvedDepartmentId,
-          program: organization.resolvedProgramName,
-          program_id: organization.resolvedProgramId,
-          auth_user_id: authProvision.user?.id || null,
-        };
-
-        let insertResult = await supabase
-          .from('users')
-          .insert([basePayload]);
-
-        if (insertResult.error && isMissingProgramColumnError(insertResult.error)) {
-          const fallbackPayload = { ...basePayload };
-          delete fallbackPayload.program_id;
-          delete fallbackPayload.program;
-          insertResult = await supabase
-            .from('users')
-            .insert([fallbackPayload]);
-        }
-
-        const { error: insertError } = insertResult;
-
-        if (insertError) {
-          if (authProvision.created) {
-            await deleteAuthUserById(authProvision.user?.id);
-          }
-          throw insertError;
-        }
-
-        summary.created += 1;
-        summary.results.push({ row: rowNumber, email: row.email, status: 'created' });
-      } catch (rowError) {
-        summary.failed += 1;
-        summary.results.push({
-          row: rowNumber,
-          email: row.email || null,
-          status: 'failed',
-          reason: rowError.message || 'Unknown row error',
-        });
-      }
-    }
-
-    return sendSuccess(res, {
-      message: `Bulk import completed: ${summary.created} created, ${summary.skipped} skipped, ${summary.failed} failed`,
-      data: summary,
-    });
-  } catch (error) {
-    logger.error('Bulk import users CSV error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'BULK_IMPORT_FAILED',
-      message: 'Failed to import users CSV',
-    });
   }
 };
 

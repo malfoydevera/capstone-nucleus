@@ -5,7 +5,7 @@
 const supabase = require('../config/supabase');
 const { resolvePaperFileUrl } = require('../utils/fileAccess');
 const { sendSuccess, sendError } = require('../utils/response');
-const { attachFullName, buildFullName } = require('../utils/name');
+const { attachFullName } = require('../utils/name');
 
 const { validateWorkflowStages } = require('../utils/workflowEngine');
 const { notifyUser, notifyCoAuthors } = require('../utils/notify');
@@ -57,24 +57,6 @@ function pickAdminUpdatePayload(body) {
     if (ADMIN_UPDATE_ALLOWED_KEYS.has(key)) out[key] = body[key];
   }
   return out;
-}
-
-function csvEscape(value) {
-  const raw = value == null ? '' : String(value);
-  if (raw.includes('"') || raw.includes(',') || raw.includes('\n') || raw.includes('\r')) {
-    return `"${raw.replace(/"/g, '""')}"`;
-  }
-  return raw;
-}
-
-function toCsv(headers, rows) {
-  const lines = [headers.map(csvEscape).join(',')];
-  rows.forEach((row) => lines.push(row.map(csvEscape).join(',')));
-  return `${lines.join('\n')}\n`;
-}
-
-async function auditCsvExport() {
-  // Audit logging removed
 }
 
 exports.getAllResearch = async (req, res) => {
@@ -478,92 +460,3 @@ exports.validateWorkflowStages = async (req, res) => {
   }
 };
 
-exports.exportStudentsCsv = async (req, res) => {
-  try {
-    const { data: users, error } = await supabase
-      .from('users')
-      .select('id, email, first_name, middle_name, last_name, program, department, is_active, created_at')
-      .eq('role', 'student')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    const headers = ['id', 'email', 'full_name', 'program', 'department', 'is_active', 'created_at'];
-    const rows = (users || []).map((user) => [
-      user.id,
-      user.email,
-      buildFullName(user),
-      user.program || '',
-      user.department || '',
-      user.is_active !== false ? 'active' : 'inactive',
-      user.created_at || '',
-    ]);
-
-    await auditCsvExport(req, 'export_students_csv', { rowCount: rows.length });
-
-    const stamp = new Date().toISOString().slice(0, 10);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="nucleus_students_${stamp}.csv"`);
-    return res.status(200).send(toCsv(headers, rows));
-  } catch (error) {
-    console.error('Export students CSV error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'EXPORT_STUDENTS_CSV_FAILED',
-      message: 'Failed to export students',
-    });
-  }
-};
-
-exports.exportPapersCsv = async (req, res) => {
-  try {
-    const { status, includeDeleted } = req.query;
-    let query = supabase
-      .from('research_papers')
-      .select(`
-        id, title, status, category, author_id, submission_date, published_date, created_at, deleted_at,
-        author:users!author_id (first_name, middle_name, last_name, email)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (status) query = query.eq('status', status);
-    if (includeDeleted !== 'true') query = query.is('deleted_at', null);
-
-    const { data: papers, error } = await query;
-    if (error) throw error;
-
-    const headers = [
-      'id', 'title', 'status', 'category', 'author_name', 'author_email',
-      'submission_date', 'published_date', 'created_at',
-    ];
-    const rows = (papers || []).map((paper) => [
-      paper.id,
-      paper.title || '',
-      paper.status || '',
-      paper.category || '',
-      buildFullName(paper.author),
-      paper.author?.email || '',
-      paper.submission_date || '',
-      paper.published_date || '',
-      paper.created_at || '',
-    ]);
-
-    await auditCsvExport(req, 'export_papers_csv', {
-      rowCount: rows.length,
-      status: status || null,
-      includeDeleted: includeDeleted === 'true',
-    });
-
-    const stamp = new Date().toISOString().slice(0, 10);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="nucleus_papers_${stamp}.csv"`);
-    return res.status(200).send(toCsv(headers, rows));
-  } catch (error) {
-    console.error('Export papers CSV error:', error);
-    return sendError(res, {
-      status: 500,
-      code: 'EXPORT_PAPERS_CSV_FAILED',
-      message: 'Failed to export papers',
-    });
-  }
-};

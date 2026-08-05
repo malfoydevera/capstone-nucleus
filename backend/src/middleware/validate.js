@@ -41,6 +41,10 @@ const authSchemas = {
     code: z.string().min(6),
     newPassword: z.string().min(8),
   }),
+  recoveryEmailOtpConfirm: z.object({
+    recoveryEmail: z.string().email(),
+    code: z.string().min(6),
+  }),
 };
 
 module.exports = { validateBody, authSchemas };

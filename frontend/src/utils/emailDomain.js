@@ -2,15 +2,41 @@
 // The backend remains the source of truth; this only improves the user experience.
 //
 // Mapping: 'student' -> student domain; every other role -> staff/faculty domain.
+// Consumer providers are never treated as institutional — recovery email depends on that.
 
 const DEFAULT_STUDENT_DOMAIN = 'students.nu-dasma.edu.ph';
 const DEFAULT_STAFF_DOMAIN = 'nu-dasma.edu.ph';
+
+/** Personal inbox providers that must never be treated as institutional login domains. */
+const CONSUMER_EMAIL_DOMAINS = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'yahoo.com.ph',
+  'ymail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'aol.com',
+  'proton.me',
+  'protonmail.com',
+  'pm.me',
+  'mail.com',
+  'zoho.com',
+  'gmx.com',
+  'gmx.net',
+]);
 
 const parseDomains = (raw, fallback) => {
   const list = String(raw || '')
     .split(',')
     .map((d) => d.trim().toLowerCase().replace(/^@/, ''))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((domain) => !CONSUMER_EMAIL_DOMAINS.has(domain));
   return list.length > 0 ? list : [fallback];
 };
 
@@ -50,9 +76,12 @@ export const validateEmailDomainForRole = (email, role) => {
 export const getInstitutionalDomains = () =>
   [...new Set([...STUDENT_DOMAINS, ...STAFF_DOMAINS])];
 
+export const isConsumerEmailDomain = (domain) =>
+  CONSUMER_EMAIL_DOMAINS.has(String(domain || '').trim().toLowerCase());
+
 export const isInstitutionalEmail = (email) => {
   const domain = extractDomain(email);
-  if (!domain) return false;
+  if (!domain || isConsumerEmailDomain(domain)) return false;
   return getInstitutionalDomains().includes(domain);
 };
 

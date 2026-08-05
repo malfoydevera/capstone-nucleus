@@ -8,18 +8,22 @@ import { useAuth } from '../../contexts/AuthContext';
 import { authAPI } from '../../utils/api';
 import { isInstitutionalEmail } from '../../utils/emailDomain';
 
-const parseHashError = () => {
+const parseHashParams = () => {
   const hash = window.location.hash.startsWith('#')
     ? window.location.hash.slice(1)
     : window.location.hash;
-  const params = new URLSearchParams(hash);
+  return new URLSearchParams(hash);
+};
+
+const parseQueryParams = () => new URLSearchParams(window.location.search);
+
+const parseHashError = () => {
+  const params = parseHashParams();
   const error = params.get('error_description') || params.get('error');
   return error ? decodeURIComponent(error.replace(/\+/g, ' ')) : '';
 };
 
 // Landing page for Supabase confirmation links (signup + email change + recovery email).
-// Supabase puts the confirmed session in the URL; we adopt those tokens for the
-// Express API session and send the user into the app.
 const AuthCallback = () => {
   const [status, setStatus] = useState('verifying');
   const [message, setMessage] = useState('');
@@ -77,37 +81,82 @@ const AuthCallback = () => {
       }
     };
 
+    const verifyFromUrl = async () => {
+      const hashParams = parseHashParams();
+      const queryParams = parseQueryParams();
+      const tokenHash = queryParams.get('token_hash') || hashParams.get('token_hash');
+      const type = queryParams.get('type') || hashParams.get('type');
+
+      if (tokenHash && type === 'email_change') {
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'email_change',
+        });
+
+        if (!mounted) return false;
+
+        if (error) {
+          setStatus('error');
+          setMessage(
+            'This confirmation link is invalid or expired. Open Profile, resend verification, and use the newest code instead.'
+          );
+          handled.current = true;
+          return true;
+        }
+
+        if (data?.session) {
+          await adoptSession(data.session);
+          return true;
+        }
+      }
+
+      return false;
+    };
+
     const hashError = parseHashError();
     if (hashError) {
       setStatus('error');
-      setMessage(hashError);
+      setMessage(
+        hashError.includes('invalid') || hashError.includes('expired')
+          ? 'This confirmation link is invalid or expired. Open Profile, resend verification, and use the newest code instead.'
+          : hashError
+      );
       return undefined;
     }
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!mounted) return;
-      if (session && (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
-        adoptSession(session);
-      }
-    });
+    verifyFromUrl().then((verified) => {
+      if (!mounted || verified) return undefined;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      if (data?.session) {
-        adoptSession(data.session);
-      } else {
-        setTimeout(() => {
-          if (mounted && !handled.current) {
-            setStatus('error');
-            setMessage('This confirmation link is invalid or has expired.');
-          }
-        }, 2500);
-      }
+      const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+        if (!mounted) return;
+        if (session && (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
+          adoptSession(session);
+        }
+      });
+
+      supabase.auth.getSession().then(({ data }) => {
+        if (!mounted) return;
+        if (data?.session) {
+          adoptSession(data.session);
+        } else {
+          setTimeout(() => {
+            if (mounted && !handled.current) {
+              setStatus('error');
+              setMessage(
+                'This confirmation link is invalid or expired. Open Profile, resend verification, and use the newest code instead.'
+              );
+            }
+          }, 3000);
+        }
+      });
+
+      return () => {
+        authListener?.subscription?.unsubscribe();
+      };
     });
 
     return () => {
       mounted = false;
-      authListener?.subscription?.unsubscribe();
     };
   }, [navigate, reloadUser]);
 
@@ -137,8 +186,15 @@ const AuthCallback = () => {
             <p className="text-slate-600 mt-2">{message}</p>
             <button
               type="button"
+              onClick={() => navigate('/profile')}
+              className="mt-4 w-full py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700"
+            >
+              Back to Profile
+            </button>
+            <button
+              type="button"
               onClick={() => navigate('/login')}
-              className="mt-6 w-full py-3 bg-[#3674B5] text-white rounded-lg font-semibold hover:bg-[#2d6299]"
+              className="mt-3 w-full py-3 border border-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-50"
             >
               Go to Sign In
             </button>

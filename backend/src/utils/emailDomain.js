@@ -3,23 +3,54 @@
 // allowlist (comma-separated) later without code changes.
 //
 // Mapping: 'student' -> STUDENT_EMAIL_DOMAINS; every other role -> STAFF_EMAIL_DOMAINS.
+//
+// Recovery email must be a personal inbox. Consumer providers are never treated
+// as institutional — even if misconfigured in env — so password-reset recovery
+// cannot be blocked by a bad allowlist.
 
 const DEFAULT_STUDENT_DOMAINS = 'students.nu-dasma.edu.ph';
 const DEFAULT_STAFF_DOMAINS = 'nu-dasma.edu.ph';
+
+/** Personal inbox providers that must never be treated as institutional login domains. */
+const CONSUMER_EMAIL_DOMAINS = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'yahoo.com.ph',
+  'ymail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'aol.com',
+  'proton.me',
+  'protonmail.com',
+  'pm.me',
+  'mail.com',
+  'zoho.com',
+  'gmx.com',
+  'gmx.net',
+]);
 
 function parseDomains(raw) {
   return String(raw || '')
     .split(',')
     .map((d) => d.trim().toLowerCase().replace(/^@/, ''))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((domain) => !CONSUMER_EMAIL_DOMAINS.has(domain));
 }
 
 function getStudentDomains() {
-  return parseDomains(process.env.STUDENT_EMAIL_DOMAINS || DEFAULT_STUDENT_DOMAINS);
+  const parsed = parseDomains(process.env.STUDENT_EMAIL_DOMAINS || DEFAULT_STUDENT_DOMAINS);
+  return parsed.length > 0 ? parsed : parseDomains(DEFAULT_STUDENT_DOMAINS);
 }
 
 function getStaffDomains() {
-  return parseDomains(process.env.STAFF_EMAIL_DOMAINS || DEFAULT_STAFF_DOMAINS);
+  const parsed = parseDomains(process.env.STAFF_EMAIL_DOMAINS || DEFAULT_STAFF_DOMAINS);
+  return parsed.length > 0 ? parsed : parseDomains(DEFAULT_STAFF_DOMAINS);
 }
 
 function getAllowedDomainsForRole(role) {
@@ -55,9 +86,13 @@ function getInstitutionalDomains() {
   return [...new Set([...getStudentDomains(), ...getStaffDomains()])];
 }
 
+function isConsumerEmailDomain(domain) {
+  return CONSUMER_EMAIL_DOMAINS.has(String(domain || '').trim().toLowerCase());
+}
+
 function isInstitutionalEmail(email) {
   const domain = extractDomain(email);
-  if (!domain) return false;
+  if (!domain || isConsumerEmailDomain(domain)) return false;
   return getInstitutionalDomains().includes(domain);
 }
 
@@ -87,10 +122,12 @@ function validateRecoveryEmail(email, institutionalEmail) {
 }
 
 module.exports = {
+  CONSUMER_EMAIL_DOMAINS,
   getStudentDomains,
   getStaffDomains,
   getAllowedDomainsForRole,
   getInstitutionalDomains,
+  isConsumerEmailDomain,
   isInstitutionalEmail,
   validateEmailDomainForRole,
   validateRecoveryEmail,

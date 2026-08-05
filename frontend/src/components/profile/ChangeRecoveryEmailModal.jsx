@@ -1,60 +1,58 @@
 import { useState } from 'react';
-import { Mail, Shield, X, CheckCircle2 } from 'lucide-react';
+import { KeyRound, Mail, Shield, X, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authAPI } from '../../utils/api';
-import { supabase } from '../../utils/supabaseClient';
-import { getAccessToken, getRefreshToken } from '../../utils/authStorage';
+import { getRefreshToken } from '../../utils/authStorage';
 import { validateRecoveryEmail } from '../../utils/emailDomain';
 
 const ChangeRecoveryEmailModal = ({ user, onClose, onUpdated }) => {
   const [recoveryEmail, setRecoveryEmail] = useState(user?.recoveryEmail || '');
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+  const [confirmingOtp, setConfirmingOtp] = useState(false);
   const [sent, setSent] = useState(false);
+  const [sentAt, setSentAt] = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const normalizedRecoveryEmail = recoveryEmail.trim().toLowerCase();
 
-    const normalized = recoveryEmail.trim().toLowerCase();
-    if (!normalized) {
+  const sendVerification = async () => {
+    if (!normalizedRecoveryEmail) {
       toast.error('Please enter your recovery email address');
-      return;
+      return false;
     }
 
-    if (normalized === String(user?.recoveryEmail || '').toLowerCase()) {
+    if (normalizedRecoveryEmail === String(user?.recoveryEmail || '').toLowerCase()) {
       toast.error('That is already your recovery email');
-      return;
+      return false;
     }
 
-    const domainCheck = validateRecoveryEmail(normalized, user?.email);
+    const domainCheck = validateRecoveryEmail(normalizedRecoveryEmail, user?.email);
     if (!domainCheck.valid) {
       toast.error(domainCheck.message);
-      return;
+      return false;
     }
 
     setLoading(true);
     try {
-      await authAPI.validateRecoveryEmail(normalized);
+      const response = await authAPI.requestRecoveryEmail(normalizedRecoveryEmail, getRefreshToken());
+      const payload = response?.data?.data || response?.data || {};
 
-      const accessToken = getAccessToken();
-      const refreshToken = getRefreshToken();
-      if (!accessToken || !refreshToken) {
-        throw new Error('Your session has expired. Please sign in again.');
+      if (payload.alreadyVerified) {
+        toast.success('Recovery email saved.');
+        onUpdated?.();
+        onClose();
+        return true;
       }
 
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      if (sessionError) throw sessionError;
-
-      const { error: updateError } = await supabase.auth.updateUser(
-        { email: normalized },
-        { emailRedirectTo: `${window.location.origin}/auth/callback?flow=recovery` }
-      );
-      if (updateError) throw updateError;
+      const timestamp = payload.sentAt
+        ? new Date(payload.sentAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        : new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
       setSent(true);
-      toast.success('Verification sent to your recovery email.');
+      setSentAt(timestamp);
+      setOtp('');
+      toast.success('Verification email sent. Check your inbox.');
+      return true;
     } catch (error) {
       const message =
         error?.response?.data?.error?.message ||
@@ -62,8 +60,51 @@ const ChangeRecoveryEmailModal = ({ user, onClose, onUpdated }) => {
         error?.message ||
         'Failed to start recovery email setup';
       toast.error(message);
+      return false;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await sendVerification();
+  };
+
+  const handleResend = async () => {
+    setOtp('');
+    await sendVerification();
+  };
+
+  const handleOtpConfirm = async (e) => {
+    e.preventDefault();
+
+    const code = otp.replace(/\D/g, '');
+    if (code.length < 6 || code.length > 8) {
+      toast.error('Enter the full code from your latest email (6–8 digits)');
+      return;
+    }
+
+    setConfirmingOtp(true);
+    try {
+      await authAPI.confirmRecoveryEmailOtp({
+        recoveryEmail: normalizedRecoveryEmail,
+        code,
+      });
+      toast.success('Recovery email saved.');
+      onUpdated?.();
+      onClose();
+    } catch (error) {
+      const message =
+        error?.response?.data?.error?.code === 'INVALID_RECOVERY_CODE'
+          ? 'That code is invalid or expired. Tap Send again and use the newest email.'
+          : error?.response?.data?.error?.message ||
+            error?.response?.data?.message ||
+            error?.message ||
+            'Failed to verify recovery email';
+      toast.error(message);
+    } finally {
+      setConfirmingOtp(false);
     }
   };
 
@@ -99,23 +140,70 @@ const ChangeRecoveryEmailModal = ({ user, onClose, onUpdated }) => {
         </div>
 
         {sent ? (
-          <div className="p-6 text-center">
-            <CheckCircle2 className="h-12 w-12 mx-auto text-green-500 mb-4" />
-            <h4 className="font-semibold text-slate-900 mb-1">Verify your recovery email</h4>
-            <p className="text-sm text-slate-600 mb-6">
-              We sent a confirmation link to{' '}
-              <span className="font-semibold break-all">{recoveryEmail.trim().toLowerCase()}</span>.
-              Your recovery email is saved only after you click that link.
-            </p>
+          <div className="p-6">
+            <div className="text-center mb-5">
+              <CheckCircle2 className="h-12 w-12 mx-auto text-green-500 mb-4" />
+              <h4 className="font-semibold text-slate-900 mb-1">Verify your recovery email</h4>
+              <p className="text-sm text-slate-600">
+                We sent a confirmation email to{' '}
+                <span className="font-semibold break-all">{normalizedRecoveryEmail}</span>
+                {sentAt ? ` at ${sentAt}` : ''}.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 mb-4">
+              Only the <strong>latest</strong> email/code works. Check your spam folder. Send again if this one expires.
+            </div>
+
+            <form onSubmit={handleOtpConfirm} className="space-y-3">
+              <label htmlFor="cr-otp" className="block text-xs font-semibold text-slate-600">
+                Verification code
+              </label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  id="cr-otp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={8}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  placeholder="000000"
+                  className="w-full h-11 pl-9 pr-3 rounded-lg border border-slate-200 text-sm font-mono tracking-[0.2em] focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                Enter the code from the email we sent. You can also click the confirmation link in that email.
+              </p>
+
+              <button
+                type="submit"
+                disabled={confirmingOtp}
+                className="w-full h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {confirmingOtp ? 'Verifying…' : 'Confirm with code'}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={loading}
+              className="mt-3 w-full h-10 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {loading ? 'Sending…' : 'Send again'}
+            </button>
+
             <button
               type="button"
               onClick={() => {
                 onUpdated?.();
                 onClose();
               }}
-              className="w-full h-10 rounded-xl bg-[#3674B5] text-white text-sm font-semibold hover:bg-[#2d6299]"
+              className="mt-2 w-full h-10 rounded-xl text-sm font-medium text-[#3674B5] hover:underline"
             >
-              Done
+              Done for now
             </button>
           </div>
         ) : (

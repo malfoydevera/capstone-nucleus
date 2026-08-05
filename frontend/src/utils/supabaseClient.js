@@ -10,10 +10,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// This client is used ONLY for the Supabase-native password flow
-// (resetPasswordForEmail + the recovery session on /reset-password).
-// The rest of the app authenticates through the Express API, so we keep this
-// session isolated under a dedicated storage key and never auto-refresh it.
+// Supabase client for auth email flows (recovery email verification, password reset).
+// All emails are sent by Supabase Auth's built-in service — no third-party mailers.
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,

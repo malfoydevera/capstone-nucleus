@@ -1,18 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const authController = require('../controllers/auth.controller');
-const adminController = require('../controllers/admin.controller');
 const notificationController = require('../controllers/notification.controller');
 const coauthorInvitationController = require('../controllers/coauthorInvitation.controller');
 const { authRateLimiter, apiRateLimiter } = require('../middleware/rateLimiter');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 const { validateBody, authSchemas } = require('../middleware/validate');
-
-const upload = multer({
-	storage: multer.memoryStorage(),
-	limits: { fileSize: 2 * 1024 * 1024 },
-});
 
 // Public routes
 router.post('/register', authRateLimiter, validateBody(authSchemas.register), authController.register);
@@ -27,6 +20,8 @@ router.get('/me', authenticate, apiRateLimiter, authController.getCurrentUser);
 router.post('/change-password', authenticate, authRateLimiter, authController.changePassword);
 router.post('/change-email', authenticate, authRateLimiter, authController.changeEmail);
 router.post('/recovery-email/validate', authenticate, authRateLimiter, authController.validateRecoveryEmail);
+router.post('/recovery-email/request', authenticate, authRateLimiter, authController.requestRecoveryEmail);
+router.post('/recovery-email/confirm-otp', authenticate, authRateLimiter, validateBody(authSchemas.recoveryEmailOtpConfirm), authController.confirmRecoveryEmailOtp);
 router.post('/recovery-email/confirm', authenticate, authRateLimiter, authController.confirmRecoveryEmail);
 router.post('/confirm-institutional-email', authenticate, authRateLimiter, authController.confirmInstitutionalEmail);
 router.patch('/profile', authenticate, authController.updateOwnProfile);
@@ -47,7 +42,6 @@ router.post('/co-author-invitations/:token/decline', authenticate, authorize('st
 router.get('/students/search', authenticate, authController.searchStudents);
 
 // NEW: Admin Management Routes
-router.get('/admin/export/students', authenticate, authorize('admin'), adminController.exportStudentsCsv);
 router.get('/users', authenticate, authorize('admin'), apiRateLimiter, authController.getAllUsers);
 router.get('/users/:id/records', authenticate, authorize('admin'), authController.getUserRecords);
 router.post('/users/:id/records/export-pdf', authenticate, authorize('admin'), authController.exportUserRecordsPdf);
@@ -58,7 +52,6 @@ router.patch('/users/:id/reactivate', authenticate, authorize('admin'), authCont
 
 // Admin-only: Create privileged accounts (faculty, staff, dean, program_chair, admin)
 router.post('/users/create', authenticate, authorize('admin'), authController.createPrivilegedUser);
-router.post('/users/import-csv', authenticate, authorize('admin'), upload.single('file'), authController.bulkImportUsersCsv);
 router.get('/system-health', authenticate, authorize('admin'), apiRateLimiter, authController.getSystemHealth);
 router.get('/system-policy', authenticate, authorize('admin'), authController.getSystemPolicySettings);
 router.patch('/system-policy', authenticate, authorize('admin'), authController.updateSystemPolicySettings);

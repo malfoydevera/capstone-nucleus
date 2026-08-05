@@ -136,6 +136,11 @@ Both accept a comma-separated list if you ever need to allow multiple domains.
 Mapping: `student` → student domains; every other role (faculty/dean/chair/staff/
 admin) → staff domains.
 
+**Do not** put personal providers (`gmail.com`, `yahoo.com`, `outlook.com`, etc.)
+in these lists. Institutional domains are for **login/signup** only; recovery
+email must stay on a personal inbox. The app also ignores consumer domains if
+they are accidentally added to the env allowlist.
+
 ### 9.2 Enable "Confirm email"
 
 Dashboard: **Authentication → Providers → Email → Confirm email = ON**.
@@ -158,9 +163,15 @@ Make sure `backend/.env` `FRONTEND_URL` points at the correct frontend origin.
 
 ### 9.4 Email templates (optional)
 
-Customize **Confirm signup** and **Change Email Address** templates under
-**Authentication → Emails → Templates**. The default `{{ .ConfirmationURL }}`
-works with the callback flow.
+Customize **Confirm signup**, **Change Email Address**, and **Reset Password**
+templates under **Authentication → Emails → Templates**. For recovery email setup
+and password reset, include `{{ .Token }}` so users receive a 6-digit code:
+
+```html
+<p>Your verification code: <strong>{{ .Token }}</strong></p>
+```
+
+The confirmation link `{{ .ConfirmationURL }}` also works for email-change flows.
 
 ### 9.5 Database migrations (apply in order)
 
@@ -256,8 +267,15 @@ Many accounts use an institutional address (`@students.nu-dasma.edu.ph`) that do
 
 1. Sign in → **Profile** → **Set recovery email**.
 2. Enter a personal inbox (Gmail, Yahoo, etc.) — not an institutional domain.
-3. Click the verification link Supabase sends to that address.
-4. Profile shows both **Login** and **Recovery** emails.
+3. Supabase sends a **Confirm Email Change** message to the personal inbox with a
+   **6-digit verification code** and a confirmation link. Each resend invalidates
+   older codes/emails — always use the **latest** message. The code is **never**
+   shown in the app UI; it is delivered by email only.
+4. Confirm by either:
+   - Entering the code in Profile after sending verification (**recommended**), or
+   - Clicking the link on the same computer (`http://localhost:5173/auth/callback` must
+     be in Supabase Redirect URLs — without query params).
+5. Profile shows both **Login** and **Recovery** emails after confirmation.
 
 Each account must use its **own** recovery email. The same Gmail cannot be linked
 to two accounts (enforced by a unique index on `recovery_email`).
