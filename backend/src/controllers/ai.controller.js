@@ -1,4 +1,4 @@
-const { generateContentWithRetry } = require('../config/gemini');
+const { generateContentWithRetry, classifyGeminiError } = require('../config/gemini');
 const axios = require('axios');
 const supabase = require('../config/supabase');
 const { canAccessPaper, resolvePaperFileUrl } = require('../utils/fileAccess');
@@ -113,8 +113,8 @@ const chatWithPaper = async (req, res) => {
       });
     }
 
-    // Truncate text if too long (Gemini has token limits)
-    const maxChars = 30000;
+    // Truncate text if too long (Gemini has token limits; smaller = faster + fewer 503s)
+    const maxChars = 12000;
     const truncatedText = extractedText.length > maxChars 
       ? extractedText.substring(0, maxChars) + '\n\n[Text truncated due to length...]'
       : extractedText;
@@ -153,28 +153,29 @@ Answer:`;
     console.error('=== ERROR in chatWithPaper ===');
     console.error('Error name:', error.name);
     console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    
-    // Send more specific error messages
-    let errorMessage = 'Failed to process request';
-    let statusCode = 500;
 
-    if (error.message && error.message.includes('API key')) {
-      errorMessage = 'Invalid or missing Google API key';
-      statusCode = 500;
-    } else if (error.message && (error.message.includes('503') || error.message.includes('high demand') || error.message.includes('429'))) {
-      errorMessage = 'AI service is temporarily busy. Please try again in a moment.';
-      statusCode = 503;
-    } else if (error.response) {
-      errorMessage = 'Failed to download PDF file';
-      statusCode = 400;
-    } else if (error.message && error.message.includes('ENOTFOUND')) {
-      errorMessage = 'Network error: Could not reach the server';
-      statusCode = 503;
+    if (error.response && !error.message?.includes('GoogleGenerativeAI')) {
+      return sendError(res, {
+        status: 400,
+        code: 'PDF_DOWNLOAD_FAILED',
+        message: 'Failed to download PDF file',
+        details: error.message,
+      });
     }
 
+    if (error.message && error.message.includes('ENOTFOUND')) {
+      return sendError(res, {
+        status: 503,
+        code: 'AI_CHAT_FAILED',
+        message: 'Network error: Could not reach the server',
+        details: error.message,
+      });
+    }
+
+    const { status, message: errorMessage } = classifyGeminiError(error);
+
     return sendError(res, {
-      status: statusCode,
+      status,
       code: 'AI_CHAT_FAILED',
       message: errorMessage,
       details: error.message,
@@ -373,9 +374,7 @@ If you cannot find a formal abstract, create a brief 2-3 sentence summary of wha
 IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text or markdown:
 {"title": "extracted title here", "abstract": "extracted abstract here"}`;
 
-    const model = getModel();
-    const result = await model.generateContent(prompt);
-    const aiResponse = result.response.text();
+    const aiResponse = await generateContentWithRetry(prompt);
 
     debugLog('Gemini response:', aiResponse);
 

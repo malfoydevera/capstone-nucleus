@@ -240,14 +240,15 @@ export const aiAPI = {
     if (!response.ok) {
       const error = await response.json();
       const messageText =
+        error?.message ||
         (typeof error?.error === 'string' && error.error) ||
         error?.error?.message ||
-        error?.message ||
         'Failed to chat with paper';
       throw new Error(messageText);
     }
 
-    return response.json();
+    const payload = await response.json();
+    return payload.response ?? payload.data?.response ?? payload;
   },
 
   getReviewSummary: async (paperId) => {

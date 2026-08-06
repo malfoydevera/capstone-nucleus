@@ -12,57 +12,79 @@ if (!process.env.GOOGLE_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
-const DEFAULT_MODELS = (process.env.GEMINI_MODELS || 'gemini-2.0-flash,gemini-1.5-flash,gemini-flash-latest')
+// This project key currently supports gemini-flash-latest; other models return quota 0 / 404.
+const DEFAULT_MODELS = (process.env.GEMINI_MODELS || 'gemini-flash-latest')
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const getErrorMessage = (error) => String(error?.message || '');
+
+const isModelUnavailableError = (error) => {
+  const message = getErrorMessage(error);
+  return (
+    message.includes('[404')
+    || message.includes('not found')
+    || message.includes('limit: 0')
+    || message.includes('is not supported')
+  );
+};
+
+const isQuotaExceededError = (error) => {
+  const message = getErrorMessage(error);
+  return message.includes('429') || message.includes('quota') || message.includes('Quota exceeded');
+};
+
 const isRetryableGeminiError = (error) => {
-  const message = String(error?.message || '');
+  if (isModelUnavailableError(error)) return false;
+  const message = getErrorMessage(error);
   return (
     message.includes('503')
     || message.includes('429')
     || message.includes('high demand')
     || message.includes('Resource exhausted')
     || message.includes('overloaded')
+    || message.includes('unavailable')
   );
 };
 
-const getModel = (modelName = DEFAULT_MODELS[0]) => {
-  logger.info({ model: modelName }, 'Gemini model configured');
+const getModel = (modelName = DEFAULT_MODELS[0]) => genAI.getGenerativeModel({
+  model: modelName,
+  generationConfig: {
+    maxOutputTokens: 2048,
+    temperature: 0.7,
+  },
+});
 
-  return genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      maxOutputTokens: 2048,
-      temperature: 0.7,
-    },
-  });
-};
-
-const generateContentWithRetry = async (prompt, { maxAttempts = 3 } = {}) => {
+const generateContentWithRetry = async (prompt, { maxAttempts = 2 } = {}) => {
   let lastError;
 
   for (const modelName of DEFAULT_MODELS) {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
+        logger.info({ model: modelName, attempt, promptChars: prompt.length }, 'Gemini generateContent');
         const model = getModel(modelName);
         const result = await model.generateContent(prompt);
         return result.response.text();
       } catch (error) {
         lastError = error;
-        logger.warn(
-          { model: modelName, attempt, message: error?.message },
-          'Gemini generateContent attempt failed'
-        );
+        const message = getErrorMessage(error);
+        logger.warn({ model: modelName, attempt, message }, 'Gemini generateContent attempt failed');
+
+        if (isModelUnavailableError(error)) {
+          break;
+        }
 
         if (!isRetryableGeminiError(error) || attempt === maxAttempts) {
           break;
         }
 
-        await sleep(500 * attempt);
+        const retryDelayMs = message.includes('retry in') || message.includes('RetryInfo')
+          ? 3000
+          : 1000 * attempt;
+        await sleep(retryDelayMs);
       }
     }
   }
@@ -70,9 +92,24 @@ const generateContentWithRetry = async (prompt, { maxAttempts = 3 } = {}) => {
   throw lastError;
 };
 
+const classifyGeminiError = (error) => {
+  const message = getErrorMessage(error);
+  if (message.includes('API key') || message.includes('API_KEY')) {
+    return { status: 500, message: 'Invalid or missing Google API key' };
+  }
+  if (isQuotaExceededError(error)) {
+    return {
+      status: 503,
+      message: 'Google AI quota exceeded for this API key. Enable billing or create a new key in Google AI Studio.',
+    };
+  }
+  if (message.includes('503') || message.includes('high demand') || message.includes('unavailable')) {
+    return { status: 503, message: 'AI service is temporarily busy. Please try again in a moment.' };
+  }
+  return { status: 500, message: 'Failed to process AI request' };
+};
+
 // Embedding model for semantic/thematic search.
-// `gemini-embedding-001` is available on the Generative Language API; we request
-// 768 dimensions to match the pgvector column (default output is 3072).
 const EMBEDDING_MODEL = 'gemini-embedding-001';
 const EMBEDDING_DIMENSIONS = 768;
 
@@ -81,6 +118,7 @@ const getEmbeddingModel = () => genAI.getGenerativeModel({ model: EMBEDDING_MODE
 module.exports = {
   getModel,
   generateContentWithRetry,
+  classifyGeminiError,
   getEmbeddingModel,
   EMBEDDING_MODEL,
   EMBEDDING_DIMENSIONS,
