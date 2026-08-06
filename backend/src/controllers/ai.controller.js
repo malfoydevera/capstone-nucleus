@@ -1,4 +1,4 @@
-const { getModel } = require('../config/gemini');
+const { generateContentWithRetry } = require('../config/gemini');
 const axios = require('axios');
 const supabase = require('../config/supabase');
 const { canAccessPaper, resolvePaperFileUrl } = require('../utils/fileAccess');
@@ -136,10 +136,8 @@ Answer:`;
 
     debugLog('Sending request to Gemini API...');
 
-    // Send to Gemini
-    const model = getModel();
-    const result = await model.generateContent(prompt);
-    const aiResponse = result.response.text();
+    // Send to Gemini (retries + fallback models on 503/429)
+    const aiResponse = await generateContentWithRetry(prompt);
 
     debugLog('Gemini response received, length:', aiResponse.length);
     debugLog('=== Chat Request Completed Successfully ===');
@@ -164,6 +162,9 @@ Answer:`;
     if (error.message && error.message.includes('API key')) {
       errorMessage = 'Invalid or missing Google API key';
       statusCode = 500;
+    } else if (error.message && (error.message.includes('503') || error.message.includes('high demand') || error.message.includes('429'))) {
+      errorMessage = 'AI service is temporarily busy. Please try again in a moment.';
+      statusCode = 503;
     } else if (error.response) {
       errorMessage = 'Failed to download PDF file';
       statusCode = 400;
@@ -262,9 +263,7 @@ Paper content:
 ${truncatedText}
 ---`;
 
-    const model = getModel();
-    const result = await model.generateContent(prompt);
-    const aiResponse = result.response.text();
+    const aiResponse = await generateContentWithRetry(prompt);
 
     let parsed;
     try {
