@@ -49,6 +49,14 @@ const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http:
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  // Vercel production + preview deployments (e.g. nucleus-beige.vercel.app, nucleus-xxx-malfoydeveras-projects.vercel.app)
+  if (/^https:\/\/([a-z0-9-]+\.)*vercel\.app$/i.test(origin)) return true;
+  return false;
+};
+
 const schedulerTimers = [];
 
 const startInlineSchedulers = () => {
@@ -87,7 +95,7 @@ app.use(
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
     return callback(new Error('CORS origin denied'));
