@@ -381,12 +381,8 @@ const ReviewDetail = () => {
         ? `\n\n[Annotation Summary]\n${annotations.map((item, index) => `${index + 1}. ${item.pageNumber ? `Page ${item.pageNumber}: ` : ''}${item.note}`).join('\n')}`
         : '';
 
-      console.log('=== Requesting Revision ===');
-      console.log('Paper ID:', id);
-      console.log('User role:', user?.role);
-      console.log('Current paper status:', paper?.status);
-      console.log('Revision notes:', revisionNotes);
-      
+
+
       const response = await researchAPI.requestRevision(id, `${revisionNotes}${annotationSummary}`);
       toast.success('Revision requested successfully.', { id: loadingToast, duration: 3000 });
       const reviewPath = user?.role === 'faculty' ? '/faculty/review'

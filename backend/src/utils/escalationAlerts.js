@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const { notifyUser } = require('./notify');
+const logger = require('./logger');
 
 const toPositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -79,12 +80,13 @@ const startEscalationScheduler = () => {
     try {
       const result = await runEscalationAlertSweep();
       if (result.alertsCreated > 0) {
-        console.log(
-          `[EscalationScheduler] Created ${result.alertsCreated} alert(s) from ${result.staleCount} stale paper(s).`
+        logger.info(
+          { alertsCreated: result.alertsCreated, staleCount: result.staleCount },
+          'Escalation sweep completed'
         );
       }
     } catch (error) {
-      console.error('[EscalationScheduler] Sweep failed:', error.message);
+      logger.error({ err: error.message }, 'Escalation sweep failed');
     }
   };
 

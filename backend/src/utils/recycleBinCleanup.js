@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const { extractStoragePathFromUrl } = require('./fileAccess');
+const logger = require('./logger');
 
 const toPositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -69,10 +70,10 @@ const startRecycleBinCleanupScheduler = () => {
     try {
       const result = await purgeExpiredRecycleBinItems();
       if (result.purged > 0) {
-        console.log(`[RecycleBinCleanup] Purged ${result.purged} expired paper(s).`);
+        logger.info({ purged: result.purged }, 'Recycle bin cleanup completed');
       }
     } catch (error) {
-      console.error('[RecycleBinCleanup] Sweep failed:', error.message);
+      logger.error({ err: error.message }, 'Recycle bin sweep failed');
     }
   };
 

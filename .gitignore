@@ -16,3 +16,13 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Editor / IDE configs
+.vscode/
+.cursor/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

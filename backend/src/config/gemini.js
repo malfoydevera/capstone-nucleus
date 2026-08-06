@@ -1,12 +1,13 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const dotenv = require('dotenv');
+const logger = require('../utils/logger');
 
 dotenv.config();
 
 if (!process.env.GOOGLE_API_KEY) {
-  console.error('⚠️  WARNING: GOOGLE_API_KEY is not set in .env file');
+  logger.warn('GOOGLE_API_KEY is not set in environment');
 } else {
-  console.log('✅ Google API Key loaded successfully');
+  logger.info('Google API Key loaded');
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
@@ -14,7 +15,7 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const getModel = () => {
   // Use gemini-2.0-flash which is the current available model
   const modelName = 'gemini-flash-latest';
-  console.log(`Using model: ${modelName}`);
+  logger.info({ model: modelName }, 'Gemini model configured');
   
   return genAI.getGenerativeModel({ 
     model: modelName,

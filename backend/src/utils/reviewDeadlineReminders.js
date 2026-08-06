@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const { notifyUser } = require('./notify');
+const logger = require('./logger');
 
 const toPositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -112,12 +113,13 @@ const startReviewDeadlineReminderScheduler = () => {
     try {
       const result = await runReviewDeadlineReminderSweep();
       if (result.remindersSent > 0) {
-        console.log(
-          `[ReviewDeadlineScheduler] Sent ${result.remindersSent} reminder(s) from ${result.candidateCount} candidate paper(s).`
+        logger.info(
+          { remindersSent: result.remindersSent, candidateCount: result.candidateCount },
+          'Review deadline reminder sweep completed'
         );
       }
     } catch (error) {
-      console.error('[ReviewDeadlineScheduler] Sweep failed:', error.message);
+      logger.error({ err: error.message }, 'Review deadline sweep failed');
     }
   };
 
