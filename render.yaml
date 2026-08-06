@@ -1,27 +1,70 @@
 name: NUCLEUS Backend
+
+envVarGroups:
+  - name: nucleus-shared
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_INLINE_SCHEDULERS
+        value: "false"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: FRONTEND_URL
+        value: https://nucleus-beige.vercel.app
+      - key: APP_URL
+        value: https://nucleus-beige.vercel.app
+      - key: CORS_ORIGINS
+        value: https://nucleus-beige.vercel.app,http://localhost:5173,http://localhost:4173
+      - key: STUDENT_EMAIL_DOMAINS
+        value: students.nu-dasma.edu.ph
+      - key: STAFF_EMAIL_DOMAINS
+        value: nu-dasma.edu.ph
+      - key: SUPABASE_STORAGE_BUCKET
+        value: research-papers
+      - key: SIGNED_URL_TTL_SECONDS
+        value: "3600"
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: JWT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: GMAIL_USER
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: EMAIL_SENDER
+        sync: false
+
 services:
   - type: web
     name: nucleus-api
-    env: node
+    runtime: node
+    plan: free
+    region: singapore
     rootDir: backend
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /ready
     envVars:
-      - key: NODE_ENV
-        value: production
-      - key: ENABLE_INLINE_SCHEDULERS
-        value: false
-      - key: TRUST_PROXY
-        value: "1"
+      - fromGroup: nucleus-shared
 
   - type: cron
     name: nucleus-jobs
-    env: node
+    runtime: node
+    plan: starter
+    region: singapore
     rootDir: backend
     buildCommand: npm ci
     schedule: "0 * * * *"
     startCommand: node scripts/run-jobs.js --job=all
     envVars:
-      - key: NODE_ENV
-        value: production
+      - fromGroup: nucleus-shared
