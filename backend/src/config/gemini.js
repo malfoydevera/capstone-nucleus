@@ -12,8 +12,10 @@ if (!process.env.GOOGLE_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
-// This project key currently supports gemini-flash-latest; other models return quota 0 / 404.
-const DEFAULT_MODELS = (process.env.GEMINI_MODELS || 'gemini-flash-latest')
+// gemini-flash-lite-latest is the low-usage/lite tier — smaller model, lighter load,
+// less prone to "high demand" 503s than the standard gemini-flash-latest model.
+// gemini-flash-latest kept as fallback since it's also confirmed working on this key.
+const DEFAULT_MODELS = (process.env.GEMINI_MODELS || 'gemini-flash-lite-latest,gemini-flash-latest')
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
