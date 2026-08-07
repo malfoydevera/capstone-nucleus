@@ -58,7 +58,7 @@ const getModel = (modelName = DEFAULT_MODELS[0]) => genAI.getGenerativeModel({
   },
 });
 
-const generateContentWithRetry = async (prompt, { maxAttempts = 2 } = {}) => {
+const generateContentWithRetry = async (prompt, { maxAttempts = 4 } = {}) => {
   let lastError;
 
   for (const modelName of DEFAULT_MODELS) {
@@ -81,9 +81,11 @@ const generateContentWithRetry = async (prompt, { maxAttempts = 2 } = {}) => {
           break;
         }
 
+        // Google's "high demand" 503s are often transient within a few seconds;
+        // back off progressively instead of giving up after ~1s total.
         const retryDelayMs = message.includes('retry in') || message.includes('RetryInfo')
-          ? 3000
-          : 1000 * attempt;
+          ? 4000
+          : 1500 * attempt;
         await sleep(retryDelayMs);
       }
     }
