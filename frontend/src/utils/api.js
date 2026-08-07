@@ -225,17 +225,63 @@ export const departmentAPI = {
   deleteProgram: (id) => departmentsAPI.deleteProgram(id),
 };
 
+const getBackendOrigin = () => API_BASE_URL.replace(/\/api\/?$/, '');
+
+const isNetworkFailure = (error) => {
+  const message = String(error?.message || '');
+  return (
+    error?.name === 'TypeError'
+    || message.includes('Failed to fetch')
+    || message.includes('NetworkError')
+    || message.includes('Load failed')
+  );
+};
+
+const wakeBackend = async () => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
+  try {
+    await fetch(`${getBackendOrigin()}/health`, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+const postAiRequest = async (path, body) => {
+  const token = getAccessToken();
+  const request = () => fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+    body: JSON.stringify(body),
+  });
+
+  try {
+    return await request();
+  } catch (error) {
+    if (!isNetworkFailure(error)) {
+      throw error;
+    }
+    await wakeBackend();
+    return request();
+  }
+};
+
 export const aiAPI = {
-  chatWithPaper: async (paperId, message) => {
-    const token = getAccessToken();
-    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      body: JSON.stringify({ paperId, message }),
-    });
+  wakeBackend,
+
+  chatWithPaper: async (paperId, message, { prewarm = true } = {}) => {
+    if (prewarm) {
+      try {
+        await wakeBackend();
+      } catch {
+        // Continue — chat request may still succeed if backend is already awake.
+      }
+    }
+
+    const response = await postAiRequest('/ai/chat', { paperId, message });
 
     if (!response.ok) {
       const error = await response.json();
@@ -253,15 +299,7 @@ export const aiAPI = {
   },
 
   getReviewSummary: async (paperId) => {
-    const token = getAccessToken();
-    const response = await fetch(`${API_BASE_URL}/ai/review-summary`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      body: JSON.stringify({ paperId }),
-    });
+    const response = await postAiRequest('/ai/review-summary', { paperId });
 
     if (!response.ok) {
       const error = await response.json();

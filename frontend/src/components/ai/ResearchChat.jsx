@@ -23,6 +23,16 @@ const TypingMessage = ({ content, onComplete }) => {
   return <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayedText}</p>;
 };
 
+const isNetworkFailure = (error) => {
+  const message = String(error?.message || '');
+  return (
+    error?.name === 'TypeError'
+    || message.includes('Failed to fetch')
+    || message.includes('NetworkError')
+    || message.includes('Load failed')
+  );
+};
+
 const extractChatResponse = (data) => {
   if (typeof data === 'string') return data;
   return data?.response ?? data?.data?.response ?? '';
@@ -33,6 +43,7 @@ const ResearchChat = ({ paperId }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Analyzing context...');
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = (behavior = 'smooth') => {
@@ -51,9 +62,11 @@ const ResearchChat = ({ paperId }) => {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    setLoadingMessage('Connecting to server...');
 
     try {
-      const data = await aiAPI.chatWithPaper(paperId, messageContent);
+      setLoadingMessage('Analyzing context...');
+      const data = await aiAPI.chatWithPaper(paperId, messageContent, { prewarm: true });
       const responseText = extractChatResponse(data);
 
       if (!responseText.trim()) {
@@ -67,10 +80,13 @@ const ResearchChat = ({ paperId }) => {
         isNew: true 
       }]);
     } catch (error) {
+      const fallbackMessage = isNetworkFailure(error)
+        ? 'Could not reach the server. The API may be waking up on Render — wait 30–60 seconds and try again.'
+        : error.message;
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         type: 'error',
-        content: `Error: ${error.message}`
+        content: `Error: ${fallbackMessage}`
       }]);
     } finally {
       setIsLoading(false);
@@ -173,7 +189,7 @@ const ResearchChat = ({ paperId }) => {
                     <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                     <div className="w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce"></div>
                   </div>
-                  <span className="text-xs font-medium text-slate-500 italic">Analyzing context...</span>
+                  <span className="text-xs font-medium text-slate-500 italic">{loadingMessage}</span>
                 </div>
               </div>
             </div>
