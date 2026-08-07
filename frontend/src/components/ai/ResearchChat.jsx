@@ -174,7 +174,9 @@ const ResearchChat = ({ paperId }) => {
                     }} 
                   />
                 ) : (
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')}
+                  </p>
                 )}
               </div>
             </div>

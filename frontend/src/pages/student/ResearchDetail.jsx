@@ -136,7 +136,7 @@ const ResearchDetail = () => {
       if (paperResponse.status === 'fulfilled') {
         const payload = unwrapApiData(paperResponse.value);
         setPaper(payload.paper || null);
-        setWorkflowHistory(payload.workflowHistory || []);
+        setWorkflowHistory(Array.isArray(payload.workflowHistory) ? payload.workflowHistory : []);
         setDownloadCount(payload.paper?.download_count || 0);
         setViewCount(payload.paper?.view_count || 0);
         setDoiInput((prev) => prev || payload.paper?.doi || '');
@@ -158,7 +158,8 @@ const ResearchDetail = () => {
       }
 
       const annotationResponse = await researchAPI.getAnnotations(id);
-      setAnnotations(unwrapApiData(annotationResponse).annotations || []);
+      const annotationPayload = unwrapApiData(annotationResponse);
+      setAnnotations(Array.isArray(annotationPayload.annotations) ? annotationPayload.annotations : []);
     } catch (error) {
       console.error('Failed to fetch paper:', error);
     } finally {
