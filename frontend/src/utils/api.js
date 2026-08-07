@@ -248,7 +248,8 @@ export const aiAPI = {
     }
 
     const payload = await response.json();
-    return payload.response ?? payload.data?.response ?? payload;
+    const responseText = payload.response ?? payload.data?.response ?? '';
+    return { response: responseText };
   },
 
   getReviewSummary: async (paperId) => {

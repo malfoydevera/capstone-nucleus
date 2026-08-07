@@ -5,21 +5,27 @@ import { aiAPI } from '../../utils/api';
 const TypingMessage = ({ content, onComplete }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [index, setIndex] = useState(0);
+  const safeContent = typeof content === 'string' ? content : '';
 
   useEffect(() => {
-    if (index < content.length) {
-      // Increased speed: revealing 2-3 characters at a time for a snappier feel
+    if (index < safeContent.length) {
       const timeout = setTimeout(() => {
-        setDisplayedText(content.slice(0, index + 3));
+        setDisplayedText(safeContent.slice(0, index + 3));
         setIndex((prev) => prev + 3);
-      }, 10); 
+      }, 10);
       return () => clearTimeout(timeout);
-    } else if (onComplete) {
+    }
+    if (onComplete) {
       onComplete();
     }
-  }, [index, content, onComplete]);
+  }, [index, safeContent, onComplete]);
 
   return <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayedText}</p>;
+};
+
+const extractChatResponse = (data) => {
+  if (typeof data === 'string') return data;
+  return data?.response ?? data?.data?.response ?? '';
 };
 
 const ResearchChat = ({ paperId }) => {
@@ -48,11 +54,16 @@ const ResearchChat = ({ paperId }) => {
 
     try {
       const data = await aiAPI.chatWithPaper(paperId, messageContent);
+      const responseText = extractChatResponse(data);
+
+      if (!responseText.trim()) {
+        throw new Error('AI returned an empty response. Please try again.');
+      }
 
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         type: 'ai',
-        content: data.response,
+        content: responseText,
         isNew: true 
       }]);
     } catch (error) {

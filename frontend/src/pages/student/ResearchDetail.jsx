@@ -345,6 +345,12 @@ const ResearchDetail = () => {
     );
   }
 
+  const normalizedKeywords = Array.isArray(paper.keywords)
+    ? paper.keywords.filter(Boolean)
+    : typeof paper.keywords === 'string'
+      ? paper.keywords.split(',').map((keyword) => keyword.trim()).filter(Boolean)
+      : [];
+
   const displayedCoAuthors = getDisplayedCoAuthors();
   const statusConfig = getStatusConfig(paper.status);
   const StatusIcon = statusConfig.icon;
@@ -422,7 +428,7 @@ const ResearchDetail = () => {
                 <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                   <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Engagement</dt>
                   <dd className="mt-1 text-sm font-semibold text-slate-900">{viewCount} views · {downloadCount} downloads</dd>
-                  <dd className="text-xs text-slate-500 mt-1">{paper.keywords?.length || 0} keywords</dd>
+                  <dd className="text-xs text-slate-500 mt-1">{normalizedKeywords.length} keywords</dd>
                 </div>
               </dl>
 
@@ -477,7 +483,7 @@ const ResearchDetail = () => {
               </div>
             </ReviewSection>
 
-            {paper.keywords?.length > 0 && (
+            {normalizedKeywords.length > 0 && (
               <ReviewSection
                 id="keywords"
                 icon={Tag}
@@ -485,7 +491,7 @@ const ResearchDetail = () => {
                 description="Topics covered in this paper"
               >
                 <div className="flex flex-wrap gap-2">
-                  {paper.keywords.map((keyword, index) => (
+                  {normalizedKeywords.map((keyword, index) => (
                     <span
                       key={index}
                       className="px-3 py-1 rounded-full bg-[#3674B5]/10 text-[#3674B5] text-xs font-medium border border-[#3674B5]/20"
