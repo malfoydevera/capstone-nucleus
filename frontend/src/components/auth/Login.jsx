@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { authAPI } from '../../utils/api';
 import NucleusLogoMark from '../branding/NucleusLogoMark';
+import PrivacyNoticeGate, { PRIVACY_ACCEPTANCE_KEY } from './PrivacyNoticeGate';
 import {
   Lock,
   Mail,
@@ -16,6 +17,7 @@ import {
   LogIn
 } from 'lucide-react';
 import nuBuildingImg from '../../assets/dasma.webp';
+import usePublicStats, { formatStatNumber } from '../../hooks/usePublicStats';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -30,8 +32,12 @@ const Login = () => {
     email: false,
     password: false
   });
+  const [privacyAccepted, setPrivacyAccepted] = useState(
+    () => sessionStorage.getItem(PRIVACY_ACCEPTANCE_KEY) === 'true',
+  );
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { researchPapers, activeScholars, loading: statsLoading } = usePublicStats();
 
   useEffect(() => {
     const rememberedEmail = localStorage.getItem('rememberedEmail');
@@ -96,6 +102,20 @@ const Login = () => {
   const handleBlur = (field) => {
     setIsFocused(prev => ({ ...prev, [field]: false }));
   };
+
+  const handlePrivacyAccept = () => {
+    sessionStorage.setItem(PRIVACY_ACCEPTANCE_KEY, 'true');
+    setPrivacyAccepted(true);
+  };
+
+  if (!privacyAccepted) {
+    return (
+      <PrivacyNoticeGate
+        onAccept={handlePrivacyAccept}
+        onDecline={() => navigate('/')}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 font-sans overflow-hidden">
@@ -189,11 +209,15 @@ const Login = () => {
             {/* Stats with Counter Animation */}
             <div className="mt-12 grid grid-cols-3 gap-4">
               <div className="text-center p-4 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10 transition-all duration-500 hover:bg-white/10 hover:scale-105">
-                <div className="text-2xl font-bold text-white mb-1 animate-count">500+</div>
+                <div className="text-2xl font-bold text-white mb-1 animate-count tabular-nums">
+                  {statsLoading ? '…' : formatStatNumber(researchPapers)}
+                </div>
                 <div className="text-xs text-slate-300">Research Papers</div>
               </div>
               <div className="text-center p-4 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10 transition-all duration-500 hover:bg-white/10 hover:scale-105">
-                <div className="text-2xl font-bold text-white mb-1 animate-count">1K+</div>
+                <div className="text-2xl font-bold text-white mb-1 animate-count tabular-nums">
+                  {statsLoading ? '…' : formatStatNumber(activeScholars)}
+                </div>
                 <div className="text-xs text-slate-300">Active Scholars</div>
               </div>
               <div className="text-center p-4 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10 transition-all duration-500 hover:bg-white/10 hover:scale-105">

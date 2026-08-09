@@ -146,6 +146,7 @@ export const researchAPI = {
   runPlagiarismScan: (id) => api.post(`/research/${id}/plagiarism/run`),
   deanInterveneResearch: (id, payload) => api.post(`/research/${id}/dean-intervene`, payload),
   getPublishedResearch: (params) => api.get('/research/published', { params }),
+  getPublicStats: () => api.get('/research/public-stats'),
   // AI-powered hybrid (semantic + keyword) thematic search.
   // params: { q, page, limit, department, year, author }
   semanticSearch: (params) => api.get('/research/semantic-search', { params }),

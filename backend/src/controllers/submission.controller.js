@@ -1155,6 +1155,44 @@ exports.getCategories = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/research/public-stats
+ * Public aggregate metrics for landing/login hero cards.
+ */
+exports.getPublicStats = async (req, res) => {
+  try {
+    const stats = await getOrSet('public:stats', TTL.PUBLIC_STATS, async () => {
+      const [papersResult, scholarsResult] = await Promise.all([
+        supabase
+          .from('research_papers')
+          .select('*', { count: 'exact', head: true })
+          .in('status', ['approved', 'published'])
+          .is('deleted_at', null),
+        supabase
+          .from('users')
+          .select('*', { count: 'exact', head: true })
+          .eq('role', 'student')
+          .is('suspended_at', null)
+          .or('is_active.is.null,is_active.eq.true'),
+      ]);
+
+      if (papersResult.error) throw papersResult.error;
+      if (scholarsResult.error) throw scholarsResult.error;
+
+      return {
+        researchPapers: papersResult.count ?? 0,
+        activeScholars: scholarsResult.count ?? 0,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    return sendSuccess(res, { data: stats });
+  } catch (error) {
+    logger.error('Get public stats error:', error);
+    return sendError(res, { status: 500, code: 'GET_PUBLIC_STATS_FAILED', message: 'Server error' });
+  }
+};
+
 exports.getFacultyMembers = async (req, res) => {
   try {
     const { department, departmentId } = req.query;

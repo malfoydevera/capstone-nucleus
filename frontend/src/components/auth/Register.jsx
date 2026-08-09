@@ -6,6 +6,7 @@ import { authAPI, departmentAPI, unwrapApiData } from '../../utils/api';
 import { validatePasswordStrength } from '../../utils/passwordPolicy';
 import { validateEmailDomainForRole, getPrimaryDomainForRole } from '../../utils/emailDomain';
 import NucleusLogoMark from '../branding/NucleusLogoMark';
+import PrivacyNoticeGate, { PRIVACY_ACCEPTANCE_KEY } from './PrivacyNoticeGate';
 import { 
   UserPlus, 
   Mail, 
@@ -49,6 +50,9 @@ const Register = () => {
   const [nameWarnings, setNameWarnings] = useState({ firstName: '', middleName: '', lastName: '' });
   const [confirmationEmail, setConfirmationEmail] = useState('');
   const [resending, setResending] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(
+    () => sessionStorage.getItem(PRIVACY_ACCEPTANCE_KEY) === 'true',
+  );
   const { register } = useAuth();
   const navigate = useNavigate();
   const studentDomain = getPrimaryDomainForRole('student');
@@ -208,6 +212,11 @@ const Register = () => {
     }
   };
 
+  const handlePrivacyAccept = () => {
+    sessionStorage.setItem(PRIVACY_ACCEPTANCE_KEY, 'true');
+    setPrivacyAccepted(true);
+  };
+
   const handleResendConfirmation = async () => {
     if (!confirmationEmail) return;
     setResending(true);
@@ -227,6 +236,15 @@ const Register = () => {
 
   const passwordStrength = formData.password.length > 0 ? 
     Math.min(Math.floor(formData.password.length / 2) * 20, 100) : 0;
+
+  if (!privacyAccepted) {
+    return (
+      <PrivacyNoticeGate
+        onAccept={handlePrivacyAccept}
+        onDecline={() => navigate('/')}
+      />
+    );
+  }
 
   if (confirmationEmail) {
     return (
@@ -677,7 +695,18 @@ const Register = () => {
                     className="mt-0.5 w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500 focus:ring-2 transition-all duration-300 flex-shrink-0"
                   />
                   <label htmlFor="terms" className="text-xs lg:text-sm text-slate-600">
-                    I agree to the <a href="#" className="text-indigo-600 hover:text-indigo-500 font-medium transition-colors">Terms of Service</a> and acknowledge that my academic work will be subject to institutional review and verification.
+                    I confirm that the information I provide is accurate and acknowledge that my academic
+                    work will be subject to institutional review and verification. I have read and accepted
+                    the{' '}
+                    <a
+                      href="https://www.national-u.edu.ph/data-privacy/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-600 hover:text-indigo-500 font-medium transition-colors"
+                    >
+                      Data Privacy Policy
+                    </a>
+                    .
                   </label>
                 </div>
 

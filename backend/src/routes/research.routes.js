@@ -44,6 +44,7 @@ const publicCache = (req, res, next) => {
 
 // ========== PUBLIC ROUTES ==========
 router.get('/published', publishedRateLimiter, publicCache, submissionController.getPublishedResearch);
+router.get('/public-stats', publishedRateLimiter, publicCache, submissionController.getPublicStats);
 router.get('/semantic-search', authenticate, semanticSearchRateLimiter, submissionController.getSemanticSearch);
 router.get('/categories', submissionController.getCategories);
 

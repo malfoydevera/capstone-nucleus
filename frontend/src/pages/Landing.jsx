@@ -6,6 +6,7 @@ import nuBuildingImg from '../assets/dasma.webp';
 import nuLogoLeft from '../assets/left.png';
 
 import NucleusLogoMark from '../components/branding/NucleusLogoMark';
+import usePublicStats, { formatStatNumber } from '../hooks/usePublicStats';
 import { 
   BookOpen, 
   Search, 
@@ -33,6 +34,7 @@ const Landing = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [navScrolled, setNavScrolled] = useState(false);
+  const { researchPapers, activeScholars, loading: statsLoading } = usePublicStats();
 
   useEffect(() => {
     const handleScroll = () => setNavScrolled(window.scrollY > 60);
@@ -221,7 +223,7 @@ const Landing = () => {
               className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl"
             >
               {[
-                { value: '500+', label: 'Research Papers' },
+                { value: statsLoading ? '…' : formatStatNumber(researchPapers), label: 'Research Papers' },
                 { value: '100+', label: 'Faculty' },
                 { value: '10K+', label: 'Monthly Views' },
                 { value: '50+', label: 'Departments' },
@@ -325,14 +327,18 @@ const Landing = () => {
                     <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-blue-600 flex items-center justify-center mx-auto mb-6 shadow-lg">
                       <Users size={36} className="text-white" />
                     </div>
-                    <div className="text-5xl font-bold text-slate-900 mb-2">1,000+</div>
+                    <div className="text-5xl font-bold text-slate-900 mb-2 tabular-nums">
+                      {statsLoading ? '…' : formatStatNumber(activeScholars)}
+                    </div>
                     <div className="text-xl text-[#1C4D8D] font-semibold mb-2">Active Scholars</div>
-                    <div className="text-slate-500">Engaged in research activities daily</div>
+                    <div className="text-slate-500">Registered student accounts on NUCLEUS</div>
                   </div>
                   <div className="grid grid-cols-2 gap-4 mt-8 pt-8 border-t border-slate-100">
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-slate-900">500+</div>
-                      <div className="text-sm text-slate-500">Papers Submitted</div>
+                      <div className="text-2xl font-bold text-slate-900 tabular-nums">
+                        {statsLoading ? '…' : formatStatNumber(researchPapers)}
+                      </div>
+                      <div className="text-sm text-slate-500">Published Papers</div>
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-slate-900">50+</div>

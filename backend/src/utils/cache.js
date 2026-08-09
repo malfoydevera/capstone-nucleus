@@ -68,6 +68,7 @@ const TTL = {
   DEAN_CHAIR:   300,  //  5 min
   DEPARTMENTS:  600,  // 10 min
   PUBLISHED:     90,  // 90 sec — browse/search listings
+  PUBLIC_STATS:   60,  //  1 min — landing/login hero metrics
   ORG_LOOKUPS:  600,  // 10 min — departments/programs
   SYSTEM_HEALTH:  30,  // 30 sec — admin health dashboard
 };
@@ -102,6 +103,7 @@ function invalidatePrefix(prefix) {
 function invalidateBrowseCaches() {
   invalidatePrefix('published:');
   invalidatePrefix('semantic:');
+  invalidate('public:stats');
 }
 
 module.exports = { cache, TTL, getOrSet, invalidate, invalidatePrefix, invalidateBrowseCaches };

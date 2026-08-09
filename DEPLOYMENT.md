@@ -1,5 +1,7 @@
 # NUCLEUS Production Deployment Guide
 
+For step-by-step release checklists on major updates, see [`RELEASE.md`](RELEASE.md).
+
 Host target: **PaaS (Render / Railway / Fly.io)** — single web instance + cron worker.
 
 ## Pre-deploy checklist
