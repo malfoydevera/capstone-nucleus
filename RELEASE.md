@@ -89,7 +89,7 @@ Dashboard: [nucleus-api → Environment](https://dashboard.render.com/web/srv-d9
 |----------|------------------|
 | `FRONTEND_URL` | `https://nucleus-beige.vercel.app` |
 | `CORS_ORIGINS` | `https://nucleus-beige.vercel.app,http://localhost:5173,http://localhost:4173` |
-| `GEMINI_MODELS` | `gemini-flash-latest` |
+| `GEMINI_MODELS` | `gemini-3.1-flash-lite,gemini-3.5-flash-lite` |
 | Secrets | `JWT_SECRET`, `SUPABASE_*`, `GOOGLE_API_KEY`, `RESEND_API_KEY` — never commit |
 
 - [ ] New backend env vars added on Render (if any)
@@ -229,7 +229,7 @@ Copy into your PR description or a team channel for each major release:
 | `VITE_API_URL` missing `/api` | Set to `https://nucleus-api-9fju.onrender.com/api` and redeploy Vercel |
 | Changed Vercel env but didn't redeploy | Deployments → Redeploy |
 | CORS errors on preview URLs | Render `CORS_ORIGINS` or backend allows `*.vercel.app` |
-| AI returns 503 for all users | Check `GOOGLE_API_KEY` and `GEMINI_MODELS=gemini-flash-latest` on Render |
+| AI returns 503 for all users | Check `GOOGLE_API_KEY` and `GEMINI_MODELS=gemini-3.1-flash-lite,gemini-3.5-flash-lite` on Render |
 | Auth callback fails | Add `/auth/callback` to Supabase redirect URLs |
 | `/ready` returns 503 | Check Supabase credentials on Render; confirm migrations applied |
 

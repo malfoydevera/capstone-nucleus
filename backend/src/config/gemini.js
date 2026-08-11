@@ -12,9 +12,9 @@ if (!process.env.GOOGLE_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
-// Low-usage tier: pinned version IDs (not -latest aliases) to avoid shifting model behavior.
-// gemini-3.5-flash-lite is the primary lite model; gemini-3.1-flash-lite is the fallback.
-const DEFAULT_MODELS = (process.env.GEMINI_MODELS || 'gemini-3.5-flash-lite,gemini-3.1-flash-lite')
+// Chat: prefer the lightest Flash-Lite tier for cost and multi-user throughput.
+// gemini-3.1-flash-lite is primary; gemini-3.5-flash-lite is fallback if the key lacks 3.1.
+const DEFAULT_MODELS = (process.env.GEMINI_MODELS || 'gemini-3.1-flash-lite,gemini-3.5-flash-lite')
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
@@ -54,7 +54,7 @@ const isRetryableGeminiError = (error) => {
 const getModel = (modelName = DEFAULT_MODELS[0]) => genAI.getGenerativeModel({
   model: modelName,
   generationConfig: {
-    maxOutputTokens: 2048,
+    maxOutputTokens: 1024,
     temperature: 0.7,
   },
 });
