@@ -247,53 +247,63 @@ const Sidebar = () => {
       ) : null}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[18rem] max-w-[85vw] flex-col border-r border-slate-200 bg-[rgba(255,255,255,0.96)] shadow-2xl backdrop-blur-xl transition-transform duration-300 lg:sticky lg:top-0 lg:z-30 lg:h-screen lg:translate-x-0 lg:shadow-none ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[18rem] max-w-[85vw] flex-col border-r border-slate-200 bg-[rgba(255,255,255,0.96)] shadow-2xl backdrop-blur-xl transition-[width,transform] duration-300 ease-out motion-reduce:transition-none lg:sticky lg:top-0 lg:z-30 lg:h-screen lg:translate-x-0 lg:overflow-visible lg:shadow-none ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         } ${isCollapsed ? 'lg:w-[5.5rem]' : 'lg:w-[17rem]'}`}
       >
-        <div className={`flex items-center border-b border-slate-200 ${isCollapsed ? 'justify-center px-3 py-5' : 'justify-between px-5 py-5'}`}>
-          {!isCollapsed ? (
-            <div className="flex items-center gap-3">
-              <NucleusLogoMark size={44} className="shadow-md" ringClassName="ring-1 ring-slate-200/70" />
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#3674B5]">NUCLEUS</p>
-                <p className="text-xs text-slate-500">Research portal</p>
-              </div>
+        <div
+          className={`relative flex items-center border-b border-slate-200 transition-[padding] duration-300 ease-out motion-reduce:transition-none ${
+            isCollapsed ? 'justify-center px-3 py-5' : 'justify-between px-5 py-5'
+          }`}
+        >
+          <div
+            className={`flex min-w-0 items-center transition-[gap] duration-300 ease-out motion-reduce:transition-none ${
+              isCollapsed ? 'justify-center gap-0' : 'gap-3'
+            }`}
+          >
+            <NucleusLogoMark
+              size={isCollapsed ? 40 : 44}
+              className="shadow-md transition-transform duration-300 ease-out motion-reduce:transition-none"
+              ringClassName="ring-1 ring-slate-200/70"
+            />
+            <div
+              className={`min-w-0 overflow-hidden transition-[max-width,opacity,transform] duration-300 ease-out motion-reduce:transition-none ${
+                isCollapsed
+                  ? 'pointer-events-none max-w-0 -translate-x-1 opacity-0'
+                  : 'max-w-[9.5rem] translate-x-0 opacity-100'
+              }`}
+              aria-hidden={isCollapsed}
+            >
+              <p className="truncate text-sm font-semibold uppercase tracking-[0.18em] text-[#3674B5]">NUCLEUS</p>
+              <p className="truncate text-xs text-slate-500">Research portal</p>
             </div>
-          ) : (
-            <NucleusLogoMark size={44} className="shadow-md" ringClassName="ring-1 ring-slate-200/70" />
-          )}
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsCollapsed((prev) => !prev)}
-              className="hidden h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-white hover:text-slate-900 lg:inline-flex"
-              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              <ChevronLeft size={16} className={isCollapsed ? 'rotate-180' : ''} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsMobileOpen(false)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-white hover:text-slate-900 lg:hidden"
-              aria-label="Close navigation"
-            >
-              <X size={16} />
-            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsMobileOpen(false)}
+            className="absolute right-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition-colors duration-200 hover:bg-white hover:text-slate-900 lg:hidden"
+            aria-label="Close navigation"
+          >
+            <X size={16} />
+          </button>
         </div>
 
-        {!isCollapsed ? (
-          <div className="border-b border-slate-200 px-5 py-4">
-            <p className="truncate text-sm font-semibold text-slate-900">{user?.fullName || 'User'}</p>
-            <p className="truncate text-xs text-slate-500">{user?.email || ''}</p>
-            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#3674B5]/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#3674B5]">
-              <Shield size={12} />
-              {roleLabel}
-            </div>
+        <div
+          className={`overflow-hidden border-b border-slate-200 transition-[max-height,opacity,padding] duration-300 ease-out motion-reduce:transition-none ${
+            isCollapsed
+              ? 'pointer-events-none max-h-0 border-transparent px-5 py-0 opacity-0'
+              : 'max-h-28 px-5 py-4 opacity-100'
+          }`}
+          aria-hidden={isCollapsed}
+        >
+          <p className="truncate text-sm font-semibold text-slate-900">{user?.fullName || 'User'}</p>
+          <p className="truncate text-xs text-slate-500">{user?.email || ''}</p>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#3674B5]/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#3674B5]">
+            <Shield size={12} />
+            {roleLabel}
           </div>
-        ) : null}
+        </div>
 
         <nav className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
           <div className="space-y-1">
@@ -340,6 +350,21 @@ const Sidebar = () => {
             collapsed={isCollapsed}
           />
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsCollapsed((prev) => !prev)}
+          className="absolute right-0 top-1/2 z-20 hidden h-8 w-8 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-[color,background-color,box-shadow,transform] duration-200 ease-out hover:bg-slate-50 hover:text-slate-900 hover:shadow-md active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100 lg:inline-flex"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!isCollapsed}
+        >
+          <ChevronLeft
+            size={15}
+            className={`transition-transform duration-300 ease-out motion-reduce:transition-none ${
+              isCollapsed ? 'rotate-180' : 'rotate-0'
+            }`}
+          />
+        </button>
       </aside>
     </>
   );

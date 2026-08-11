@@ -27,7 +27,9 @@ import {
   Quote,
   ChevronLeft,
   ChevronRight,
-  Star
+  Star,
+  Menu,
+  X,
 } from 'lucide-react';
 
 const Landing = () => {
@@ -35,6 +37,7 @@ const Landing = () => {
   const { user } = useAuth();
   const [navScrolled, setNavScrolled] = useState(false);
   const { researchPapers, activeScholars, loading: statsLoading } = usePublicStats();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => setNavScrolled(window.scrollY > 60);
@@ -42,6 +45,21 @@ const Landing = () => {
     handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [mobileMenuOpen]);
 
   const authAction = user ? (
     <button 
@@ -62,7 +80,7 @@ const Landing = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white font-sans text-slate-900 antialiased">
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-b from-slate-50 to-white font-sans text-slate-900 antialiased">
       {/* Navigation */}
       <nav
         className={`fixed top-0 w-full z-50 transition-all duration-300 ${
@@ -71,25 +89,25 @@ const Landing = () => {
             : 'bg-gradient-to-b from-slate-900/80 to-transparent backdrop-blur-sm'
         }`}
       >
-        <div className={`flex items-center justify-between max-w-7xl mx-auto px-6 md:px-12 transition-all duration-300 ${navScrolled ? 'py-3' : 'py-5'}`}>
-          <div className="flex items-center gap-3">
+        <div className={`flex items-center justify-between max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 transition-all duration-300 ${navScrolled ? 'py-3' : 'py-4 sm:py-5'}`}>
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
             <NucleusLogoMark
-              size={navScrolled ? 40 : 48}
+              size={navScrolled ? 36 : 44}
               rounded="rounded-xl"
               className="shadow-lg transition-all duration-300"
               ringClassName={navScrolled ? 'ring-1 ring-slate-200/80' : 'ring-1 ring-white/25'}
             />
-            <div className="flex flex-col">
-              <span className={`font-bold tracking-tight transition-colors duration-300 ${navScrolled ? 'text-[#1C4D8D] text-lg' : 'text-white text-xl'}`}>
+            <div className="min-w-0 flex flex-col">
+              <span className={`truncate font-bold tracking-tight transition-colors duration-300 ${navScrolled ? 'text-[#1C4D8D] text-base sm:text-lg' : 'text-white text-lg sm:text-xl'}`}>
                 NUCLEUS
               </span>
-              <span className={`text-xs font-medium transition-colors duration-300 ${navScrolled ? 'text-slate-500' : 'text-white/70'}`}>
+              <span className={`truncate text-[11px] sm:text-xs font-medium transition-colors duration-300 ${navScrolled ? 'text-slate-500' : 'text-white/70'}`}>
                 NU Dasmariñas
               </span>
             </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-8">
             <a
               href="#features"
               className={`text-sm font-medium transition-colors hover:underline decoration-[#1C4D8D] decoration-2 underline-offset-4 ${
@@ -110,73 +128,120 @@ const Landing = () => {
             {authAction}
           </div>
 
-          <div className="md:hidden flex items-center gap-2">
-            {user ? (
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="rounded-lg bg-[#1C4D8D] px-4 py-2 text-sm font-semibold text-white shadow-md"
-              >
-                Dashboard
-              </button>
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className={`rounded-lg border px-3 py-2 text-sm font-medium ${
-                    navScrolled ? 'border-slate-300 text-slate-700' : 'border-white/20 text-white/95 backdrop-blur-sm'
-                  }`}
-                >
-                  Sign In
-                </Link>
-                <Link
-                  to="/register"
-                  className="rounded-lg bg-[#1C4D8D] px-3 py-2 text-sm font-semibold text-white shadow-md"
-                >
-                  Get Started
-                </Link>
-              </>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border transition-colors lg:hidden ${
+              navScrolled
+                ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                : 'border-white/20 bg-white/10 text-white backdrop-blur-sm hover:bg-white/15'
+            }`}
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
+
+        <AnimatePresence>
+          {mobileMenuOpen ? (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="overflow-hidden border-t border-white/10 bg-slate-900/95 backdrop-blur-md lg:hidden"
+            >
+              <div className="space-y-1 px-4 py-4 sm:px-6">
+                <a
+                  href="#features"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block rounded-xl px-4 py-3 text-sm font-medium text-white/90 transition-colors hover:bg-white/10"
+                >
+                  Features
+                </a>
+                <a
+                  href="#stats"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block rounded-xl px-4 py-3 text-sm font-medium text-white/90 transition-colors hover:bg-white/10"
+                >
+                  Impact
+                </a>
+                <div className="border-t border-white/10 pt-3">
+                  {user ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        navigate('/dashboard');
+                      }}
+                      className="w-full rounded-xl bg-[#1C4D8D] px-4 py-3 text-sm font-semibold text-white shadow-md"
+                    >
+                      Go to Dashboard
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <Link
+                        to="/register"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="w-full rounded-xl bg-[#1C4D8D] px-4 py-3 text-center text-sm font-semibold text-white shadow-md"
+                      >
+                        Get Started
+                      </Link>
+                      <Link
+                        to="/login"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="w-full rounded-xl border border-white/20 px-4 py-3 text-center text-sm font-medium text-white/95"
+                      >
+                        Sign In
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center pt-24 pb-20 overflow-hidden">
+      <section className="relative flex min-h-[100dvh] items-center overflow-hidden pt-24 pb-12 sm:pt-28 sm:pb-16 md:pb-20">
         {/* Background Image with Enhanced Overlay */}
-        <div className="absolute inset-0 z-0">
-          <motion.img
-            src={nuBuildingImg}
-            alt="NU Building Background"
-            className="w-full h-full object-cover"
-            initial={{ scale: 1.1, opacity: 0 }}
+        <div className="absolute inset-0 z-0 overflow-hidden">
+          <motion.div
+            aria-hidden="true"
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+            style={{ backgroundImage: `url(${nuBuildingImg})` }}
+            initial={{ scale: 1.08, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 1.4, ease: 'easeOut' }}
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#0f2e57]/85 via-[#1C4D8D]/70 to-[#1C4D8D]/40" />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent" />
-          <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-yellow-300/10 blur-3xl" />
-          <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-[#2563eb]/20 blur-3xl" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0f2e57]/90 via-[#1C4D8D]/75 to-[#1C4D8D]/45 sm:from-[#0f2e57]/85 sm:via-[#1C4D8D]/70 sm:to-[#1C4D8D]/40" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/95 via-slate-900/25 to-transparent sm:from-slate-900/90 sm:via-slate-900/20" />
+          <div className="absolute -top-32 -right-32 hidden h-96 w-96 rounded-full bg-yellow-300/10 blur-3xl sm:block" />
+          <div className="absolute -bottom-32 -left-32 hidden h-96 w-96 rounded-full bg-[#2563eb]/20 blur-3xl sm:block" />
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 md:px-12 relative z-10 w-full">
+        <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-12">
           <div className="max-w-3xl">
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white text-sm font-semibold mb-8 tracking-wide backdrop-blur-md"
+              className="mb-5 inline-flex max-w-full flex-wrap items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2 text-center text-[11px] font-semibold tracking-wide text-white backdrop-blur-md sm:mb-8 sm:justify-start sm:px-4 sm:py-2 sm:text-sm"
             >
-              <GraduationCap size={16} className="text-yellow-300" />
-              National University Dasmariñas • Academic Repository
+              <GraduationCap size={16} className="shrink-0 text-yellow-300" />
+              <span className="sm:hidden">NU Dasmariñas • Academic Repository</span>
+              <span className="hidden sm:inline">National University Dasmariñas • Academic Repository</span>
             </motion.div>
 
             <motion.h1
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-5xl md:text-6xl lg:text-7xl font-black text-white tracking-tight mb-6 leading-[1.05]"
+              className="mb-4 text-[2rem] font-black leading-[1.08] tracking-tight text-white sm:mb-6 sm:text-5xl md:text-6xl lg:text-7xl"
             >
-              Preserving Knowledge, <br />
+              Preserving Knowledge,{' '}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-300">
                 Empowering Innovation
               </span>
@@ -186,7 +251,7 @@ const Landing = () => {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="text-lg md:text-xl text-slate-200 max-w-2xl mb-10 leading-relaxed font-medium"
+              className="mb-8 max-w-2xl text-base font-medium leading-relaxed text-slate-200 sm:mb-10 sm:text-lg md:text-xl"
             >
               A centralized digital ecosystem for academic excellence. Explore, submit, and discover
               verified research works from the National University Dasmariñas community.
@@ -196,20 +261,20 @@ const Landing = () => {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-16"
+              className="mb-10 flex flex-col gap-3 sm:mb-16 sm:flex-row sm:items-center sm:gap-4"
             >
               <button
                 onClick={() => navigate(user ? '/dashboard' : '/register')}
-                className="px-8 py-4 bg-[#1C4D8D] hover:bg-[#163a6b] text-white rounded-xl font-bold text-base transition-all shadow-xl hover:shadow-2xl hover:shadow-[#1C4D8D]/30 flex items-center justify-center gap-3 group transform hover:-translate-y-0.5"
+                className="flex w-full items-center justify-center gap-3 rounded-xl bg-[#1C4D8D] px-6 py-3.5 text-base font-bold text-white shadow-xl transition-all hover:-translate-y-0.5 hover:bg-[#163a6b] hover:shadow-2xl hover:shadow-[#1C4D8D]/30 sm:w-auto sm:px-8 sm:py-4"
               >
                 <BookOpen size={20} />
                 {user ? 'Go to Dashboard' : 'Get Started'}
-                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
               </button>
 
               <a
                 href="#features"
-                className="px-8 py-4 bg-white/10 hover:bg-white/15 border border-white/25 text-white rounded-xl font-semibold text-base transition-all backdrop-blur-md flex items-center justify-center gap-3"
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/25 bg-white/10 px-6 py-3.5 text-base font-semibold text-white backdrop-blur-md transition-all hover:bg-white/15 sm:w-auto sm:px-8 sm:py-4"
               >
                 Learn More
               </a>
@@ -220,7 +285,7 @@ const Landing = () => {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.55 }}
-              className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl"
+              className="grid max-w-3xl grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4"
             >
               {[
                 { value: statsLoading ? '…' : formatStatNumber(researchPapers), label: 'Research Papers' },
@@ -230,10 +295,10 @@ const Landing = () => {
               ].map((stat) => (
                 <div
                   key={stat.label}
-                  className="bg-white/8 backdrop-blur-md rounded-xl p-4 border border-white/15 hover:bg-white/12 transition-colors"
+                  className="rounded-xl border border-white/15 bg-white/8 p-3 backdrop-blur-md transition-colors hover:bg-white/12 sm:p-4"
                 >
-                  <div className="text-2xl md:text-3xl font-black text-white mb-1">{stat.value}</div>
-                  <div className="text-sm text-slate-300 font-medium">{stat.label}</div>
+                  <div className="mb-0.5 text-xl font-black text-white sm:mb-1 sm:text-2xl md:text-3xl">{stat.value}</div>
+                  <div className="text-xs font-medium text-slate-300 sm:text-sm">{stat.label}</div>
                 </div>
               ))}
             </motion.div>
@@ -249,27 +314,28 @@ const Landing = () => {
           backgroundSize: '40px 40px'
         }}></div>
         
-        <div className="max-w-7xl mx-auto px-6 md:px-16 relative">
-          <div className="text-center max-w-2xl mx-auto mb-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-16 relative">
+          <div className="text-center max-w-2xl mx-auto mb-12 sm:mb-16 lg:mb-20">
             <span className="inline-block px-4 py-1.5 rounded-full bg-[#1C4D8D]/10 text-[#1C4D8D] text-sm font-semibold mb-6">
               Why Choose NUCLEUS
             </span>
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 mb-6 leading-tight">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 mb-6 leading-tight">
               Academic Excellence, <br className="hidden md:block" />
               <span className="text-[#1C4D8D]">Digitized</span>
             </h2>
-            <p className="text-lg text-slate-500 leading-relaxed">
+            <p className="text-base sm:text-lg text-slate-500 leading-relaxed">
               A comprehensive platform designed to support the entire research lifecycle 
               at National University Dasmariñas
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 lg:gap-8 mb-24">
+          <div className="mb-16 grid grid-cols-1 gap-4 lg:mb-24 lg:grid-cols-2 lg:gap-6 xl:grid-cols-3 xl:gap-8">
             <FeatureCard 
               icon={<Search className="text-[#1C4D8D]" size={26} />}
               title="Intelligent Discovery"
               desc="Advanced search algorithms and filters to navigate decades of institutional knowledge with precision."
               index={0}
+              bento="featured"
             />
             <FeatureCard 
               icon={<ShieldCheck className="text-[#1C4D8D]" size={26} />}
@@ -521,20 +587,26 @@ const Landing = () => {
   );
 };
 
-const FeatureCard = ({ icon, title, desc, index }) => (
+const FeatureCard = ({ icon, title, desc, index, bento }) => (
   <div 
-    className="group relative bg-white p-8 rounded-2xl border border-slate-100 hover:border-[#1C4D8D]/20 transition-all duration-500 hover:shadow-2xl hover:shadow-[#1C4D8D]/10"
+    className={`group relative flex items-start gap-4 rounded-2xl border border-slate-100 bg-white p-5 transition-all duration-300 hover:border-[#1C4D8D]/20 hover:shadow-xl hover:shadow-[#1C4D8D]/10 motion-reduce:transition-none xl:block xl:p-8 xl:hover:shadow-2xl ${
+      bento === 'featured' ? 'lg:col-span-2 xl:col-span-1' : ''
+    }`}
     style={{ animationDelay: `${index * 100}ms` }}
   >
-    <div className="absolute inset-0 bg-gradient-to-br from-[#1C4D8D]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl"></div>
-    <div className="relative">
-      <div className="w-14 h-14 rounded-xl bg-[#1C4D8D]/10 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-[#1C4D8D] transition-all duration-300">
-        <div className="group-hover:text-white transition-colors duration-300">
+    <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/5 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 motion-reduce:transition-none xl:duration-500" />
+    <div className="relative flex min-w-0 flex-1 items-start gap-4 xl:block">
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#1C4D8D]/10 transition-all duration-300 group-hover:scale-105 group-hover:bg-[#1C4D8D] motion-reduce:transition-none xl:mb-6 xl:h-14 xl:w-14 xl:group-hover:scale-110">
+        <div className="transition-colors duration-300 group-hover:text-white motion-reduce:transition-none [&>svg]:h-5 [&>svg]:w-5 xl:[&>svg]:h-[26px] xl:[&>svg]:w-[26px]">
           {icon}
         </div>
       </div>
-      <h3 className="text-xl font-bold text-slate-900 mb-3 group-hover:text-[#1C4D8D] transition-colors duration-300">{title}</h3>
-      <p className="text-slate-500 leading-relaxed">{desc}</p>
+      <div className="min-w-0 flex-1">
+        <h3 className="mb-1 text-base font-bold text-slate-900 transition-colors duration-300 group-hover:text-[#1C4D8D] motion-reduce:transition-none xl:mb-3 xl:text-xl">
+          {title}
+        </h3>
+        <p className="text-sm leading-relaxed text-slate-500 xl:text-base">{desc}</p>
+      </div>
     </div>
   </div>
 );
