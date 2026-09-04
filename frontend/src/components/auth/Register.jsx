@@ -19,7 +19,7 @@ import {
   ArrowRight,
   Shield,
   Users,
-  Briefcase,
+
   FileText
 } from 'lucide-react';
 import nuBuildingImg from '../../assets/dasma.webp';
@@ -230,9 +230,7 @@ const Register = () => {
     }
   };
 
-  const roleOptions = [
-    { value: 'student', label: 'Student Researcher', icon: <GraduationCap size={16} /> },
-  ];
+
 
   const passwordStrength = formData.password.length > 0 ? 
     Math.min(Math.floor(formData.password.length / 2) * 20, 100) : 0;
@@ -507,44 +505,13 @@ const Register = () => {
                   </p>
                 </div>
 
-                {/* Role Selection */}
-                <div className="space-y-1.5 transition-all duration-300">
-                  <label htmlFor="role" className="block text-sm font-semibold text-slate-700">
-                    <div className="flex items-center gap-2">
-                      <Briefcase size={14} className="text-indigo-600" />
-                      Academic Role
-                    </div>
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {roleOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => handleChange({ target: { name: 'role', value: option.value } })}
-                        className={`p-2 lg:p-3 rounded-lg border-2 transition-all duration-300 flex flex-col items-center gap-1 lg:gap-2 ${
-                          formData.role === option.value
-                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-25'
-                        }`}
-                      >
-                        <div className={`p-2 rounded-lg ${
-                          formData.role === option.value
-                            ? 'bg-indigo-100 text-indigo-600'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {option.icon}
-                        </div>
-                        <span className="text-xs font-medium">{option.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="hidden"
-                    name="role"
-                    value={formData.role}
-                    onChange={handleChange}
-                  />
-                </div>
+                {/* Role is hardcoded as 'student' — no UI selector needed */}
+                <input
+                  type="hidden"
+                  name="role"
+                  value={formData.role}
+                  onChange={handleChange}
+                />
 
                 {/* Department & Program Selection (Visible only for Students) */}
                 {formData.role === 'student' && (

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
 import nuBuildingImg from '../assets/dasma.webp';
 import nuLogoLeft from '../assets/left.png';
 
@@ -10,16 +10,12 @@ import usePublicStats, { formatStatNumber } from '../hooks/usePublicStats';
 import { 
   BookOpen, 
   Search, 
-  ShieldCheck, 
-  ArrowRight, 
-  FileText, 
-  Zap,
+  ArrowRight,
   CheckCircle2,
   GraduationCap,
   Users,
   BarChart3,
   Globe,
-  Shield,
   MapPin,
   Phone,
   Mail,
@@ -30,13 +26,21 @@ import {
   Star,
   Menu,
   X,
+  Upload,
+  FileSearch,
+  PenLine,
+  BadgeCheck,
+  Lightbulb,
+  ClipboardList,
+  UserCheck,
+  LibraryBig,
 } from 'lucide-react';
 
 const Landing = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [navScrolled, setNavScrolled] = useState(false);
-  const { researchPapers, activeScholars, loading: statsLoading } = usePublicStats();
+  const { researchPapers, activeScholars, departments, programs, loading: statsLoading } = usePublicStats();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -251,7 +255,7 @@ const Landing = () => {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="mb-8 max-w-2xl text-base font-medium leading-relaxed text-slate-200 sm:mb-10 sm:text-lg md:text-xl"
+              className="mb-12 max-w-2xl text-base font-medium leading-relaxed text-slate-200 sm:mb-16 md:mb-20 sm:text-lg md:text-xl"
             >
               A centralized digital ecosystem for academic excellence. Explore, submit, and discover
               verified research works from the National University Dasmariñas community.
@@ -261,7 +265,7 @@ const Landing = () => {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="mb-10 flex flex-col gap-3 sm:mb-16 sm:flex-row sm:items-center sm:gap-4"
+              className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
             >
               <button
                 onClick={() => navigate(user ? '/dashboard' : '/register')}
@@ -279,144 +283,21 @@ const Landing = () => {
                 Learn More
               </a>
             </motion.div>
-
-            {/* Stats Bar */}
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, delay: 0.55 }}
-              className="grid max-w-3xl grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4"
-            >
-              {[
-                { value: statsLoading ? '…' : formatStatNumber(researchPapers), label: 'Research Papers' },
-                { value: '100+', label: 'Faculty' },
-                { value: '10K+', label: 'Monthly Views' },
-                { value: '50+', label: 'Departments' },
-              ].map((stat) => (
-                <div
-                  key={stat.label}
-                  className="rounded-xl border border-white/15 bg-white/8 p-3 backdrop-blur-md transition-colors hover:bg-white/12 sm:p-4"
-                >
-                  <div className="mb-0.5 text-xl font-black text-white sm:mb-1 sm:text-2xl md:text-3xl">{stat.value}</div>
-                  <div className="text-xs font-medium text-slate-300 sm:text-sm">{stat.label}</div>
-                </div>
-              ))}
-            </motion.div>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section id="features" className="py-28 bg-white relative overflow-hidden">
-        {/* Subtle background pattern */}
-        <div className="absolute inset-0 opacity-[0.02]" style={{
-          backgroundImage: `radial-gradient(circle at 1px 1px, #1C4D8D 1px, transparent 0)`,
-          backgroundSize: '40px 40px'
-        }}></div>
-        
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-16 relative">
-          <div className="text-center max-w-2xl mx-auto mb-12 sm:mb-16 lg:mb-20">
-            <span className="inline-block px-4 py-1.5 rounded-full bg-[#1C4D8D]/10 text-[#1C4D8D] text-sm font-semibold mb-6">
-              Why Choose NUCLEUS
-            </span>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 mb-6 leading-tight">
-              Academic Excellence, <br className="hidden md:block" />
-              <span className="text-[#1C4D8D]">Digitized</span>
-            </h2>
-            <p className="text-base sm:text-lg text-slate-500 leading-relaxed">
-              A comprehensive platform designed to support the entire research lifecycle 
-              at National University Dasmariñas
-            </p>
-          </div>
+      {/* About Section */}
+      <AboutSection
+        activeScholars={activeScholars}
+        researchPapers={researchPapers}
+        departments={departments}
+        programs={programs}
+        statsLoading={statsLoading}
+      />
 
-          <div className="mb-16 grid grid-cols-1 gap-4 lg:mb-24 lg:grid-cols-2 lg:gap-6 xl:grid-cols-3 xl:gap-8">
-            <FeatureCard 
-              icon={<Search className="text-[#1C4D8D]" size={26} />}
-              title="Intelligent Discovery"
-              desc="Advanced search algorithms and filters to navigate decades of institutional knowledge with precision."
-              index={0}
-              bento="featured"
-            />
-            <FeatureCard 
-              icon={<ShieldCheck className="text-[#1C4D8D]" size={26} />}
-              title="Secure Preservation"
-              desc="Bank-level security for archival with version control and digital rights management."
-              index={1}
-            />
-            <FeatureCard 
-              icon={<FileText className="text-[#1C4D8D]" size={26} />}
-              title="Collaborative Workflow"
-              desc="Streamlined submission, review, and approval processes for academic teams."
-              index={2}
-            />
-          </div>
-
-          {/* Trust Section */}
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="order-2 lg:order-1">
-              <span className="inline-block px-4 py-1.5 rounded-full bg-green-100 text-green-700 text-sm font-semibold mb-6">
-                Trusted Platform
-              </span>
-              <h3 className="text-3xl md:text-4xl font-bold text-slate-900 mb-6 leading-tight">
-                Trusted by the Academic Community
-              </h3>
-              <p className="text-slate-500 text-lg leading-relaxed mb-8">
-                NUCLEUS serves as the official digital repository for National University Dasmariñas, 
-                ensuring academic integrity and long-term preservation of scholarly works.
-              </p>
-              <div className="space-y-5">
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 transition-all duration-300 hover:shadow-md hover:border-slate-200">
-                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle2 className="text-green-600" size={20} />
-                  </div>
-                  <span className="font-medium text-slate-700">Faculty-verified content with multi-tier review</span>
-                </div>
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 transition-all duration-300 hover:shadow-md hover:border-slate-200">
-                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle2 className="text-green-600" size={20} />
-                  </div>
-                  <span className="font-medium text-slate-700">AI-powered research assistant for insights</span>
-                </div>
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 transition-all duration-300 hover:shadow-md hover:border-slate-200">
-                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle2 className="text-green-600" size={20} />
-                  </div>
-                  <span className="font-medium text-slate-700">Secure document storage and management</span>
-                </div>
-              </div>
-            </div>
-            <div className="order-1 lg:order-2">
-              <div className="relative">
-                <div className="absolute -inset-4 bg-gradient-to-r from-[#1C4D8D]/20 to-blue-400/20 rounded-3xl blur-2xl opacity-60"></div>
-                <div className="relative bg-gradient-to-br from-slate-50 to-white rounded-2xl p-10 border border-slate-200 shadow-xl">
-                  <div className="text-center">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-blue-600 flex items-center justify-center mx-auto mb-6 shadow-lg">
-                      <Users size={36} className="text-white" />
-                    </div>
-                    <div className="text-5xl font-bold text-slate-900 mb-2 tabular-nums">
-                      {statsLoading ? '…' : formatStatNumber(activeScholars)}
-                    </div>
-                    <div className="text-xl text-[#1C4D8D] font-semibold mb-2">Active Scholars</div>
-                    <div className="text-slate-500">Registered student accounts on NUCLEUS</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mt-8 pt-8 border-t border-slate-100">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-slate-900 tabular-nums">
-                        {statsLoading ? '…' : formatStatNumber(researchPapers)}
-                      </div>
-                      <div className="text-sm text-slate-500">Published Papers</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-slate-900">50+</div>
-                      <div className="text-sm text-slate-500">Departments</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Process Section */}
+      <ProcessSection />
 
       {/* Impact Section */}
       <section id="stats" className="py-28 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 text-white relative overflow-hidden">
@@ -587,30 +468,6 @@ const Landing = () => {
   );
 };
 
-const FeatureCard = ({ icon, title, desc, index, bento }) => (
-  <div 
-    className={`group relative flex items-start gap-4 rounded-2xl border border-slate-100 bg-white p-5 transition-all duration-300 hover:border-[#1C4D8D]/20 hover:shadow-xl hover:shadow-[#1C4D8D]/10 motion-reduce:transition-none xl:block xl:p-8 xl:hover:shadow-2xl ${
-      bento === 'featured' ? 'lg:col-span-2 xl:col-span-1' : ''
-    }`}
-    style={{ animationDelay: `${index * 100}ms` }}
-  >
-    <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#1C4D8D]/5 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 motion-reduce:transition-none xl:duration-500" />
-    <div className="relative flex min-w-0 flex-1 items-start gap-4 xl:block">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#1C4D8D]/10 transition-all duration-300 group-hover:scale-105 group-hover:bg-[#1C4D8D] motion-reduce:transition-none xl:mb-6 xl:h-14 xl:w-14 xl:group-hover:scale-110">
-        <div className="transition-colors duration-300 group-hover:text-white motion-reduce:transition-none [&>svg]:h-5 [&>svg]:w-5 xl:[&>svg]:h-[26px] xl:[&>svg]:w-[26px]">
-          {icon}
-        </div>
-      </div>
-      <div className="min-w-0 flex-1">
-        <h3 className="mb-1 text-base font-bold text-slate-900 transition-colors duration-300 group-hover:text-[#1C4D8D] motion-reduce:transition-none xl:mb-3 xl:text-xl">
-          {title}
-        </h3>
-        <p className="text-sm leading-relaxed text-slate-500 xl:text-base">{desc}</p>
-      </div>
-    </div>
-  </div>
-);
-
 const ImpactStat = ({ value, label, description, icon }) => (
   <div className="group relative bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover:border-yellow-400/50 transition-all duration-500 hover:bg-white/10 overflow-hidden">
     <div className="absolute inset-0 bg-gradient-to-br from-yellow-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
@@ -708,6 +565,492 @@ const showcaseItems = [
     category: "Internet of Things"
   }
 ];
+
+const processSteps = [
+  {
+    icon: Upload,
+    title: 'Submit',
+    subtitle: 'Upload Your Research',
+    desc: 'Students upload their research paper along with metadata, abstracts, and supporting files to begin the review pipeline.',
+    role: 'Student Researcher',
+    roleIcon: GraduationCap,
+    features: [
+      'Upload PDF with title, abstract, and keywords',
+      'Select department, program, and adviser',
+      'Attach supplementary materials and datasets',
+    ],
+    tips: [
+      'Prepare your final PDF, title, abstract, keywords, and adviser before submitting',
+      'Double-check metadata — incomplete submissions may be returned',
+    ],
+  },
+  {
+    icon: FileSearch,
+    title: 'Review',
+    subtitle: 'Faculty Evaluation',
+    desc: 'Faculty advisers evaluate the submission against academic standards, providing structured feedback and scoring.',
+    role: 'Faculty Adviser',
+    roleIcon: UserCheck,
+    features: [
+      'Structured rubric-based evaluation criteria',
+      'Inline comments and detailed feedback notes',
+      'Accept, request revision, or escalate to editor',
+    ],
+    tips: [
+      'Advisers receive notifications for new assignments',
+      'Use the Review Queue to filter by status and track pending reviews',
+    ],
+  },
+  {
+    icon: PenLine,
+    title: 'Revise',
+    subtitle: 'Refine & Improve',
+    desc: 'Students address reviewer feedback, strengthen methodology and conclusions, and resubmit for another review cycle.',
+    role: 'Student Researcher',
+    roleIcon: GraduationCap,
+    features: [
+      'View reviewer comments with highlighted sections',
+      'Track revision history and change logs',
+      'Resubmit directly from the action panel',
+    ],
+    tips: [
+      'Read all notes before revising — address every point raised',
+      'Use My Research to monitor status changes and revision outcomes',
+    ],
+  },
+  {
+    icon: BadgeCheck,
+    title: 'Approve',
+    subtitle: 'Final Approval',
+    desc: 'The research editor validates metadata and the department head grants final approval for publication.',
+    role: 'Research Editor / Admin',
+    roleIcon: ClipboardList,
+    features: [
+      'Multi-tier approval with editor and admin sign-off',
+      'Metadata validation and completeness check',
+      'One-click publish or return for further revision',
+    ],
+    tips: [
+      'Editors can return incomplete submissions at any stage',
+      'Final approval logs are recorded for audit compliance',
+    ],
+  },
+  {
+    icon: BookOpen,
+    title: 'Publish',
+    subtitle: 'Go Live on NUCLEUS',
+    desc: 'Approved papers are published to the NUCLEUS repository with proper indexing, citations, and digital rights protection.',
+    role: 'System',
+    roleIcon: LibraryBig,
+    features: [
+      'Automatic indexing and search optimization',
+      'Digital rights management and access control',
+      'Citation-ready metadata and permanent URL',
+    ],
+    tips: [
+      'Published papers are immediately discoverable in search',
+      'Authors receive a notification with the publication link',
+    ],
+  },
+  {
+    icon: Search,
+    title: 'Discover',
+    subtitle: 'Community Access',
+    desc: 'The academic community browses, reads, cites, and builds upon published works — fueling future research and innovation.',
+    role: 'All Users',
+    roleIcon: Users,
+    features: [
+      'Advanced search with filters by department, year, and keywords',
+      'AI-powered research assistant for insights',
+      'Browse by category, program, or trending topics',
+    ],
+    tips: [
+      'Use the AI assistant to get summaries and key findings',
+      'Star papers to save them for later reference',
+    ],
+  },
+];
+
+const roleCards = [
+  {
+    icon: GraduationCap,
+    title: 'Student Researcher',
+    desc: 'Submit papers, respond to revision requests, and monitor each review stage from adviser approval through publication.',
+    actions: ['Submit & track research', 'Respond to revision notes', 'Monitor publication status'],
+  },
+  {
+    icon: UserCheck,
+    title: 'Faculty Adviser',
+    desc: 'Screen assigned research, leave academic feedback, and forward qualified papers to the next reviewer in the pipeline.',
+    actions: ['Review assigned papers', 'Provide structured feedback', 'Approve or request revisions'],
+  },
+  {
+    icon: ClipboardList,
+    title: 'Research Editor',
+    desc: 'Validate metadata, return incomplete submissions, and keep the institutional review pipeline moving efficiently.',
+    actions: ['Validate submissions', 'Manage review queue', 'Ensure metadata quality'],
+  },
+];
+
+// Row connector — animated separator between pairs
+const RowConnector = ({ pairIndex }) => {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-10px' });
+  const fromStep = pairIndex * 2 + 1;
+  const toStep = pairIndex * 2 + 2;
+
+  return (
+    <motion.div
+      ref={ref}
+      className="flex items-center gap-3 py-0.5"
+      initial={{ opacity: 0 }}
+      animate={isInView ? { opacity: 1 } : { opacity: 0 }}
+      transition={{ duration: 0.35 }}
+    >
+      <motion.div
+        className="h-px flex-1 origin-left bg-gradient-to-r from-[#1C4D8D]/20 to-slate-200"
+        initial={{ scaleX: 0 }}
+        animate={isInView ? { scaleX: 1 } : { scaleX: 0 }}
+        style={{ transformOrigin: 'left' }}
+        transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+      />
+      <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 shadow-sm">
+        <span className="h-1.5 w-1.5 rounded-full bg-[#1C4D8D]/30" />
+        <span className="text-[10px] font-semibold text-slate-400">
+          Steps {fromStep}–{toStep} done
+        </span>
+        <ArrowRight size={10} className="text-[#1C4D8D]/50" />
+      </div>
+      <motion.div
+        className="h-px flex-1 origin-right bg-gradient-to-l from-[#1C4D8D]/20 to-slate-200"
+        initial={{ scaleX: 0 }}
+        animate={isInView ? { scaleX: 1 } : { scaleX: 0 }}
+        style={{ transformOrigin: 'right' }}
+        transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+      />
+    </motion.div>
+  );
+};
+
+// Process step — bento card with watermark number
+const ProcessStep = ({ step, index, pairOffset }) => {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-50px' });
+  const Icon = step.icon;
+  const RoleIcon = step.roleIcon;
+  const stepNumber = index + 1;
+  const stepLabel = String(stepNumber).padStart(2, '0');
+  const xOffset = pairOffset === 0 ? -36 : 36;
+
+  return (
+    <motion.div
+      ref={ref}
+      className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-xl hover:shadow-[#1C4D8D]/8 sm:p-6"
+      initial={{ opacity: 0, x: xOffset, y: 12 }}
+      animate={isInView ? { opacity: 1, x: 0, y: 0 } : { opacity: 0, x: xOffset, y: 12 }}
+      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-3 -right-1 select-none text-[96px] font-black leading-none text-slate-900/[0.035] sm:text-[112px]"
+      >
+        {stepLabel}
+      </span>
+
+      <div className="mb-4 flex items-center justify-between">
+        <span className="inline-flex items-center gap-1 rounded-full bg-[#1C4D8D]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#1C4D8D]">
+          Step {stepLabel}
+        </span>
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1C4D8D]/10 transition-all duration-300 group-hover:bg-[#1C4D8D] group-hover:shadow-md group-hover:shadow-[#1C4D8D]/20 sm:h-10 sm:w-10">
+          <Icon size={18} className="text-[#1C4D8D] transition-colors duration-300 group-hover:text-white" />
+        </div>
+      </div>
+
+      <h3 className="mb-0.5 text-lg font-bold text-slate-900">{step.title}</h3>
+      <p className="mb-2 text-xs font-semibold tracking-wide text-[#1C4D8D]/70">{step.subtitle}</p>
+      <p className="mb-4 text-sm leading-relaxed text-slate-500">{step.desc}</p>
+
+      <div className="grid grid-cols-1 gap-2.5 xl:grid-cols-2">
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+          <h4 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-700">Features</h4>
+          <ul className="space-y-1.5">
+            {step.features.map((f) => (
+              <li key={f} className="flex items-start gap-1.5">
+                <CheckCircle2 size={12} className="mt-0.5 shrink-0 text-green-500" />
+                <span className="text-xs leading-relaxed text-slate-600">{f}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded-xl border border-[#1C4D8D]/10 bg-[#1C4D8D]/[0.03] p-3">
+          <h4 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-700">Guidance</h4>
+          <ul className="space-y-1.5">
+            {step.tips.map((t) => (
+              <li key={t} className="flex items-start gap-1.5">
+                <Lightbulb size={12} className="mt-0.5 shrink-0 text-amber-500" />
+                <span className="text-xs leading-relaxed text-slate-600">{t}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-3">
+        <RoleIcon size={12} className="text-[#1C4D8D]/40" />
+        <span className="text-xs font-medium text-slate-400">
+          Handled by: <span className="font-semibold text-slate-600">{step.role}</span>
+        </span>
+      </div>
+    </motion.div>
+  );
+};
+
+// Role coverage card
+const RoleCard = ({ role, index }) => {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-40px' });
+  const Icon = role.icon;
+
+  return (
+    <motion.div
+      ref={ref}
+      className="group rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition-shadow duration-300 hover:shadow-xl hover:shadow-[#1C4D8D]/8"
+      initial={{ opacity: 0, y: 28 }}
+      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 28 }}
+      transition={{ duration: 0.5, delay: index * 0.07, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#1C4D8D]/10 transition-colors duration-300 group-hover:bg-[#1C4D8D]">
+          <Icon size={22} className="text-[#1C4D8D] transition-colors duration-300 group-hover:text-white" />
+        </div>
+        <h3 className="text-base font-bold text-slate-900">{role.title}</h3>
+      </div>
+      <p className="mb-4 text-sm leading-relaxed text-slate-500">{role.desc}</p>
+      <ul className="space-y-2">
+        {role.actions.map((a) => (
+          <li key={a} className="flex items-start gap-2">
+            <ArrowRight size={13} className="mt-0.5 shrink-0 text-[#1C4D8D]/40" />
+            <span className="text-sm text-slate-600">{a}</span>
+          </li>
+        ))}
+      </ul>
+    </motion.div>
+  );
+};
+
+// Process Section — 2-column bento grid
+const ProcessSection = () => {
+  const pairs = [];
+  for (let i = 0; i < processSteps.length; i += 2) {
+    pairs.push(processSteps.slice(i, i + 2));
+  }
+
+  return (
+    <section
+      id="features"
+      className="relative overflow-hidden bg-white py-16 sm:py-20"
+      aria-label="How NUCLEUS works"
+    >
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.02]"
+        aria-hidden="true"
+        style={{
+          backgroundImage: 'radial-gradient(circle at 1px 1px, #1C4D8D 1px, transparent 0)',
+          backgroundSize: '40px 40px',
+        }}
+      />
+
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 md:px-16">
+        <div className="mx-auto mb-10 max-w-2xl text-center sm:mb-14">
+          <span className="mb-5 inline-block rounded-full bg-[#1C4D8D]/10 px-4 py-1.5 text-sm font-semibold text-[#1C4D8D]">
+            How It Works
+          </span>
+          <h2 className="mb-4 text-3xl font-bold leading-tight text-slate-900 sm:text-4xl lg:text-5xl">
+            Your Research Journey,{' '}
+            <span className="text-[#1C4D8D]">Step by Step</span>
+          </h2>
+          <p className="mx-auto max-w-xl text-base leading-relaxed text-slate-500 sm:text-lg">
+            A transparent, multi-tier process guiding your work from first upload to public discovery.
+          </p>
+        </div>
+
+        <div className="mx-auto flex max-w-4xl flex-col gap-3.5">
+          {pairs.map((pair, pairIdx) => (
+            <React.Fragment key={pairIdx}>
+              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                {pair.map((step, stepInPair) => (
+                  <ProcessStep
+                    key={step.title}
+                    step={step}
+                    index={pairIdx * 2 + stepInPair}
+                    pairOffset={stepInPair}
+                  />
+                ))}
+              </div>
+              {pairIdx < pairs.length - 1 && <RowConnector pairIndex={pairIdx} />}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div className="mt-14 sm:mt-20">
+          <div className="mx-auto mb-8 max-w-2xl text-center sm:mb-12">
+            <span className="mb-4 inline-block rounded-full bg-green-100 px-4 py-1.5 text-sm font-semibold text-green-700">
+              Role Coverage
+            </span>
+            <h3 className="mb-3 text-2xl font-bold text-slate-900 sm:text-3xl">
+              Every Role, <span className="text-[#1C4D8D]">One Workflow</span>
+            </h3>
+            <p className="text-sm leading-relaxed text-slate-500 sm:text-base">
+              Whether you submit, review, or approve — the same guided system serves every account.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5">
+            {roleCards.map((role, i) => (
+              <RoleCard key={role.title} role={role} index={i} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// About Section
+const AboutSection = ({ activeScholars, researchPapers, departments, programs, statsLoading }) => {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-80px' });
+
+  const pillars = [
+    {
+      icon: BookOpen,
+      title: 'Central Knowledge Repository',
+      desc: 'A single source of truth for all academic research produced at NU Dasmariñas — organized, searchable, and permanent.',
+    },
+    {
+      icon: Users,
+      title: 'Multi-Tier Faculty Review',
+      desc: 'Every submission passes through structured faculty evaluation before publication, ensuring integrity and quality.',
+    },
+    {
+      icon: Globe,
+      title: 'Open Academic Discovery',
+      desc: 'Published works are indexed and accessible to every member of the NU community — students, faculty, and researchers.',
+    },
+  ];
+
+  return (
+    <section className="relative overflow-hidden bg-slate-50 py-20 sm:py-24" aria-label="About NUCLEUS">
+      <div className="pointer-events-none absolute -top-40 -right-40 h-96 w-96 rounded-full bg-[#1C4D8D]/5 blur-3xl" aria-hidden="true" />
+      <div className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-blue-400/5 blur-3xl" aria-hidden="true" />
+
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 md:px-16">
+        <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
+          {/* Left: text + pillars */}
+          <div ref={ref}>
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={isInView ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <span className="mb-5 inline-block rounded-full bg-[#1C4D8D]/10 px-4 py-1.5 text-sm font-semibold text-[#1C4D8D]">
+                About the Platform
+              </span>
+              <h2 className="mb-5 text-3xl font-bold leading-tight text-slate-900 sm:text-4xl lg:text-[2.6rem]">
+                What is <span className="text-[#1C4D8D]">NUCLEUS</span>?
+              </h2>
+              <p className="mb-8 text-base leading-relaxed text-slate-500 sm:text-lg">
+                NUCLEUS is the official digital research repository of National University Dasmariñas — a centralized platform 
+                for submitting, reviewing, and discovering verified academic works from students and faculty across all colleges and departments.
+              </p>
+            </motion.div>
+
+            <div className="space-y-3">
+              {pillars.map((pillar, i) => {
+                const Icon = pillar.icon;
+                return (
+                  <motion.div
+                    key={pillar.title}
+                    className="flex items-start gap-4 rounded-xl border border-slate-100 bg-white p-4 shadow-sm"
+                    initial={{ opacity: 0, x: -28 }}
+                    animate={isInView ? { opacity: 1, x: 0 } : {}}
+                    transition={{ duration: 0.5, delay: 0.2 + i * 0.09, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#1C4D8D]/10">
+                      <Icon size={20} className="text-[#1C4D8D]" />
+                    </div>
+                    <div>
+                      <h3 className="mb-0.5 font-semibold text-slate-900">{pillar.title}</h3>
+                      <p className="text-sm leading-relaxed text-slate-500">{pillar.desc}</p>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: animated stats card */}
+          <motion.div
+            initial={{ opacity: 0, x: 48, scale: 0.97 }}
+            animate={isInView ? { opacity: 1, x: 0, scale: 1 } : {}}
+            transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="relative">
+              <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-[#1C4D8D]/20 to-blue-400/10 blur-2xl opacity-60" aria-hidden="true" />
+              <div className="relative rounded-2xl border border-slate-100 bg-white p-8 shadow-xl">
+                <div className="mb-6 border-b border-slate-100 pb-6 text-center">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1C4D8D] to-blue-600 shadow-lg">
+                    <Users size={28} className="text-white" />
+                  </div>
+                  <div className="mb-1 text-5xl font-black tabular-nums text-slate-900">
+                    {statsLoading ? '…' : formatStatNumber(activeScholars)}
+                  </div>
+                  <div className="font-semibold text-[#1C4D8D]">Active Scholars</div>
+                  <div className="mt-1 text-sm text-slate-400">Registered student accounts on NUCLEUS</div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-xl bg-slate-50 p-4 text-center">
+                    <div className="mb-1 text-2xl font-black tabular-nums text-slate-900">
+                      {statsLoading ? '…' : formatStatNumber(researchPapers)}
+                    </div>
+                    <div className="text-xs font-medium text-slate-500">Published Papers</div>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-center">
+                    <div className="mb-1 text-2xl font-black tabular-nums text-slate-900">
+                      {statsLoading
+                        ? '…'
+                        : departments !== null
+                          ? formatStatNumber(departments)
+                          : '—'}
+                    </div>
+                    <div className="text-xs font-medium text-slate-500">Departments</div>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-center">
+                    <div className="mb-1 text-2xl font-black tabular-nums text-slate-900">
+                      {statsLoading
+                        ? '…'
+                        : programs !== null
+                          ? formatStatNumber(programs)
+                          : '—'}
+                    </div>
+                    <div className="text-xs font-medium text-slate-500">Courses</div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex items-center gap-2 rounded-xl border border-green-100 bg-green-50 px-4 py-3">
+                  <CheckCircle2 size={16} className="shrink-0 text-green-500" />
+                  <span className="text-xs font-medium text-green-700">
+                    Official repository — verified by National University Dasmariñas
+                  </span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    </section>
+  );
+};
 
 // Testimonials Section Component
 const TestimonialsSection = () => {
@@ -850,6 +1193,8 @@ const TestimonialsSection = () => {
 
 // Showcase Section Component
 const ShowcaseSection = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [isPaused, setIsPaused] = useState(false);
 
   return (
@@ -942,7 +1287,11 @@ const ShowcaseSection = () => {
 
       {/* View All Button */}
       <div className="text-center mt-12">
-        <button className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-full font-semibold transition-all duration-300 backdrop-blur-sm inline-flex items-center gap-3 group">
+        <button
+          type="button"
+          onClick={() => navigate(user ? '/dashboard' : '/register')}
+          className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-full font-semibold transition-all duration-300 backdrop-blur-sm inline-flex items-center gap-3 group"
+        >
           View All Research
           <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform duration-300" />
         </button>

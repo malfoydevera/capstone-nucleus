@@ -13,6 +13,8 @@ export default function usePublicStats({ refresh = true } = {}) {
   const [stats, setStats] = useState({
     researchPapers: null,
     activeScholars: null,
+    departments: null,
+    programs: null,
     loading: true,
     error: null,
   });
@@ -28,6 +30,8 @@ export default function usePublicStats({ refresh = true } = {}) {
         setStats({
           researchPapers: payload.researchPapers ?? 0,
           activeScholars: payload.activeScholars ?? 0,
+          departments: payload.departments ?? null,
+          programs: payload.programs ?? null,
           loading: false,
           error: null,
         });

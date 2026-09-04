@@ -1158,11 +1158,12 @@ exports.getCategories = async (req, res) => {
 /**
  * GET /api/research/public-stats
  * Public aggregate metrics for landing/login hero cards.
+ * Returns: researchPapers, activeScholars, departments, programs (courses)
  */
 exports.getPublicStats = async (req, res) => {
   try {
     const stats = await getOrSet('public:stats', TTL.PUBLIC_STATS, async () => {
-      const [papersResult, scholarsResult] = await Promise.all([
+      const [papersResult, scholarsResult, departmentsResult, programsResult] = await Promise.all([
         supabase
           .from('research_papers')
           .select('*', { count: 'exact', head: true })
@@ -1174,14 +1175,29 @@ exports.getPublicStats = async (req, res) => {
           .eq('role', 'student')
           .is('suspended_at', null)
           .or('is_active.is.null,is_active.eq.true'),
+        // Real department count — only active departments
+        supabase
+          .from('departments')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_active', true),
+        // Real program/course count — only active programs
+        supabase
+          .from('programs')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_active', true),
       ]);
 
       if (papersResult.error) throw papersResult.error;
       if (scholarsResult.error) throw scholarsResult.error;
+      // Non-fatal: fall back to null if departments/programs tables aren't accessible
+      const departmentsCount = departmentsResult.error ? null : (departmentsResult.count ?? 0);
+      const programsCount = programsResult.error ? null : (programsResult.count ?? 0);
 
       return {
         researchPapers: papersResult.count ?? 0,
         activeScholars: scholarsResult.count ?? 0,
+        departments: departmentsCount,
+        programs: programsCount,
         updatedAt: new Date().toISOString(),
       };
     });
