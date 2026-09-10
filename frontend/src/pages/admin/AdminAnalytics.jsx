@@ -660,13 +660,13 @@ const AdminAnalytics = () => {
             <div className="flex items-end gap-2 h-44 sm:h-52">
               {monthlyData.map((m, i) => {
                 const val = m[activeChart];
-                const heightPct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                const barHeight = maxVal > 0 ? Math.max((val / maxVal) * 120, val > 0 ? 6 : 2) : 2;
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-2 min-w-0">
                     <span className="text-[10px] font-semibold text-slate-500 tabular-nums">{val}</span>
                     <div
                       className={`w-full rounded-t bg-gradient-to-t ${chartFields[activeChart].color} transition-all duration-300`}
-                      style={{ height: `${Math.max(heightPct, val > 0 ? 6 : 2)}%` }}
+                      style={{ height: `${barHeight}px` }}
                       title={`${m.label}: ${val}`}
                     />
                     <span className="text-[10px] text-slate-400">{m.label}</span>
